@@ -11,21 +11,24 @@ import javacard.framework.JCSystem;
  * Coordinates the {@code RESET_TO_FACTORY} multi-step trigger described in {@code
  * docs/adr/0008-reset-to-factory-multi-step.md}.
  *
- * <p>Behaviour:
+ * <p>Semantics:
  *
  * <ul>
- *   <li>Each {@code RESET_TO_FACTORY} APDU decrements an internal counter.
- *   <li>Any non-{@code RESET_TO_FACTORY} APDU rearms the counter to {@link
- *       Constants#RESET_REQUIRED_INVOCATIONS}.
- *   <li>The status word returned is always {@code SW_RESET_COUNTDOWN_BASE + remaining}.
- *   <li>When {@code remaining} reaches zero the caller is expected to perform the wipe via {@link
- *       Runnable#run()}, after which the counter is rearmed and the terminal status word {@code
+ *   <li>Each {@code RESET_TO_FACTORY} APDU calls {@link #recordInvocation(WipeTrigger)} which
+ *       decrements an internal counter.
+ *   <li>Any non-{@code RESET_TO_FACTORY} APDU calls {@link #rearm()} to reset the counter back to
+ *       {@link Constants#RESET_REQUIRED_INVOCATIONS}.
+ *   <li>The status word returned to the host is always {@code SW_RESET_COUNTDOWN_BASE + remaining},
+ *       communicating the countdown verbatim.
+ *   <li>When {@code remaining} reaches zero the supplied {@link WipeTrigger} is invoked to perform
+ *       the destructive wipe, the counter is rearmed, and the terminal status word {@code
  *       SW_RESET_COUNTDOWN_BASE + 0} is thrown.
  * </ul>
  *
- * <p>The counter lives in a {@code CLEAR_ON_RESET} transient byte array. Power loss between
- * invocations therefore rearms the trigger, making a passive contact-only attack require sustained
- * physical access.
+ * <p>The counter lives in a {@link JCSystem#CLEAR_ON_RESET}-typed transient byte array, so a power
+ * loss between invocations rearms the trigger. Combined with the rearming rule, this means a
+ * passive contact-only attack must hold the card for the duration of {@code N} full APDU round
+ * trips with no interleaved traffic, which is the explicit design goal.
  */
 public final class ResetToFactory {
 
@@ -45,24 +48,21 @@ public final class ResetToFactory {
     /**
      * Records one {@code RESET_TO_FACTORY} invocation.
      *
-     * <p>If the threshold has been reached, runs {@code trigger} (the destructive operation),
-     * rearms the counter, and throws {@code SW_RESET_COUNTDOWN_BASE + 0} to signal completion.
-     * Otherwise throws {@code SW_RESET_COUNTDOWN_BASE + remaining} to signal the host how many more
-     * invocations are needed.
+     * <p>This method always throws {@link ISOException}; it never returns normally. Callers should
+     * treat it as a tail call.
      */
     public void recordInvocation(WipeTrigger trigger) {
-        if (remaining[0] > 0) {
-            remaining[0]--;
-        }
-        if (remaining[0] == 0) {
+        byte step = (byte) (remaining[0] - 1);
+        remaining[0] = step;
+        if (step == 0) {
             trigger.wipe();
             remaining[0] = Constants.RESET_REQUIRED_INVOCATIONS;
             ISOException.throwIt(Constants.SW_RESET_COUNTDOWN_BASE);
         }
-        ISOException.throwIt((short) (Constants.SW_RESET_COUNTDOWN_BASE + remaining[0]));
+        ISOException.throwIt((short) (Constants.SW_RESET_COUNTDOWN_BASE + (step & 0xFF)));
     }
 
-    /** Returns the current countdown value (useful for assertions in unit tests). */
+    /** Returns the current countdown value, primarily for unit-test assertions. */
     public byte remaining() {
         return remaining[0];
     }

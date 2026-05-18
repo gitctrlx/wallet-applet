@@ -9,30 +9,15 @@ import javacard.security.ECKey;
 /**
  * Curve parameters and helpers for {@code secp256k1}.
  *
- * <p>Constants are taken from <a href="https://www.secg.org/sec2-v2.pdf">SEC 2 v2.0</a> §2.4.1. The
- * byte layout matches the {@link ECKey#setFieldFP / setA / setB / setG / setR / setK} API exposed
- * by the JavaCard 3.0.5 runtime, so the same backing array can be sliced and handed to every
- * setter.
+ * <p>Constants are taken verbatim from <a href="https://www.secg.org/sec2-v2.pdf">SEC 2 v2.0</a>
+ * §2.4.1. The byte layout matches the {@link ECKey#setFieldFP setFieldFP / setA / setB / setG /
+ * setR / setK} API exposed by JavaCard 3.0.5, so the same backing array can be sliced and handed to
+ * every setter.
  *
- * <p>The constants and the dispatch shape of {@link #applyTo(ECKey)} are derived from Toporin's
- * Satochip applet (AGPL-3.0-or-later); they are otherwise standard SECG values.
+ * <p>The constants and the dispatch shape of {@link #setCurveParameters(ECKey)} are derived from
+ * Toporin's Satochip applet (AGPL-3.0-or-later); they are otherwise standard SECG values.
  */
 public final class Secp256k1 {
-
-    /** Prime field characteristic {@code p}. */
-    public static final short OFFSET_P = (short) 0;
-
-    /** Coefficient {@code a}. */
-    public static final short OFFSET_A = (short) 32;
-
-    /** Coefficient {@code b}. */
-    public static final short OFFSET_B = (short) 64;
-
-    /** Base-point group order {@code n}. */
-    public static final short OFFSET_N = (short) 96;
-
-    /** Base point {@code G} in uncompressed form. */
-    public static final short OFFSET_G = (short) 128;
 
     /** Length of an EC scalar (private key / hash / x-coordinate). */
     public static final short SCALAR_LEN = (short) 32;
@@ -43,12 +28,13 @@ public final class Secp256k1 {
     /** Cofactor {@code h = 1}. */
     public static final short COFACTOR = (short) 0x01;
 
-    /**
-     * Packed curve parameters in the order {@code p ‖ a ‖ b ‖ n ‖ G(uncompressed)}.
-     *
-     * <p>The constants are public, fixed-by-SECG, and never modified at runtime — kept in CAP-bound
-     * EEPROM to avoid burning RAM at applet install time.
-     */
+    private static final short OFFSET_P = (short) 0;
+    private static final short OFFSET_A = (short) 32;
+    private static final short OFFSET_B = (short) 64;
+    private static final short OFFSET_N = (short) 96;
+    private static final short OFFSET_G = (short) 128;
+
+    /** Packed curve parameters: {@code p ‖ a ‖ b ‖ n ‖ G(uncompressed)}. */
     private static final byte[] PARAMS = {
         // p — 32 bytes, offset 0
         (byte) 0xFF,
@@ -250,15 +236,13 @@ public final class Secp256k1 {
         (byte) 0xB8,
     };
 
-    private Secp256k1() {
-        // non-instantiable
-    }
+    private Secp256k1() {}
 
     /**
      * Configures {@code key} with the SECG secp256k1 parameters. Applicable to both {@code
      * ECPrivateKey} and {@code ECPublicKey} instances (both extend {@code ECKey}).
      */
-    public static void applyTo(ECKey key) {
+    public static void setCurveParameters(ECKey key) {
         key.setFieldFP(PARAMS, OFFSET_P, SCALAR_LEN);
         key.setA(PARAMS, OFFSET_A, SCALAR_LEN);
         key.setB(PARAMS, OFFSET_B, SCALAR_LEN);

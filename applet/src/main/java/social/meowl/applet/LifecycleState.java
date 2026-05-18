@@ -11,17 +11,19 @@ import javacard.framework.JCSystem;
  * Tracks the applet lifecycle as a four-state finite state machine.
  *
  * <pre>
- *   UNINITIALIZED ──INSTALL──▶ PERSONALIZED ──SETUP──▶ SETUP_DONE ──IMPORT_SEED──▶ SEEDED
- *         ▲                                                                           │
- *         └──────────────────────────RESET_TO_FACTORY─────────────────────────────────┘
+ *   UNINITIALIZED ──personalise──▶ PERSONALIZED ──setup──▶ SETUP_DONE ──importSeed──▶ SEEDED
+ *         ▲                                                                               │
+ *         └──────────────────────────────reset-to-factory─────────────────────────────────┘
  * </pre>
  *
- * <p>States are stored in a single EEPROM byte. All transitions go through {@link
- * #transitionTo(byte)} and are guarded so that an invalid request raises {@link
- * Constants#SW_LIFECYCLE_INVALID} rather than silently corrupting the lifecycle.
+ * <p>Forward edges are linear: each state advances to the next ordinal via {@link
+ * #transitionTo(byte)}. The only retrograde edge is {@link #reset()}, called from the
+ * reset-to-factory flow, which collapses straight back to {@link #UNINITIALIZED}.
  *
- * <p>The {@code authentikey} keypair survives every transition, including reset — see {@code
- * docs/adr/0005-authentikey-lifecycle.md}.
+ * <p>The current state is held in a single persistent {@code byte} field. Writes go through a
+ * {@link JCSystem#beginTransaction() JavaCard transaction} so a torn power-off cannot leave the
+ * card in a half-transitioned state. The {@code authentikey} keypair, however, survives every
+ * transition — see {@code docs/adr/0005-authentikey-lifecycle.md}.
  */
 public final class LifecycleState {
 
@@ -37,34 +39,29 @@ public final class LifecycleState {
     /** Master seed is loaded; the card can derive keys and sign. */
     public static final byte SEEDED = (byte) 0x03;
 
-    /**
-     * Holds the current state in EEPROM. Using a single-element array is the idiomatic JavaCard
-     * pattern for a mutable instance field that is written through a transaction.
-     */
-    private final byte[] current;
+    /** Persistent EEPROM-backed current state. */
+    private byte current;
 
     /** Constructs a fresh FSM seated in {@link #UNINITIALIZED}. */
     public LifecycleState() {
-        this.current = new byte[1];
-        this.current[0] = UNINITIALIZED;
+        this.current = UNINITIALIZED;
     }
 
     /** Returns the current state byte. */
     public byte current() {
-        return current[0];
+        return current;
     }
 
     /**
-     * Transitions to {@code target}, throwing {@link Constants#SW_LIFECYCLE_INVALID} if the move is
-     * not permitted by the FSM. Writes are wrapped in a JavaCard transaction so a torn power-off
-     * leaves the previous state intact.
+     * Advances to {@code target}, which must equal {@code current + 1} and stay within the legal
+     * range. Throws {@link Constants#SW_LIFECYCLE_INVALID} if the move is not permitted.
      */
     public void transitionTo(byte target) {
-        if (!canTransition(current[0], target)) {
+        if (!isLegalForward(current, target)) {
             ISOException.throwIt(Constants.SW_LIFECYCLE_INVALID);
         }
         JCSystem.beginTransaction();
-        current[0] = target;
+        current = target;
         JCSystem.commitTransaction();
     }
 
@@ -73,41 +70,17 @@ public final class LifecycleState {
      * flow which is itself a privileged path; ordinary code paths must use {@link
      * #transitionTo(byte)}.
      */
-    public void resetToUninitialized() {
+    public void reset() {
         JCSystem.beginTransaction();
-        current[0] = UNINITIALIZED;
+        current = UNINITIALIZED;
         JCSystem.commitTransaction();
     }
 
     /**
-     * Throws {@link Constants#SW_LIFECYCLE_INVALID} unless the current state equals {@code
-     * required}.
+     * Pure decision function for {@link #transitionTo(byte)}. Package-private so unit tests can
+     * exercise it without engaging the JavaCard transaction machinery.
      */
-    public void require(byte required) {
-        if (current[0] != required) {
-            ISOException.throwIt(Constants.SW_LIFECYCLE_INVALID);
-        }
-    }
-
-    /**
-     * Throws {@link Constants#SW_LIFECYCLE_INVALID} unless the current state is at least {@code
-     * minimum}.
-     */
-    public void requireAtLeast(byte minimum) {
-        if (current[0] < minimum) {
-            ISOException.throwIt(Constants.SW_LIFECYCLE_INVALID);
-        }
-    }
-
-    /**
-     * Pure decision function for {@link #transitionTo(byte)}. Exposed package-private for direct
-     * exercise by unit tests without involving the JavaCard transaction machinery.
-     */
-    static boolean canTransition(byte from, byte to) {
-        // Linear forward progression: each state may only advance to the next ordinal.
-        if (to == (byte) (from + 1) && to >= UNINITIALIZED && to <= SEEDED) {
-            return true;
-        }
-        return false;
+    static boolean isLegalForward(byte from, byte to) {
+        return to == (byte) (from + 1) && from >= UNINITIALIZED && from < SEEDED && to <= SEEDED;
     }
 }

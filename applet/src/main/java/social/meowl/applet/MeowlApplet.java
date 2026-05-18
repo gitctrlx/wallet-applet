@@ -8,37 +8,35 @@ import javacard.framework.APDU;
 import javacard.framework.Applet;
 import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
-import javacard.framework.JCSystem;
-import javacard.framework.Util;
 
 /**
  * Entry point of the meowl multi-chain hardware-wallet applet.
  *
- * <p>This class is intentionally <em>thin</em>: it parses the outer APDU, dispatches to a
- * single-purpose handler, and turns any uncaught condition into an ISO 7816-4 status word. All
- * cryptographic and business-logic complexity lives in dedicated companion classes ({@link
- * Authentikey}, {@link ResetToFactory}, {@link LifecycleState}, {@link ApduTlv}, {@link Secp256k1})
- * that share this single JavaCard package (a CAP file maps one-to-one to a Java package).
+ * <p>This class is intentionally a thin router: it parses the outer APDU, dispatches to a
+ * single-purpose handler that writes its response directly into the JCRE-owned APDU buffer, and
+ * finally returns the response length so the router can issue {@link APDU#setOutgoingAndSend(short,
+ * short)}. Any uncaught condition flows back to the host as an ISO 7816-4 status word via {@link
+ * ISOException}.
  *
- * <p>Phase 1 scope: identity (authentikey), lifecycle FSM, multi-step reset-to-factory, and a
- * TLV-encoded capability profile via {@code GET_INFO}. Every other INS code returns {@code 6D00
- * (INS not supported)} as a deliberate placeholder for the work in Phases 2–5.
+ * <p>All cryptographic and business-logic complexity lives in dedicated companion classes in this
+ * same package — {@link Authentikey}, {@link ResetToFactory}, {@link LifecycleState}, {@link
+ * ApduTlv}, {@link Secp256k1} — because in JavaCard each Java package maps one-to-one to a CAP
+ * file.
+ *
+ * <p>Phase 1 surface: {@link Constants#INS_GET_INFO}, {@link Constants#INS_GET_AUTHENTIKEY}, {@link
+ * Constants#INS_RESET_TO_FACTORY}. Every other INS returns {@link Constants#SW_INS_NOT_SUPPORTED}
+ * as a deliberate placeholder for Phases 2-5.
  */
 public final class MeowlApplet extends Applet implements WipeTrigger {
-
-    /** TLV response buffer (transient, RAM-backed). 128 bytes is comfortably above current need. */
-    private static final short SCRATCH_LEN = (short) 128;
 
     private final LifecycleState state;
     private final Authentikey authentikey;
     private final ResetToFactory resetTrigger;
-    private final byte[] scratch;
 
     private MeowlApplet() {
         this.state = new LifecycleState();
         this.authentikey = new Authentikey();
         this.resetTrigger = new ResetToFactory();
-        this.scratch = JCSystem.makeTransientByteArray(SCRATCH_LEN, JCSystem.CLEAR_ON_DESELECT);
         register();
     }
 
@@ -50,7 +48,8 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     @Override
     public boolean select() {
         // Re-arm the reset trigger so a residual countdown from a previous session never bleeds
-        // into a fresh one.
+        // into a fresh one. (The transient counter is also cleared by CLEAR_ON_RESET, but be
+        // explicit on every select() for clarity.)
         resetTrigger.rearm();
         return true;
     }
@@ -69,96 +68,81 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
             ISOException.throwIt(Constants.SW_CLA_NOT_SUPPORTED);
         }
 
-        // The reset trigger semantics demand that the counter is rearmed on every non-reset INS.
-        // Performing this before dispatch keeps the rule local to the router.
+        // Rearming policy: any INS other than RESET_TO_FACTORY rearms the multi-step trigger.
+        // Placed before dispatch so the rule is local to the router and impossible to forget
+        // when a handler is added.
         if (ins != Constants.INS_RESET_TO_FACTORY) {
             resetTrigger.rearm();
         }
 
+        short responseLen;
         switch (ins) {
             case Constants.INS_GET_INFO:
-                handleGetInfo(apdu);
-                return;
+                responseLen = handleGetInfo(buffer);
+                break;
             case Constants.INS_GET_AUTHENTIKEY:
-                handleGetAuthentikey(apdu);
-                return;
+                responseLen = handleGetAuthentikey(buffer);
+                break;
             case Constants.INS_RESET_TO_FACTORY:
-                handleResetToFactory();
+                // Always throws — never returns. The status word encodes the countdown.
+                resetTrigger.recordInvocation(this);
                 return;
             default:
                 ISOException.throwIt(Constants.SW_INS_NOT_SUPPORTED);
+                return;
         }
+        apdu.setOutgoingAndSend((short) 0, responseLen);
     }
 
     /**
-     * Returns the current capability profile as a TLV blob. The buffer is intentionally short and
-     * fully self-describing so that a host can interrogate any meowl card without out-of-band
-     * version metadata.
+     * Writes the capability + identity profile as a TLV blob directly into the APDU buffer.
+     *
+     * <p>The blob is intentionally short and fully self-describing so that a host can interrogate
+     * any meowl card without out-of-band version metadata.
      */
-    private void handleGetInfo(APDU apdu) {
+    private short handleGetInfo(byte[] buffer) {
         short offset = 0;
         offset =
-                ApduTlv.putVersion(
-                        scratch,
-                        offset,
-                        Constants.TAG_PROTOCOL_VERSION,
-                        Constants.PROTOCOL_VERSION_MAJOR,
-                        Constants.PROTOCOL_VERSION_MINOR);
-        offset =
-                ApduTlv.putVersion(
-                        scratch,
-                        offset,
-                        Constants.TAG_APPLET_VERSION,
-                        Constants.APPLET_VERSION_MAJOR,
-                        Constants.APPLET_VERSION_MINOR);
-        offset = ApduTlv.putByte(scratch, offset, Constants.TAG_LIFECYCLE_STATE, state.current());
+                ApduTlv.putShort(
+                        buffer, offset, Constants.TAG_PROTOCOL_VERSION, Constants.PROTOCOL_VERSION);
         offset =
                 ApduTlv.putShort(
-                        scratch, offset, Constants.TAG_CAPABILITIES, supportedCapabilities());
+                        buffer, offset, Constants.TAG_APPLET_VERSION, Constants.APPLET_VERSION);
+        offset = ApduTlv.putByte(buffer, offset, Constants.TAG_LIFECYCLE_STATE, state.current());
+        offset =
+                ApduTlv.putShort(
+                        buffer, offset, Constants.TAG_CAPABILITIES, advertisedCapabilities());
 
-        // Compressed authentikey pubkey is part of the public identity profile.
-        short pkOffset = (short) (offset + 2);
-        short pkEnd = authentikey.writeCompressedPubkeyTo(scratch, pkOffset);
-        scratch[offset] = Constants.TAG_AUTHENTIKEY_PUBKEY;
-        scratch[(short) (offset + 1)] = (byte) (pkEnd - pkOffset);
-        offset = pkEnd;
-
-        emit(apdu, scratch, (short) 0, offset);
+        // Authentikey pubkey: streamed in-place using the reserve / finishReserved pair so the
+        // 33-byte value is written directly by Authentikey.writeCompressedPubkeyTo without an
+        // intermediate buffer.
+        short headerOffset = offset;
+        short valueStart = ApduTlv.reserve(buffer, headerOffset, Constants.TAG_AUTHENTIKEY_PUBKEY);
+        short valueEnd = authentikey.writeCompressedPubkeyTo(buffer, valueStart);
+        ApduTlv.finishReserved(buffer, headerOffset, (short) (valueEnd - valueStart));
+        return valueEnd;
     }
 
-    /** Returns the compressed authentikey public key (33 bytes). */
-    private void handleGetAuthentikey(APDU apdu) {
-        short end = authentikey.writeCompressedPubkeyTo(scratch, (short) 0);
-        emit(apdu, scratch, (short) 0, end);
-    }
-
-    /**
-     * Records one {@code RESET_TO_FACTORY} invocation. Delegates the destructive logic to {@link
-     * #wipe()} via the {@link WipeTrigger} interface.
-     */
-    private void handleResetToFactory() {
-        resetTrigger.recordInvocation(this);
+    /** Writes the raw 33-byte compressed authentikey public key into the APDU buffer. */
+    private short handleGetAuthentikey(byte[] buffer) {
+        return authentikey.writeCompressedPubkeyTo(buffer, (short) 0);
     }
 
     /**
-     * Phase 1 wipe behaviour: reset the lifecycle FSM only. Phases 2+ add seed, PIN/PUK and PKI
-     * material to this hook; the authentikey is preserved by design.
+     * Phase 1 wipe behaviour: collapse the lifecycle FSM to {@link LifecycleState#UNINITIALIZED}.
+     * Phases 2+ extend this hook to also clear the seed, PIN/PUK and PKI material. The authentikey
+     * is preserved by design ({@code docs/adr/0005-authentikey-lifecycle.md}).
      */
     @Override
     public void wipe() {
-        state.resetToUninitialized();
+        state.reset();
     }
 
-    private short supportedCapabilities() {
-        // Phase 1 advertises only what is actually implemented; subsequent phases OR in their bits
-        // when their handlers land.
+    /**
+     * Capability bitmask advertised through {@link Constants#TAG_CAPABILITIES}. Each phase ORs in
+     * its own bit as its handlers come online.
+     */
+    private static short advertisedCapabilities() {
         return Constants.CAP_RESET_TO_FACTORY;
-    }
-
-    private void emit(APDU apdu, byte[] src, short offset, short end) {
-        short len = (short) (end - offset);
-        byte[] outBuffer = apdu.getBuffer();
-        Util.arrayCopyNonAtomic(src, offset, outBuffer, (short) 0, len);
-        apdu.setOutgoingAndSend((short) 0, len);
     }
 }

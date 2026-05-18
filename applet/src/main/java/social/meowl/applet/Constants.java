@@ -7,61 +7,77 @@ package social.meowl.applet;
 /**
  * Wire-level and policy constants for the meowl-applet.
  *
- * <p>This class centralises every magic number that appears on the wire (CLA, INS, status words,
- * tags) or in policy thresholds (PIN length, retry counts, reset-counter target). Centralising them
- * here keeps the rest of the codebase free of literal hex constants and gives auditors a single
- * file to verify against the protocol specification under {@code docs/protocol.md}.
+ * <p>Every magic number that appears on the APDU wire or in a policy threshold is declared here so
+ * the rest of the codebase stays free of literal hex constants. Auditors verify this single file
+ * against {@code docs/protocol.md} and the ADRs under {@code docs/adr/}.
  *
- * <p>The class is intentionally not instantiable: it is a constant-only namespace. JavaCard 3.0.5
- * does not support {@code enum}, so byte / short literals are the idiomatic representation.
+ * <p>JavaCard 3.0.5 has no {@code enum}, so {@code byte} / {@code short} literals are the idiomatic
+ * representation.
  */
 public final class Constants {
 
-    private Constants() {
-        // non-instantiable namespace
-    }
+    private Constants() {}
 
-    /*  Protocol identification  */
+    /*  Versioning — packed as 16-bit big-endian (major << 8 | minor).  */
 
-    /** Wire-protocol major version reported by {@code GET_INFO}. */
-    public static final byte PROTOCOL_VERSION_MAJOR = (byte) 0x01;
+    /** Wire-protocol version reported by {@code GET_INFO}. */
+    public static final short PROTOCOL_VERSION = (short) 0x0100;
 
-    /** Wire-protocol minor version reported by {@code GET_INFO}. */
-    public static final byte PROTOCOL_VERSION_MINOR = (byte) 0x00;
-
-    /** Applet implementation major version reported by {@code GET_INFO}. */
-    public static final byte APPLET_VERSION_MAJOR = (byte) 0x00;
-
-    /** Applet implementation minor version reported by {@code GET_INFO}. */
-    public static final byte APPLET_VERSION_MINOR = (byte) 0x01;
+    /** Applet implementation version reported by {@code GET_INFO}. */
+    public static final short APPLET_VERSION = (short) 0x0001;
 
     /*  CLA  */
 
     /**
      * Class byte for every command the meowl applet processes. ISO 7816-4 private-class range; see
-     * <a href="../../../../../../docs/adr/0002-cla-and-greenfield-protocol.md">ADR-0002</a>.
+     * {@code docs/adr/0002-cla-and-greenfield-protocol.md}.
      */
     public static final byte CLA_MEOWL = (byte) 0x80;
 
-    /*  INS — see docs/protocol.md for the full table  */
+    /*  INS table — see docs/protocol.md.
+     *
+     *  Banding convention (so auditors can read intent from the opcode alone):
+     *    0x00–0x0F  lifecycle / identity / capability discovery
+     *    0x10–0x1F  secure channel
+     *    0x20–0x2F  PIN / PUK
+     *    0x30–0x3F  PKI personalisation
+     *    0x40–0x4F  seed management
+     *    0x50–0x5F  signing primitives
+     *    0x60–0x6F  derivation utilities
+     *    0xFF       reset to factory (per ISO 7816-4 reserved range hint)
+     *
+     *  Reserved INS for later phases are declared as comments rather than as constants so that
+     *  the implemented surface and the planned surface are visually distinct.
+     */
 
-    /** {@code GET_INFO} — returns a TLV-encoded capability + identity profile. */
+    /** {@code GET_INFO} — returns a TLV-encoded capability + identity profile. (Phase 1) */
     public static final byte INS_GET_INFO = (byte) 0x01;
 
-    /** {@code GET_AUTHENTIKEY} — returns the card's compressed authentikey public key. */
+    /** {@code GET_AUTHENTIKEY} — returns the compressed authentikey public key. (Phase 1) */
     public static final byte INS_GET_AUTHENTIKEY = (byte) 0x02;
 
-    /**
-     * {@code RESET_TO_FACTORY} — wipes the seed and credentials after N consecutive invocations.
-     */
+    /** {@code RESET_TO_FACTORY} — wipes secrets after N consecutive invocations. (Phase 1) */
     public static final byte INS_RESET_TO_FACTORY = (byte) 0x03;
 
-    /*  Status words — ISO 7816-4 plus applet-private extensions in the 0x6Fxx range  */
+    // Reserved for Phase 2: INS_INIT_SECURE_CHANNEL = 0x10, INS_OPEN_SECURE_CHANNEL = 0x11.
+    // Reserved for Phase 3: INS_SETUP = 0x20, INS_VERIFY_PIN = 0x21, INS_CHANGE_PIN = 0x22,
+    //                       INS_CHANGE_PUK = 0x23, INS_UNBLOCK_PIN = 0x24,
+    //                       INS_EXPORT_PKI_PUBKEY = 0x30, INS_SIGN_PKI_CSR = 0x31,
+    //                       INS_IMPORT_PKI_CERT = 0x32, INS_EXPORT_PKI_CERT = 0x33,
+    //                       INS_LOCK_PKI = 0x34.
+    // Reserved for Phase 4: INS_IMPORT_SEED = 0x40, INS_GENERATE_SEED = 0x41,
+    //                       INS_EXPORT_XPUB = 0x42.
+    // Reserved for Phase 5: INS_SIGN_ECDSA_K1 = 0x50, INS_SIGN_SCHNORR_K1 = 0x51,
+    //                       INS_SIGN_ED25519 = 0x52.
+
+    /*  Status words — ISO 7816-4 standard codes plus applet-private extensions in the 6Fxx
+     *  range. Keep the comments authoritative: every host SDK decodes against this table.
+     */
 
     /** ISO 7816-4 {@code 6700} — wrong length. */
     public static final short SW_WRONG_LENGTH = (short) 0x6700;
 
-    /** ISO 7816-4 {@code 6982} — security status not satisfied. */
+    /** ISO 7816-4 {@code 6982} — security status not satisfied (PIN / Secure Channel). */
     public static final short SW_SECURITY_STATUS_NOT_SATISFIED = (short) 0x6982;
 
     /** ISO 7816-4 {@code 6985} — condition of use not satisfied (e.g. wrong lifecycle state). */
@@ -82,48 +98,52 @@ public final class Constants {
     /**
      * Reset-to-factory countdown base. The card returns {@code SW_RESET_COUNTDOWN_BASE + n}, where
      * {@code n} is the number of additional {@code RESET_TO_FACTORY} invocations still required to
-     * trigger the wipe. The terminal value {@code n = 0} signals that the wipe has been performed.
+     * trigger the wipe. {@code n == 0} signals that the wipe has been performed.
      *
-     * <p>Range used: {@code 0x6FA0}–{@code 0x6FAF}. See <a
-     * href="../../../../../../docs/adr/0008-reset-to-factory-multi-step.md">ADR-0008</a>.
+     * <p>Range used: {@code 0x6FA0}–{@code 0x6FAF}. See {@code
+     * docs/adr/0008-reset-to-factory-multi-step.md}.
      */
     public static final short SW_RESET_COUNTDOWN_BASE = (short) 0x6FA0;
 
     /** Applet-private {@code 6FB0} — lifecycle state forbids this command. */
     public static final short SW_LIFECYCLE_INVALID = (short) 0x6FB0;
 
-    /** Applet-private {@code 6FE0} — required JavaCard feature not available on this card. */
+    /** Applet-private {@code 6FE0} — a required JavaCard feature is not available on this card. */
     public static final short SW_UNSUPPORTED_FEATURE = (short) 0x6FE0;
 
-    /*  Capability bitmask (advertised in GET_INFO, TAG_CAPABILITIES)  */
+    /*  Capability bitmask advertised in GET_INFO under TAG_CAPABILITIES.
+     *  16-bit so we can fit feature flags through several phases without re-encoding.
+     */
 
-    /** Bit 0 — card supports secp256k1 ECDSA signing. */
+    /** Bit 0 — card supports secp256k1 ECDSA signing. (Phase 5) */
     public static final short CAP_K1_ECDSA = (short) 0x0001;
 
-    /** Bit 1 — card supports BIP-340 Schnorr signing on secp256k1. */
+    /** Bit 1 — card supports BIP-340 Schnorr signing on secp256k1. (Phase 5) */
     public static final short CAP_K1_SCHNORR = (short) 0x0002;
 
-    /** Bit 2 — card supports Ed25519 EdDSA signing. */
+    /** Bit 2 — card supports Ed25519 EdDSA signing. (Phase 5) */
     public static final short CAP_ED25519 = (short) 0x0004;
 
-    /** Bit 3 — card exposes a Secure Channel using AES-GCM. */
+    /** Bit 3 — card exposes a Secure Channel using AES-GCM. (Phase 2) */
     public static final short CAP_SC_GCM = (short) 0x0008;
 
-    /** Bit 4 — card exposes a Secure Channel using AES-CBC + HMAC-SHA-256. */
+    /** Bit 4 — card exposes a Secure Channel using AES-CBC + HMAC-SHA-256. (Phase 2) */
     public static final short CAP_SC_CBC_HMAC = (short) 0x0010;
 
-    /** Bit 5 — card exposes the PKI personalisation flow. */
+    /** Bit 5 — card exposes the PKI personalisation flow. (Phase 3) */
     public static final short CAP_PKI = (short) 0x0020;
 
-    /** Bit 6 — card supports {@code RESET_TO_FACTORY}. */
+    /** Bit 6 — card supports {@code RESET_TO_FACTORY}. (Phase 1) */
     public static final short CAP_RESET_TO_FACTORY = (short) 0x0040;
 
-    /*  TLV tag values used inside GET_INFO  */
+    /*  TLV tags used inside GET_INFO. Single-byte tags in the application-private range so they
+     *  never collide with ISO 7816-4 reserved primitive tags.
+     */
 
-    /** Tag 0x01 — protocol version (2 bytes: major, minor). */
+    /** Tag 0x01 — protocol version (2 bytes, big-endian). */
     public static final byte TAG_PROTOCOL_VERSION = (byte) 0x01;
 
-    /** Tag 0x02 — applet implementation version (2 bytes: major, minor). */
+    /** Tag 0x02 — applet implementation version (2 bytes, big-endian). */
     public static final byte TAG_APPLET_VERSION = (byte) 0x02;
 
     /** Tag 0x03 — lifecycle state (1 byte). */
@@ -137,21 +157,20 @@ public final class Constants {
 
     /*  Sizes  */
 
-    /** Length of a secp256k1 scalar (private key, hash, x-coordinate). */
-    public static final short SECP256K1_SCALAR_LEN = (short) 32;
+    /** Length of an EC scalar (secp256k1 private key / hash / x-coordinate). */
+    public static final short EC_SCALAR_LEN = (short) 32;
 
-    /** Length of an uncompressed secp256k1 public key (`0x04 || x || y`). */
-    public static final short SECP256K1_UNCOMPRESSED_LEN = (short) 65;
+    /** Length of an uncompressed EC point ({@code 0x04 || x || y}). */
+    public static final short EC_POINT_UNCOMPRESSED_LEN = (short) 65;
 
-    /** Length of a compressed secp256k1 public key (`0x02|0x03 || x`). */
-    public static final short SECP256K1_COMPRESSED_LEN = (short) 33;
+    /** Length of a compressed EC point ({@code 0x02|0x03 || x}). */
+    public static final short EC_POINT_COMPRESSED_LEN = (short) 33;
 
     /*  Reset-to-factory policy  */
 
     /**
      * Number of consecutive un-interleaved {@code RESET_TO_FACTORY} invocations required to trigger
-     * the wipe. See <a
-     * href="../../../../../../docs/adr/0008-reset-to-factory-multi-step.md">ADR-0008</a>.
+     * the wipe. See {@code docs/adr/0008-reset-to-factory-multi-step.md}.
      */
     public static final byte RESET_REQUIRED_INVOCATIONS = (byte) 4;
 }

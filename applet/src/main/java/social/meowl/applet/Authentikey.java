@@ -16,11 +16,11 @@ import javacard.security.KeyPair;
  *
  * <p>Generated exactly once during applet {@code install} and immutable for the lifetime of the
  * applet instance. The private half never leaves the secure element. The public half is exposed via
- * {@code GET_AUTHENTIKEY} and used as the in-band card-identity anchor inside Secure Channel
- * handshakes (see {@code docs/adr/0004-secure-channel-cipher-suite.md}) and as the CSR subject
+ * {@code GET_AUTHENTIKEY} and is used as the in-band card-identity anchor for the Secure Channel
+ * handshake (see {@code docs/adr/0004-secure-channel-cipher-suite.md}) and as the CSR subject
  * during PKI personalisation.
  *
- * <p>{@code reset-to-factory} does <strong>not</strong> regenerate this keypair — see {@code
+ * <p>{@code reset-to-factory} does <em>not</em> regenerate this keypair — see {@code
  * docs/adr/0005-authentikey-lifecycle.md}.
  */
 public final class Authentikey {
@@ -41,51 +41,59 @@ public final class Authentikey {
                 (ECPublicKey)
                         KeyBuilder.buildKey(
                                 KeyBuilder.TYPE_EC_FP_PUBLIC, KeyBuilder.LENGTH_EC_FP_256, false);
-        Secp256k1.applyTo(this.privateKey);
-        Secp256k1.applyTo(this.publicKey);
+        Secp256k1.setCurveParameters(this.privateKey);
+        Secp256k1.setCurveParameters(this.publicKey);
 
-        KeyPair pair = new KeyPair(this.publicKey, this.privateKey);
-        pair.genKeyPair();
+        new KeyPair(this.publicKey, this.privateKey).genKeyPair();
     }
 
     /**
-     * Writes the compressed public key into {@code dst} starting at {@code offset}.
+     * Writes the SEC 1 §2.3.3 compressed public key into {@code dst} starting at {@code offset}.
      *
-     * @return the offset immediately after the 33-byte compressed point.
+     * <p>The compression rebuilds the parity byte from the {@code y} coordinate's least significant
+     * bit, then prepends it to the existing {@code x} coordinate already written by {@link
+     * ECPublicKey#getW(byte[], short)}. No intermediate buffer is required: the operation is
+     * performed in two distinct byte writes against {@code dst}.
+     *
+     * @return the offset immediately after the 33-byte compressed point
      */
     public short writeCompressedPubkeyTo(byte[] dst, short offset) {
-        // ECPublicKey.getW returns the uncompressed form `04 || x(32) || y(32)`. Compress to
-        // `02|03 || x(32)` per SEC 1 §2.3.3 by inspecting the parity of y's least-significant
-        // byte.
-        short scratch = offset;
-        short uncompressedLen = publicKey.getW(dst, scratch);
-        if (uncompressedLen != Constants.SECP256K1_UNCOMPRESSED_LEN
-                || dst[scratch] != (byte) 0x04) {
+        ensureCapacity(dst, offset, Constants.EC_POINT_UNCOMPRESSED_LEN);
+
+        short uncompressedLen = publicKey.getW(dst, offset);
+        if (uncompressedLen != Constants.EC_POINT_UNCOMPRESSED_LEN || dst[offset] != (byte) 0x04) {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
-        byte yLsb = dst[(short) (scratch + Constants.SECP256K1_UNCOMPRESSED_LEN - 1)];
-        byte parityPrefix = ((yLsb & 0x01) == 0) ? (byte) 0x02 : (byte) 0x03;
-        // Overwrite in place: tag prefix at scratch, copy x[0..32] to scratch+1.
-        dst[scratch] = parityPrefix;
-        // x was already at scratch+1..scratch+32 in the uncompressed layout; no copy needed.
-        return (short) (scratch + Constants.SECP256K1_COMPRESSED_LEN);
+
+        // After getW(): dst[offset .. offset+64] = 0x04 ‖ x(32) ‖ y(32).
+        // SEC 1 §2.3.3 compression keeps `x(32)` in place and replaces the 0x04 prefix with
+        // 0x02 (y even) or 0x03 (y odd). The y-coordinate suffix is overwritten by the caller's
+        // next write or simply ignored; we zero the tail to keep ephemeral residue out of the
+        // outgoing buffer.
+        byte yLsb = dst[(short) (offset + Constants.EC_POINT_UNCOMPRESSED_LEN - 1)];
+        dst[offset] = ((yLsb & 0x01) == 0) ? (byte) 0x02 : (byte) 0x03;
+        Util.arrayFillNonAtomic(
+                dst,
+                (short) (offset + Constants.EC_POINT_COMPRESSED_LEN),
+                (short) (Constants.EC_POINT_UNCOMPRESSED_LEN - Constants.EC_POINT_COMPRESSED_LEN),
+                (byte) 0);
+
+        return (short) (offset + Constants.EC_POINT_COMPRESSED_LEN);
     }
 
-    /** Package-private access for the Secure Channel handshake signer (added in Phase 2). */
+    /** Package-private access for the Secure Channel handshake signer (Phase 2). */
     ECPrivateKey privateKey() {
         return privateKey;
     }
 
-    /** Package-private access for the PKI CSR signer (added in Phase 3). */
+    /** Package-private access for the PKI CSR signer (Phase 3). */
     ECPublicKey publicKey() {
         return publicKey;
     }
 
-    /**
-     * Erases an externally-supplied buffer that briefly held the compressed pubkey, to keep the
-     * applet's transient memory budget tidy. The authentikey itself is not affected.
-     */
-    public static void wipe(byte[] buffer, short offset, short length) {
-        Util.arrayFillNonAtomic(buffer, offset, length, (byte) 0);
+    private static void ensureCapacity(byte[] dst, short offset, short needed) {
+        if (dst == null || offset < 0 || (short) (offset + needed) > (short) dst.length) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
     }
 }

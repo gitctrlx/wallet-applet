@@ -101,9 +101,9 @@ class MeowlAppletTest {
             Map<Integer, byte[]> tlv =
                     parseTlv(send(CLA, INS_GET_INFO, 0x00, 0x00, null).getData());
             byte[] version = tlv.get(Constants.TAG_PROTOCOL_VERSION & 0xFF);
-            assertArrayEquals(
-                    new byte[] {Constants.PROTOCOL_VERSION_MAJOR, Constants.PROTOCOL_VERSION_MINOR},
-                    version);
+            assertEquals(2, version.length);
+            short encoded = (short) (((version[0] & 0xFF) << 8) | (version[1] & 0xFF));
+            assertEquals(Constants.PROTOCOL_VERSION, encoded);
         }
 
         @Test
@@ -135,7 +135,7 @@ class MeowlAppletTest {
             Map<Integer, byte[]> tlv =
                     parseTlv(send(CLA, INS_GET_INFO, 0x00, 0x00, null).getData());
             byte[] pk = tlv.get(Constants.TAG_AUTHENTIKEY_PUBKEY & 0xFF);
-            assertEquals(Constants.SECP256K1_COMPRESSED_LEN, pk.length);
+            assertEquals(Constants.EC_POINT_COMPRESSED_LEN, pk.length);
             assertTrue(pk[0] == 0x02 || pk[0] == 0x03, "first byte must be 0x02 or 0x03");
         }
     }
