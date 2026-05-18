@@ -304,6 +304,9 @@ public final class SecureChannel {
         short macOffset = (short) (ctOffset + ctLen);
 
         // MAC = HMAC-SHA-256(K_mac, outer_header ‖ IV ‖ ciphertext)[0..16].
+        // Verification uses ConstantTime.equals — Util.arrayCompare is documented as a left-to-
+        // right ternary compare and is NOT guaranteed constant-time, which would leak the
+        // position of the first mismatch through timing in a MAC verification path.
         hmac.init(macKey, Signature.MODE_SIGN);
         hmac.update(apduBuffer, (short) 0, (short) 5);
         hmac.sign(
@@ -312,13 +315,14 @@ public final class SecureChannel {
                 (short) (Constants.SC_BLOCK_LEN + ctLen),
                 macScratch,
                 (short) 0);
-        if (Util.arrayCompare(macScratch, (short) 0, apduBuffer, macOffset, Constants.SC_MAC_LEN)
-                != 0) {
+        if (!ConstantTime.equals(
+                macScratch, (short) 0, apduBuffer, macOffset, Constants.SC_MAC_LEN)) {
             reset();
             ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
         }
 
-        // Replay defense.
+        // Replay defense: the inbound IV must strictly exceed the last accepted one. Iterating
+        // the comparison left-to-right is fine here because the IV is public.
         if (compare16(apduBuffer, ivOffset, lastInboundIv, (short) 0) <= 0) {
             reset();
             ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);

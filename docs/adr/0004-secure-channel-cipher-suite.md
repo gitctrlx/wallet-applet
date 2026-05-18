@@ -36,7 +36,11 @@ HMAC-SHA1 and AES-128 are not broken, but they are below the contemporary 128-bi
   - **Outbound MAC** = `HMAC(K_mac, 0xFF ‖ IV ‖ ciphertext)[0..16]` (`0xFF` is a fixed direction-tag).
 - **Replay defense:** the card stores the last accepted inbound IV; each new inbound IV must strictly exceed it.
 
-We deliberately ship a single cipher suite, not the dual GCM/CBC scheme the original plan suggested. The rationale: AES-256-CBC + HMAC-SHA-256 reaches the same 256-bit security level as AES-256-GCM, is supported by every JavaCard 3.0.4+ silicon we target, and removes the complexity of capability-driven cipher-suite negotiation between host and card. The `CAP_SC_CBC_HMAC` capability bit is advertised in `GET_INFO`; `CAP_SC_GCM` is reserved for a future revision should silicon support warrant it.
+We deliberately ship a single cipher suite, not the dual GCM/CBC scheme the original plan suggested. Rationale, with hard data:
+
+- **Hardware coverage.** [JCAlgTest](https://jcalgtest.org/) measured algorithm support across 112 real cards: `AEADCipher.ALG_AES_GCM` is implemented on only **7 / 112 = 6.3 %**. Even within the modern JCOP family, the JCOP4 SECID-grade card (J3R180) — a likely production target for meowl — does **not** expose AES-GCM. By contrast `Cipher.ALG_AES_BLOCK_128_CBC_NOPAD` is on 51 / 112 (45.5 %) and `Signature.ALG_HMAC_SHA_256` on 61 / 112 (54.5 %), with the modern silicon sample skewing heavily toward "supported". CBC + HMAC-SHA-256 is the choice that maximises silicon portability without sacrificing security level.
+- **Cryptographic equivalence.** AES-256-CBC with a 256-bit HMAC-SHA-256 MAC reaches the same 256-bit symmetric security level as AES-256-GCM, with no known weakness in the construction when MAC verification is constant-time and the plaintext does not have to be parsed before MAC verification (both true here).
+- **Operational simplicity.** A single suite removes the capability-driven cipher-suite negotiation that the original ADR proposed. The `CAP_SC_CBC_HMAC` capability bit is unconditionally set in `GET_INFO`; the unallocated `CAP_SC_GCM` bit remains reserved for a future revision should GCM become ubiquitous on production-grade silicon.
 
 ## Consequences
 
@@ -49,7 +53,7 @@ We deliberately ship a single cipher suite, not the dual GCM/CBC scheme the orig
 ### Negative
 
 - **Slightly heavier handshake** than Satochip's (extra 32-byte HKDF expansion plus a card-signed ephemeral pubkey), at the cost of dozens of milliseconds per session establishment — acceptable.
-- **PKCS#5 padding** is conceptually weaker than an AEAD construction (an attacker can in principle mount a padding-oracle attack if MAC verification is constant-time-incorrect). We mitigate by always MAC-then-decrypt: the cipher is only invoked once the MAC has verified, and `Util.arrayCompare` is constant-time per the JC spec.
+- **PKCS#5 padding** is conceptually weaker than an AEAD construction (an attacker can in principle mount a padding-oracle attack if MAC verification leaks the first-difference position). We mitigate on two fronts: (a) **always MAC-then-decrypt** — the cipher is only invoked once the MAC has verified, and (b) **MAC verification uses our own `ConstantTime.equals`** rather than `Util.arrayCompare`. The JavaCard 3.x specification only guarantees that `Util.arrayCompare` performs the comparison "from left to right" and returns a ternary result; it does **not** promise constant time. A short-circuit on first mismatch would leak the position of the first differing byte. Our `ConstantTime.equals` XOR-accumulates every byte into a single difference register and decides equality at the end, removing the timing channel.
 
 ### Neutral
 
