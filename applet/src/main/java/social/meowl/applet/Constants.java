@@ -95,8 +95,20 @@ public final class Constants {
     /** {@code LOCK_PKI} — finalise PKI personalisation; transitions to PERSONALIZED. (Phase 3) */
     public static final byte INS_LOCK_PKI = (byte) 0x34;
 
-    // Reserved for Phase 4: INS_IMPORT_SEED = 0x40, INS_GENERATE_SEED = 0x41,
-    //                       INS_EXPORT_XPUB = 0x42.
+    /**
+     * {@code IMPORT_SEED} — install a user-supplied master seed and advance to SEEDED. (Phase 4)
+     */
+    public static final byte INS_IMPORT_SEED = (byte) 0x40;
+
+    /** {@code GENERATE_SEED} — card-internal CSPRNG seed; raw seed returned once. (Phase 4) */
+    public static final byte INS_GENERATE_SEED = (byte) 0x41;
+
+    /**
+     * {@code EXPORT_XPUB} — derive a BIP-32 / SLIP-10 child and return its public material. (Phase
+     * 4)
+     */
+    public static final byte INS_EXPORT_XPUB = (byte) 0x42;
+
     // Reserved for Phase 5: INS_SIGN_ECDSA_K1 = 0x50, INS_SIGN_SCHNORR_K1 = 0x51,
     //                       INS_SIGN_ED25519 = 0x52.
 
@@ -185,6 +197,12 @@ public final class Constants {
     /** Bit 6 — card supports {@code RESET_TO_FACTORY}. (Phase 1) */
     public static final short CAP_RESET_TO_FACTORY = (short) 0x0040;
 
+    /** Bit 7 — card supports BIP-32 secp256k1 derivation. (Phase 4) */
+    public static final short CAP_BIP32 = (short) 0x0080;
+
+    /** Bit 8 — card supports SLIP-10 Ed25519 derivation. (Phase 4) */
+    public static final short CAP_SLIP10 = (short) 0x0100;
+
     /*  TLV tags used inside GET_INFO. Single-byte tags in the application-private range so they
      *  never collide with ISO 7816-4 reserved primitive tags.
      */
@@ -245,6 +263,29 @@ public final class Constants {
 
     /** Default PUK try-counter limit. */
     public static final byte PUK_RETRY_LIMIT = (byte) 5;
+
+    /*  HD derivation (Phase 4)  */
+
+    /** Minimum acceptable BIP-32 seed length in bytes (16 bytes = 128 bits). */
+    public static final short SEED_MIN_LEN = (short) 16;
+
+    /** Maximum acceptable BIP-32 seed length in bytes (64 bytes = 512 bits, BIP-39 standard). */
+    public static final short SEED_MAX_LEN = (short) 64;
+
+    /** Fixed length of card-generated seeds (64 bytes / 512 bits, BIP-39 PBKDF2 output). */
+    public static final short SEED_GENERATED_LEN = (short) 64;
+
+    /** BIP-32 chain code length (always 32 bytes). */
+    public static final short CHAIN_CODE_LEN = (short) 32;
+
+    /** Maximum HD path depth accepted by {@code EXPORT_XPUB}. */
+    public static final short HD_MAX_DEPTH = (short) 8;
+
+    /** Curve identifier (P1 of {@code EXPORT_XPUB}) selecting secp256k1 BIP-32. */
+    public static final byte CURVE_SECP256K1 = (byte) 0x00;
+
+    /** Curve identifier selecting Ed25519 SLIP-10. */
+    public static final byte CURVE_ED25519 = (byte) 0x01;
 
     /*  PKI personalisation (Phase 3)  */
 

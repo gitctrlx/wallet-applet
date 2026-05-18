@@ -16,6 +16,7 @@ The format follows Michael Nygard's lightweight ADR template (Context → Decisi
 | [ADR-0006](./0006-pin-policy.md) | Single PIN + single PUK with bounded retries | Accepted |
 | [ADR-0007](./0007-card-only-signs-hashes.md) | Card signs hashes only — transaction parsing stays off-card | Accepted |
 | [ADR-0008](./0008-reset-to-factory-multi-step.md) | Reset-to-factory requires N consecutive un-interleaved INS to trigger | Accepted |
+| [ADR-0009](./0009-hd-derivation.md) | HD derivation — BIP-32 secp256k1 + SLIP-10 Ed25519 | Accepted |
 
 ## Conventions
 

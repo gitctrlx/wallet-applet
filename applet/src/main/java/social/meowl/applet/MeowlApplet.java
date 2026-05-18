@@ -46,6 +46,9 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     private final SecureChannel secureChannel;
     private final PinManager pinManager;
     private final PkiManager pkiManager;
+    private final MasterSeed masterSeed;
+    private final Bip32 bip32;
+    private final Slip10 slip10;
     private final byte[] innerScratch;
 
     private MeowlApplet() {
@@ -55,6 +58,9 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         this.secureChannel = new SecureChannel(this.authentikey);
         this.pinManager = new PinManager();
         this.pkiManager = new PkiManager(this.authentikey);
+        this.masterSeed = new MasterSeed();
+        this.bip32 = new Bip32(this.masterSeed);
+        this.slip10 = new Slip10(this.masterSeed);
         this.innerScratch =
                 JCSystem.makeTransientByteArray(INNER_SCRATCH_LEN, JCSystem.CLEAR_ON_DESELECT);
         register();
@@ -190,6 +196,12 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
                 return handleExportPkiCert(buffer, dataOff, dataLen);
             case Constants.INS_LOCK_PKI:
                 return handleLockPki();
+            case Constants.INS_IMPORT_SEED:
+                return handleImportSeed(buffer, dataOff, dataLen);
+            case Constants.INS_GENERATE_SEED:
+                return handleGenerateSeed(buffer, dataLen);
+            case Constants.INS_EXPORT_XPUB:
+                return handleExportXpub(buffer, dataOff, dataLen);
             default:
                 ISOException.throwIt(Constants.SW_INS_NOT_SUPPORTED);
                 return 0;
@@ -408,6 +420,84 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         return 0;
     }
 
+    /*  Phase 4 inner handlers — HD wallet derivation.  */
+
+    /**
+     * {@code IMPORT_SEED} inner data layout: {@code [seedLen(1), seed(seedLen)]}. Requires the
+     * lifecycle to be {@code SETUP_DONE} and the PIN to be currently verified.
+     */
+    private short handleImportSeed(byte[] buffer, short dataOff, short dataLen) {
+        state.require(LifecycleState.SETUP_DONE);
+        if (!pinManager.isPinVerified()) {
+            ISOException.throwIt(Constants.SW_SECURITY_STATUS_NOT_SATISFIED);
+        }
+        if (dataLen < 1) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        short seedLen = (short) (buffer[dataOff] & 0xFF);
+        if ((short) (1 + seedLen) != dataLen) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        JCSystem.beginTransaction();
+        masterSeed.importSeed(buffer, (short) (dataOff + 1), seedLen);
+        state.transitionToInTx(LifecycleState.SEEDED);
+        JCSystem.commitTransaction();
+        // Overwrite the seed bytes in the APDU buffer before the response goes out.
+        Util.arrayFillNonAtomic(buffer, (short) (dataOff + 1), seedLen, (byte) 0);
+        return 0;
+    }
+
+    /**
+     * {@code GENERATE_SEED} — card-internal CSPRNG seed; the raw seed is returned <em>once</em> as
+     * the response so the host can render it (e.g. as a BIP-39 mnemonic) for backup. Subsequent
+     * derivation only ever exposes the chain code and the public key.
+     */
+    private short handleGenerateSeed(byte[] buffer, short dataLen) {
+        state.require(LifecycleState.SETUP_DONE);
+        if (!pinManager.isPinVerified()) {
+            ISOException.throwIt(Constants.SW_SECURITY_STATUS_NOT_SATISFIED);
+        }
+        if (dataLen != 0) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        // Generate into ISO7816.OFFSET_CDATA so the response is in place when wrap() runs.
+        JCSystem.beginTransaction();
+        short writtenLen = masterSeed.generateSeed(buffer, ISO7816.OFFSET_CDATA);
+        state.transitionToInTx(LifecycleState.SEEDED);
+        JCSystem.commitTransaction();
+        return writtenLen;
+    }
+
+    /**
+     * {@code EXPORT_XPUB} inner data layout: {@code [curve(1), depth(1), path(4*depth)]}. Returns
+     * {@code [compressed_pubkey(33), chain_code(32)]} for secp256k1 and {@code chain_code(32)} only
+     * for Ed25519 (public key requires Phase 5 Ed25519 implementation).
+     */
+    private short handleExportXpub(byte[] buffer, short dataOff, short dataLen) {
+        state.require(LifecycleState.SEEDED);
+        if (!pinManager.isPinVerified()) {
+            ISOException.throwIt(Constants.SW_SECURITY_STATUS_NOT_SATISFIED);
+        }
+        if (dataLen < 2) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        byte curve = buffer[dataOff];
+        short depth = (short) (buffer[(short) (dataOff + 1)] & 0xFF);
+        if (depth > Constants.HD_MAX_DEPTH || (short) (2 + depth * Bip32.INDEX_LEN) != dataLen) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        short pathOff = (short) (dataOff + 2);
+        switch (curve) {
+            case Constants.CURVE_SECP256K1:
+                return bip32.derivePath(buffer, pathOff, depth, buffer, ISO7816.OFFSET_CDATA);
+            case Constants.CURVE_ED25519:
+                return slip10.deriveChainCode(buffer, pathOff, depth, buffer, ISO7816.OFFSET_CDATA);
+            default:
+                ISOException.throwIt(Constants.SW_INCORRECT_P1P2);
+                return 0;
+        }
+    }
+
     /**
      * Reset-to-factory wipe. Per {@code docs/adr/0005-authentikey-lifecycle.md} the authentikey
      * itself is preserved. Everything else — Secure Channel session, PIN/PUK, PKI cert, lifecycle
@@ -418,11 +508,16 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         secureChannel.reset();
         pinManager.wipe();
         pkiManager.wipe();
+        masterSeed.wipe();
         state.reset();
     }
 
     private static short advertisedCapabilities() {
         return (short)
-                (Constants.CAP_RESET_TO_FACTORY | Constants.CAP_SC_CBC_HMAC | Constants.CAP_PKI);
+                (Constants.CAP_RESET_TO_FACTORY
+                        | Constants.CAP_SC_CBC_HMAC
+                        | Constants.CAP_PKI
+                        | Constants.CAP_BIP32
+                        | Constants.CAP_SLIP10);
     }
 }

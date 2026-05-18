@@ -41,10 +41,20 @@ public final class Secp256k1 {
     private static final short OFFSET_A = (short) 32;
     private static final short OFFSET_B = (short) 64;
     private static final short OFFSET_N = (short) 96;
-    private static final short OFFSET_G = (short) 128;
 
-    /** Packed curve parameters: {@code p ‖ a ‖ b ‖ n ‖ G(uncompressed)}. */
-    private static final byte[] PARAMS = {
+    /**
+     * Offset of the uncompressed base point {@code G} inside {@link #PARAMS}. Package-private so
+     * the BIP-32 derivation in {@code Bip32.java} can hand the base point directly to {@code
+     * KeyAgreement} without duplicating it as a separate constant.
+     */
+    static final short OFFSET_G = (short) 128;
+
+    /**
+     * Packed curve parameters: {@code p ‖ a ‖ b ‖ n ‖ G(uncompressed)}. Package-private so
+     * companion classes (e.g. {@code Bip32}) can slice the base point out for EC scalar
+     * multiplication without copying it into a fresh array.
+     */
+    static final byte[] PARAMS = {
         // p — 32 bytes, offset 0
         (byte) 0xFF,
         (byte) 0xFF,
