@@ -28,13 +28,16 @@ import javacard.security.Signature;
  * Constants#SW_INCORRECT_P1P2}; this is the safe interpretation of the spec's "non-hardened
  * derivation is not defined" rule.
  *
- * <p>Phase 4 returns only the leaf <strong>chain code</strong> from {@link #deriveChainCode}: the
- * public-key computation requires Ed25519 scalar multiplication, which JC 3.0.5 does not provide
- * natively and which we implement as part of the Ed25519 signing primitive in Phase 5. The Phase 4
- * {@code EXPORT_XPUB} APDU therefore intentionally omits the pubkey from its Ed25519 response
- * rather than returning a zero-padded placeholder; the chain code alone is enough for hosts that
- * just need to prepare the next derivation level (the root node's pubkey is recoverable by the
- * Phase 5 signing path once it lands).
+ * <p>Two derivation entry points sit on top of the shared SLIP-10 walk:
+ *
+ * <ul>
+ *   <li>{@link #deriveChainCode} returns just the leaf chain code, used by Phase 4
+ *       {@code EXPORT_XPUB} when the host only needs to prepare the next derivation level on its
+ *       own.
+ *   <li>{@link #deriveLeafKey} returns the leaf 32-byte private key (the RFC 8032 secret-key
+ *       seed for the leaf node), used by Phase 5C {@code SIGN_ED25519} and by the Ed25519 branch
+ *       of {@code EXPORT_XPUB} for on-card public-key derivation.
+ * </ul>
  */
 public final class Slip10 {
 
@@ -81,14 +84,34 @@ public final class Slip10 {
      */
     public short deriveChainCode(
             byte[] pathBuf, short pathOff, short depth, byte[] outBuf, short outOff) {
+        walkPath(pathBuf, pathOff, depth);
+        Util.arrayCopyNonAtomic(state, STATE_C_OFF, outBuf, outOff, Constants.CHAIN_CODE_LEN);
+        wipeWalkState();
+        return Constants.CHAIN_CODE_LEN;
+    }
+
+    /**
+     * Derives the SLIP-10 Ed25519 leaf 32-byte private key at the given hardened-only path and
+     * writes it into {@code outBuf} at {@code outOff}. Returns the number of bytes written
+     * (always 32). The chain code at the leaf node is overwritten by the wipe in
+     * {@link #wipeWalkState} after the copy and is therefore unavailable to the caller via this
+     * entry point — invoke {@link #deriveChainCode} on the same path if both halves are needed.
+     */
+    public short deriveLeafKey(
+            byte[] pathBuf, short pathOff, short depth, byte[] outBuf, short outOff) {
+        walkPath(pathBuf, pathOff, depth);
+        Util.arrayCopyNonAtomic(state, STATE_K_OFF, outBuf, outOff, (short) 32);
+        wipeWalkState();
+        return (short) 32;
+    }
+
+    private void walkPath(byte[] pathBuf, short pathOff, short depth) {
         if (depth < 0 || depth > Constants.HD_MAX_DEPTH) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        // Seed from master.
         byte[] master = masterSeed.slip10Master();
         Util.arrayCopyNonAtomic(master, (short) 0, state, STATE_K_OFF, (short) 32);
         Util.arrayCopyNonAtomic(master, (short) 32, state, STATE_C_OFF, Constants.CHAIN_CODE_LEN);
-
         for (short level = 0; level < depth; level++) {
             short idxOff = (short) (pathOff + level * Bip32.INDEX_LEN);
             if ((pathBuf[idxOff] & HARDENED_MASK) == 0) {
@@ -96,11 +119,12 @@ public final class Slip10 {
             }
             ckdPriv(pathBuf, idxOff);
         }
+    }
 
-        Util.arrayCopyNonAtomic(state, STATE_C_OFF, outBuf, outOff, Constants.CHAIN_CODE_LEN);
+    private void wipeWalkState() {
         Util.arrayFillNonAtomic(state, STATE_K_OFF, (short) 32, (byte) 0);
+        Util.arrayFillNonAtomic(state, STATE_C_OFF, Constants.CHAIN_CODE_LEN, (byte) 0);
         Util.arrayFillNonAtomic(state, STATE_I_OFF, HASH_LEN, (byte) 0);
-        return Constants.CHAIN_CODE_LEN;
     }
 
     private void ckdPriv(byte[] pathBuf, short idxOff) {

@@ -126,7 +126,16 @@ public final class Constants {
      */
     public static final byte INS_SIGN_SCHNORR_K1 = (byte) 0x51;
 
-    // Reserved for the rest of Phase 5: INS_SIGN_ED25519 = 0x52.
+    /**
+     * {@code SIGN_ED25519} — sign an arbitrary-length host-supplied message with the Ed25519
+     * private key derived at the given SLIP-10 path. Inner data: {@code [depth(1), path(4*depth),
+     * msg(...)]}; the message is whatever bytes the host wants to authenticate (per RFC 8032 the
+     * card hashes them itself; ADR-0007 still applies in practice because every chain meowl
+     * supports already does host-side preimage construction). Returns {@code [R(32), S(32)]} per
+     * RFC 8032 §5.1.6 — {@code R} compressed Edwards form, {@code S} little-endian scalar. See
+     * {@code docs/adr/0010-signing-api-contract.md}. (Phase 5)
+     */
+    public static final byte INS_SIGN_ED25519 = (byte) 0x52;
 
     /*  Status words — ISO 7816-4 standard codes plus applet-private extensions in the 6Fxx
      *  range. Keep the comments authoritative: every host SDK decodes against this table.

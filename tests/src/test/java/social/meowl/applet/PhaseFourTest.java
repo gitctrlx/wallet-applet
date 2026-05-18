@@ -226,22 +226,29 @@ class PhaseFourTest {
         }
 
         @Test
-        @DisplayName("SLIP-10 Vector 1 / m — master chain code matches")
+        @DisplayName("SLIP-10 Vector 1 / m — master pubkey + chain code match")
         void masterChainCode() throws Exception {
             byte[] resp = exportXpub(Constants.CURVE_ED25519, new int[] {});
-            byte[] expected =
-                    hex("90046a93de5380a72b5e45010748567d5ea02bbf6522f979e05c0d8d8ca9fffb");
-            assertEquals(Constants.CHAIN_CODE_LEN, resp.length);
-            assertArrayEquals(expected, resp);
+            assertEquals(Ed25519.PUBLIC_KEY_LEN + Constants.CHAIN_CODE_LEN, resp.length);
+            assertArrayEquals(
+                    hex("a4b2856bfec510abab89753fac1ac0e1112364e7d250545963f135f2a33188ed"),
+                    Arrays.copyOfRange(resp, 0, 32));
+            assertArrayEquals(
+                    hex("90046a93de5380a72b5e45010748567d5ea02bbf6522f979e05c0d8d8ca9fffb"),
+                    Arrays.copyOfRange(resp, 32, 64));
         }
 
         @Test
-        @DisplayName("SLIP-10 Vector 1 / m/0H — hardened child chain code matches")
+        @DisplayName("SLIP-10 Vector 1 / m/0H — hardened child pubkey + chain code match")
         void zeroHardenedChainCode() throws Exception {
             byte[] resp = exportXpub(Constants.CURVE_ED25519, new int[] {0x80000000});
-            byte[] expected =
-                    hex("8b59aa11380b624e81507a27fedda59fea6d0b779a778918a2fd3590e16e9c69");
-            assertArrayEquals(expected, resp);
+            assertEquals(Ed25519.PUBLIC_KEY_LEN + Constants.CHAIN_CODE_LEN, resp.length);
+            assertArrayEquals(
+                    hex("8c8a13df77a28f3445213a0f432fde644acaa215fc72dcdf300d5efaa85d350c"),
+                    Arrays.copyOfRange(resp, 0, 32));
+            assertArrayEquals(
+                    hex("8b59aa11380b624e81507a27fedda59fea6d0b779a778918a2fd3590e16e9c69"),
+                    Arrays.copyOfRange(resp, 32, 64));
         }
 
         @Test
@@ -349,19 +356,27 @@ class PhaseFourTest {
         }
 
         @Test
-        @DisplayName("SLIP-10 Vector 2 / m — master chain code matches")
+        @DisplayName("SLIP-10 Vector 2 / m — master pubkey + chain code match")
         void masterChainCode() {
             byte[] resp = exportXpub(Constants.CURVE_ED25519, new int[] {});
             assertArrayEquals(
-                    hex("ef70a74db9c3a5af931b5fe73ed8e1a53464133654fd55e7a66f8570b8e33c3b"), resp);
+                    hex("8fe9693f8fa62a4305a140b9764c5ee01e455963744fe18204b4fb948249308a"),
+                    Arrays.copyOfRange(resp, 0, 32));
+            assertArrayEquals(
+                    hex("ef70a74db9c3a5af931b5fe73ed8e1a53464133654fd55e7a66f8570b8e33c3b"),
+                    Arrays.copyOfRange(resp, 32, 64));
         }
 
         @Test
-        @DisplayName("SLIP-10 Vector 2 / m/0H — first hardened chain code matches")
+        @DisplayName("SLIP-10 Vector 2 / m/0H — first hardened pubkey + chain code match")
         void zeroHardenedChainCode() {
             byte[] resp = exportXpub(Constants.CURVE_ED25519, new int[] {0x80000000});
             assertArrayEquals(
-                    hex("0b78a3226f915c082bf118f83618a618ab6dec793752624cbeb622acb562862d"), resp);
+                    hex("86fab68dcb57aa196c77c5f264f215a112c22a912c10d123b0d03c3c28ef1037"),
+                    Arrays.copyOfRange(resp, 0, 32));
+            assertArrayEquals(
+                    hex("0b78a3226f915c082bf118f83618a618ab6dec793752624cbeb622acb562862d"),
+                    Arrays.copyOfRange(resp, 32, 64));
         }
     }
 
@@ -400,7 +415,11 @@ class PhaseFourTest {
                     hex("873dff81c02f525623fd1fe5167eac3a55a049de3d314bb42ee227ffed37d508"),
                     Arrays.copyOfRange(k1, 33, 65));
             assertArrayEquals(
-                    hex("90046a93de5380a72b5e45010748567d5ea02bbf6522f979e05c0d8d8ca9fffb"), ed);
+                    hex("a4b2856bfec510abab89753fac1ac0e1112364e7d250545963f135f2a33188ed"),
+                    Arrays.copyOfRange(ed, 0, 32));
+            assertArrayEquals(
+                    hex("90046a93de5380a72b5e45010748567d5ea02bbf6522f979e05c0d8d8ca9fffb"),
+                    Arrays.copyOfRange(ed, 32, 64));
         }
 
         @Test

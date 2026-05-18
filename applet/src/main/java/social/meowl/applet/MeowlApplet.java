@@ -51,6 +51,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     private final Slip10 slip10;
     private final EcdsaK1 ecdsaK1;
     private final Schnorr schnorr;
+    private final Ed25519 ed25519;
     private final byte[] innerScratch;
 
     private MeowlApplet() {
@@ -65,6 +66,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         this.slip10 = new Slip10(this.masterSeed);
         this.ecdsaK1 = new EcdsaK1(this.bip32);
         this.schnorr = new Schnorr(this.bip32);
+        this.ed25519 = new Ed25519();
         this.innerScratch =
                 JCSystem.makeTransientByteArray(INNER_SCRATCH_LEN, JCSystem.CLEAR_ON_DESELECT);
         register();
@@ -210,6 +212,8 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
                 return handleSignEcdsaK1(buffer, dataOff, dataLen);
             case Constants.INS_SIGN_SCHNORR_K1:
                 return handleSignSchnorrK1(buffer, dataOff, dataLen);
+            case Constants.INS_SIGN_ED25519:
+                return handleSignEd25519(buffer, dataOff, dataLen);
             default:
                 ISOException.throwIt(Constants.SW_INS_NOT_SUPPORTED);
                 return 0;
@@ -478,8 +482,9 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
 
     /**
      * {@code EXPORT_XPUB} inner data layout: {@code [curve(1), depth(1), path(4*depth)]}. Returns
-     * {@code [compressed_pubkey(33), chain_code(32)]} for secp256k1 and {@code chain_code(32)} only
-     * for Ed25519 (public key requires Phase 5 Ed25519 implementation).
+     * {@code [compressed_pubkey(33), chain_code(32)]} for secp256k1 and
+     * {@code [compressed_pubkey(32), chain_code(32)]} for Ed25519 (RFC 8032 §5.1.2 LE encoded
+     * pubkey, derived on-card via {@link Ed25519#publicKey} from the SLIP-10 leaf private key).
      */
     private short handleExportXpub(byte[] buffer, short dataOff, short dataLen) {
         state.require(LifecycleState.SEEDED);
@@ -499,7 +504,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
             case Constants.CURVE_SECP256K1:
                 return bip32.derivePath(buffer, pathOff, depth, buffer, ISO7816.OFFSET_CDATA);
             case Constants.CURVE_ED25519:
-                return slip10.deriveChainCode(buffer, pathOff, depth, buffer, ISO7816.OFFSET_CDATA);
+                return handleExportXpubEd25519(buffer, pathOff, depth);
             default:
                 ISOException.throwIt(Constants.SW_INCORRECT_P1P2);
                 return 0;
@@ -582,6 +587,84 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     }
 
     /**
+     * {@code SIGN_ED25519} inner data layout: {@code [depth(1), path(4*depth), message(*)]}. The
+     * message is the raw payload the host wants signed (not a pre-hash) because RFC 8032 hashes
+     * the message internally. Returns the 64-byte {@code R ‖ S} signature in RFC 8032 §5.1.2 LE
+     * compressed form, computed entirely in software via {@link Ed25519#sign}. The signature is
+     * deterministic by construction (the nonce {@code r} is derived from {@code SHA-512(prefix ‖
+     * M)}); no on-card RNG is consumed. See {@code docs/adr/0010-signing-api-contract.md}.
+     */
+    private short handleSignEd25519(byte[] buffer, short dataOff, short dataLen) {
+        state.require(LifecycleState.SEEDED);
+        if (!pinManager.isPinVerified()) {
+            ISOException.throwIt(Constants.SW_SECURITY_STATUS_NOT_SATISFIED);
+        }
+        if (dataLen < (short) 1) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        short depth = (short) (buffer[dataOff] & 0xFF);
+        if (depth > Constants.HD_MAX_DEPTH) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        short pathLen = (short) (depth * Bip32.INDEX_LEN);
+        if ((short) (1 + pathLen) > dataLen) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        short pathOff = (short) (dataOff + 1);
+        short msgOff = (short) (pathOff + pathLen);
+        short msgLen = (short) (dataLen - 1 - pathLen);
+        // Stage the path inside innerScratch so subsequent buffer writes (the 64-byte signature
+        // anchored at OFFSET_CDATA) cannot trample the SLIP-10 inputs mid-derivation. The leaf
+        // private key is materialised into innerScratch[0..32]; the staged path occupies the
+        // next pathLen bytes.
+        Util.arrayCopyNonAtomic(buffer, pathOff, innerScratch, (short) 32, pathLen);
+        slip10.deriveLeafKey(innerScratch, (short) 32, depth, innerScratch, (short) 0);
+        // Ed25519.sign reads `msg` twice (r-hash and k-hash); both reads complete before the
+        // signature is materialised into the output, so the in-buffer message slice survives
+        // until the final write to OFFSET_CDATA overwrites it.
+        short sigLen =
+                ed25519.sign(
+                        innerScratch,
+                        (short) 0,
+                        buffer,
+                        msgOff,
+                        msgLen,
+                        buffer,
+                        ISO7816.OFFSET_CDATA);
+        Util.arrayFillNonAtomic(innerScratch, (short) 0, (short) (32 + pathLen), (byte) 0);
+        return sigLen;
+    }
+
+    /**
+     * Ed25519 branch of {@link #handleExportXpub}. Returns
+     * {@code [pubkey_LE(32), chain_code(32)]} with the pubkey derived on-card from the SLIP-10
+     * leaf private key. The path is staged inside {@link #innerScratch} so we can write the
+     * pubkey to the APDU buffer before reading the path a second time to recover the chain code
+     * (the path lives in the same APDU buffer region we overwrite with the response).
+     */
+    private short handleExportXpubEd25519(byte[] buffer, short pathOff, short depth) {
+        short pathLen = (short) (depth * Bip32.INDEX_LEN);
+        Util.arrayCopyNonAtomic(buffer, pathOff, innerScratch, (short) 32, pathLen);
+        try {
+            slip10.deriveLeafKey(innerScratch, (short) 32, depth, innerScratch, (short) 0);
+            short pkLen =
+                    ed25519.publicKey(
+                            innerScratch, (short) 0, buffer, ISO7816.OFFSET_CDATA);
+            short ccLen =
+                    slip10.deriveChainCode(
+                            innerScratch,
+                            (short) 32,
+                            depth,
+                            buffer,
+                            (short) (ISO7816.OFFSET_CDATA + pkLen));
+            return (short) (pkLen + ccLen);
+        } finally {
+            Util.arrayFillNonAtomic(
+                    innerScratch, (short) 0, (short) (32 + pathLen), (byte) 0);
+        }
+    }
+
+    /**
      * Reset-to-factory wipe. Per {@code docs/adr/0005-authentikey-lifecycle.md} the authentikey
      * itself is preserved. Everything else — Secure Channel session, PIN/PUK, PKI cert, lifecycle
      * state — is destroyed.
@@ -603,6 +686,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
                         | Constants.CAP_BIP32
                         | Constants.CAP_SLIP10
                         | Constants.CAP_K1_ECDSA
-                        | Constants.CAP_K1_SCHNORR);
+                        | Constants.CAP_K1_SCHNORR
+                        | Constants.CAP_ED25519);
     }
 }
