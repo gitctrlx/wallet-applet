@@ -236,12 +236,16 @@ public final class Bip32 {
         return computeCompressedPubkey(scalar, scalarOff, outBuf, outOff);
     }
 
-    private short computeCompressedPubkey(
-            byte[] scalar, short scalarOff, byte[] outBuf, short outOff) {
-        // Curve parameters may have been dropped by a prior {@code clearKey()} (see comment in
-        // the constructor). Re-install them every call; the underlying setX() are idempotent
-        // and the cost (≤5 EEPROM writes) is negligible next to the EC scalar multiplication
-        // that follows.
+    /**
+     * Writes the uncompressed encoding {@code 0x04 ‖ x ‖ y} of {@code scalar * G} into {@code
+     * outBuf} starting at {@code outOff}, and returns 65. Phase 5B (BIP-340 Schnorr) needs the
+     * {@code y}-coordinate to test the parity of the nonce point and the public key, so the
+     * uncompressed form is exposed as a public helper rather than thrown away by {@link
+     * #computeCompressedPubkey}.
+     *
+     * @return number of bytes written, {@link Constants#EC_POINT_UNCOMPRESSED_LEN}
+     */
+    public short scalarMultG(byte[] scalar, short scalarOff, byte[] outBuf, short outOff) {
         Secp256k1.setCurveParameters(scalarKey);
         scalarKey.setS(scalar, scalarOff, ModN.LEN);
         scalarMult.init(scalarKey);
@@ -255,10 +259,16 @@ public final class Bip32 {
         if (uLen != Constants.EC_POINT_UNCOMPRESSED_LEN || outBuf[outOff] != (byte) 0x04) {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
-        // SEC 1 §2.3.3 compression: parity prefix from y_LSB, drop y.
+        return Constants.EC_POINT_UNCOMPRESSED_LEN;
+    }
+
+    private short computeCompressedPubkey(
+            byte[] scalar, short scalarOff, byte[] outBuf, short outOff) {
+        // Run scalar*G into outBuf, then compress in place per SEC 1 §2.3.3: parity prefix
+        // derived from y_LSB, trailing y zeroed.
+        scalarMultG(scalar, scalarOff, outBuf, outOff);
         byte yLsb = outBuf[(short) (outOff + Constants.EC_POINT_UNCOMPRESSED_LEN - 1)];
         outBuf[outOff] = ((yLsb & 0x01) == 0) ? (byte) 0x02 : (byte) 0x03;
-        // Zero the trailing y to avoid leaking residue.
         Util.arrayFillNonAtomic(
                 outBuf,
                 (short) (outOff + Constants.EC_POINT_COMPRESSED_LEN),

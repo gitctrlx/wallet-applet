@@ -50,6 +50,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     private final Bip32 bip32;
     private final Slip10 slip10;
     private final EcdsaK1 ecdsaK1;
+    private final Schnorr schnorr;
     private final byte[] innerScratch;
 
     private MeowlApplet() {
@@ -63,6 +64,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         this.bip32 = new Bip32(this.masterSeed);
         this.slip10 = new Slip10(this.masterSeed);
         this.ecdsaK1 = new EcdsaK1(this.bip32);
+        this.schnorr = new Schnorr(this.bip32);
         this.innerScratch =
                 JCSystem.makeTransientByteArray(INNER_SCRATCH_LEN, JCSystem.CLEAR_ON_DESELECT);
         register();
@@ -206,6 +208,8 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
                 return handleExportXpub(buffer, dataOff, dataLen);
             case Constants.INS_SIGN_ECDSA_K1:
                 return handleSignEcdsaK1(buffer, dataOff, dataLen);
+            case Constants.INS_SIGN_SCHNORR_K1:
+                return handleSignSchnorrK1(buffer, dataOff, dataLen);
             default:
                 ISOException.throwIt(Constants.SW_INS_NOT_SUPPORTED);
                 return 0;
@@ -541,6 +545,43 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     }
 
     /**
+     * {@code SIGN_SCHNORR_K1} inner data layout: {@code [depth(1), path(4*depth), digest(32)]}.
+     * Returns the 64-byte BIP-340 signature {@code bytes(R) ‖ s}. The signature is software-
+     * implemented on top of {@link Schnorr}; aux randomness is drawn from the on-card RNG so the
+     * resulting signature is non-deterministic. See {@code docs/adr/0010-signing-api-contract.md}.
+     */
+    private short handleSignSchnorrK1(byte[] buffer, short dataOff, short dataLen) {
+        state.require(LifecycleState.SEEDED);
+        if (!pinManager.isPinVerified()) {
+            ISOException.throwIt(Constants.SW_SECURITY_STATUS_NOT_SATISFIED);
+        }
+        if (dataLen < (short) (1 + Constants.DIGEST_LEN)) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        short depth = (short) (buffer[dataOff] & 0xFF);
+        if (depth > Constants.HD_MAX_DEPTH
+                || (short) (1 + depth * Bip32.INDEX_LEN + Constants.DIGEST_LEN) != dataLen) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        short pathOff = (short) (dataOff + 1);
+        short digestOff = (short) (pathOff + depth * Bip32.INDEX_LEN);
+        // Stage the digest in innerScratch so the response (anchored at OFFSET_CDATA — the same
+        // location as the inner data) cannot trample the input bytes mid-signature.
+        Util.arrayCopyNonAtomic(buffer, digestOff, innerScratch, (short) 0, Constants.DIGEST_LEN);
+        short sigLen =
+                schnorr.signDigest(
+                        buffer,
+                        pathOff,
+                        depth,
+                        innerScratch,
+                        (short) 0,
+                        buffer,
+                        ISO7816.OFFSET_CDATA);
+        Util.arrayFillNonAtomic(innerScratch, (short) 0, Constants.DIGEST_LEN, (byte) 0);
+        return sigLen;
+    }
+
+    /**
      * Reset-to-factory wipe. Per {@code docs/adr/0005-authentikey-lifecycle.md} the authentikey
      * itself is preserved. Everything else — Secure Channel session, PIN/PUK, PKI cert, lifecycle
      * state — is destroyed.
@@ -561,6 +602,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
                         | Constants.CAP_PKI
                         | Constants.CAP_BIP32
                         | Constants.CAP_SLIP10
-                        | Constants.CAP_K1_ECDSA);
+                        | Constants.CAP_K1_ECDSA
+                        | Constants.CAP_K1_SCHNORR);
     }
 }

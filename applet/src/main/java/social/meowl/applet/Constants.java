@@ -117,7 +117,16 @@ public final class Constants {
      */
     public static final byte INS_SIGN_ECDSA_K1 = (byte) 0x50;
 
-    // Reserved for the rest of Phase 5: INS_SIGN_SCHNORR_K1 = 0x51, INS_SIGN_ED25519 = 0x52.
+    /**
+     * {@code SIGN_SCHNORR_K1} — sign a 32-byte digest with the BIP-340 Schnorr scheme on
+     * secp256k1 under the BIP-32-derived leaf scalar. Inner data: {@code [depth(1), path(4*depth),
+     * digest(32)]}. Returns {@code [r(32), s(32)]} per BIP-340 §3 (R is x-only, encoded as the
+     * affine x-coordinate of the nonce point with implicit even-y). See {@code
+     * docs/adr/0010-signing-api-contract.md}. (Phase 5)
+     */
+    public static final byte INS_SIGN_SCHNORR_K1 = (byte) 0x51;
+
+    // Reserved for the rest of Phase 5: INS_SIGN_ED25519 = 0x52.
 
     /*  Status words — ISO 7816-4 standard codes plus applet-private extensions in the 6Fxx
      *  range. Keep the comments authoritative: every host SDK decodes against this table.
@@ -178,6 +187,15 @@ public final class Constants {
 
     /** Applet-private {@code 6FE0} — a required JavaCard feature is not available on this card. */
     public static final short SW_UNSUPPORTED_FEATURE = (short) 0x6FE0;
+
+    /**
+     * Applet-private {@code 6FE1} — a should-never-happen sentinel value was produced internally
+     * (e.g. a tagged-hash output that reduced to zero mod {@code n} during Schnorr signing — the
+     * BIP-340 spec mandates failing the signature in that case; the probability is ≈ 2⁻²⁵⁶).
+     * Hosts should treat this as a transient error and retry; subsequent calls draw fresh aux
+     * randomness and will not collide with overwhelming probability.
+     */
+    public static final short SW_INTERNAL_ERROR = (short) 0x6FE1;
 
     /*  Capability bitmask advertised in GET_INFO under TAG_CAPABILITIES.
      *  16-bit so we can fit feature flags through several phases without re-encoding.
