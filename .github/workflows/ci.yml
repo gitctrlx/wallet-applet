@@ -1,29 +1,111 @@
 # SPDX-FileCopyrightText: 2026 meowl.social contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Main CI pipeline. Releases live in release.yml; CodeQL/Scorecard live in
+# their own workflows so each surface has the minimal permission set it needs.
 name: CI
 
 on:
   push:
     branches: [main]
-    tags: ["v*"]
+    paths-ignore: ["**.md", "docs/**", ".github/ISSUE_TEMPLATE/**"]
   pull_request:
     branches: [main]
   workflow_dispatch:
 
+# Default workflow-level permission. Each job grants ONLY what it needs.
 permissions:
   contents: read
 
+# Cancel in-progress runs for the same ref on PRs/feature branches; never
+# cancel runs on `main` (we want the green-build signal there).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  build:
-    name: Build & test
+  meta:
+    name: Meta (commits / license / deps)
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
 
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Conventional Commits lint
+        uses: wagoid/commitlint-github-action@v5
+        with:
+          configFile: commitlint.config.cjs
+          failOnWarnings: true
+
+      - name: REUSE / SPDX compliance
+        uses: fsfe/reuse-action@v6
+
+      - name: Dependency review (license + CVE on PR diff)
+        uses: actions/dependency-review-action@v5
+        with:
+          comment-summary-in-pr: on-failure
+          fail-on-severity: high
+          allow-licenses: AGPL-3.0-or-later, AGPL-3.0-only, MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, EPL-2.0, MPL-2.0, CC0-1.0, Unlicense
+
+  lint:
+    name: Spotless
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@v6
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          validate-wrappers: true
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Spotless check
+        run: ./gradlew spotlessCheck
+
+  # Matrix is dynamic: ubuntu only on PR (fast feedback); ubuntu + macOS +
+  # Windows on push to main (cross-platform regression net).
+  build:
+    name: Build & test (${{ matrix.os }})
+    needs: lint
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest","windows-latest"]') }}
+
+    steps:
+      - name: Harden runner
+        if: runner.os == 'Linux'
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
       - name: Checkout (with submodules)
         uses: actions/checkout@v6
         with:
@@ -36,54 +118,76 @@ jobs:
           distribution: temurin
           java-version: "25"
 
-      - name: Set up Gradle (with wrapper validation)
-        uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@v6
         with:
           validate-wrappers: true
-          dependency-graph: generate-and-submit
           cache-read-only: ${{ github.event_name == 'pull_request' }}
-
-      - name: Spotless check
-        run: ./gradlew --no-daemon spotlessCheck
+          dependency-graph: ${{ runner.os == 'Linux' && 'generate-and-submit' || 'disabled' }}
 
       - name: Build CAP
-        run: ./gradlew --no-daemon :applet:buildCap
+        run: ./gradlew :applet:buildCap
 
       - name: Run tests
-        run: ./gradlew --no-daemon :tests:test
+        run: ./gradlew :tests:test
 
-      - name: Upload CAP artifact
+      - name: Compute CAP digest + step summary
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cap=applet/build/cap/meowl-applet.cap
+          size=$(stat -c%s "$cap")
+          sha=$(sha256sum "$cap" | awk '{print $1}')
+          {
+            echo "## CAP build summary"
+            echo
+            echo "| metric | value |"
+            echo "|---|---|"
+            echo "| file | \`meowl-applet.cap\` |"
+            echo "| size | $size bytes |"
+            echo "| sha256 | \`$sha\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "$sha  meowl-applet.cap" > applet/build/cap/sha256sums.txt
+
+      - name: Upload CAP + digest (Linux only — single source of truth)
+        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v7
         with:
           name: meowl-applet-cap
-          path: applet/build/cap/*.cap
+          path: |
+            applet/build/cap/meowl-applet.cap
+            applet/build/cap/sha256sums.txt
           if-no-files-found: error
           retention-days: 30
 
-      - name: Upload test reports
+      - name: Upload test reports (always, for triage)
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: test-reports
-          path: tests/build/reports/tests/**
+          name: test-reports-${{ matrix.os }}
+          path: |
+            tests/build/reports/tests/**
+            tests/build/test-results/**
           if-no-files-found: ignore
           retention-days: 14
 
-  release:
-    name: Publish CAP on tag
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+  # Reusable workflows must be invoked at job-level (not as a step). The
+  # action's own job declares the permissions it needs internally.
+  osv-pr:
+    name: OSV-Scanner (PR diff)
+    if: github.event_name == 'pull_request'
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@v2.3.5
     permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: meowl-applet-cap
-          path: ./cap
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v3
-        with:
-          files: cap/*.cap
-          generate_release_notes: true
-          fail_on_unmatched_files: true
+      contents: read
+      security-events: write
+      pull-requests: write # for inline annotations
+      actions: read
+
+  osv-full:
+    name: OSV-Scanner (full repo)
+    if: github.event_name != 'pull_request'
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.3.5
+    permissions:
+      contents: read
+      security-events: write
+      actions: read

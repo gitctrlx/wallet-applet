@@ -1,0 +1,79 @@
+# SPDX-FileCopyrightText: 2026 meowl.social contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# CodeQL static analysis. Free for public repos; results land in the
+# repository's "Security → Code scanning" tab.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly drift scan: rules and queries get new findings over time even
+    # when the code does not change.
+    - cron: "37 4 * * 1" # Mondays 04:37 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  analyze:
+    name: Analyze (java-kotlin)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+      actions: read # required by CodeQL to read the workflow run
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [java-kotlin]
+
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          validate-wrappers: true
+          cache-read-only: true
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          # `security-and-quality` adds maintainability rules on top of
+          # `security-extended`. Worth it for a security-critical project.
+          queries: security-and-quality
+
+      # Manual build (CodeQL needs to observe the compiler). We skip tests
+      # and the CAP step because they are exercised by ci.yml; CodeQL only
+      # needs successful compilation of every module.
+      - name: Build for analysis
+        run: ./gradlew --no-daemon compileJava
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"
