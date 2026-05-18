@@ -24,13 +24,13 @@ Modern hardware wallets converge on a single PIN that gates every sensitive oper
 
 ### Status-word table (ISO 7816-4 conformant)
 
-| Condition                                           | Status word         |
-| --------------------------------------------------- | -----------------   |
-| Successful verification                             | `9000`              |
-| Wrong PIN, `n` retries remaining (`n` ∈ {1, 2})     | `63C` ‖ `n`         |
-| PIN length outside `[PIN_MIN_LEN, PIN_MAX_LEN]`     | `6700`              |
-| PIN blocked (or PUK blocked)                        | `6983`              |
-| Lifecycle gate violation (e.g. `VERIFY_PIN` before `SETUP_DONE`) | `6FB0` |
+| Condition                                                        | Status word         |
+| ---------------------------------------------------              | -----------------   |
+| Successful verification                                          | `9000`              |
+| Wrong PIN, `n` retries remaining (`n` ∈ {1, 2})                  | `63C` ‖ `n`         |
+| PIN length outside `[PIN_MIN_LEN, PIN_MAX_LEN]`                  | `6700`              |
+| PIN blocked (or PUK blocked)                                     | `6983`              |
+| Lifecycle gate violation (e.g. `VERIFY_PIN` before `SETUP_DONE`) | `6FB0`              |
 
 ### Atomicity invariant
 
