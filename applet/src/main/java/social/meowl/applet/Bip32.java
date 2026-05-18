@@ -115,6 +115,45 @@ public final class Bip32 {
      */
     public short derivePath(
             byte[] pathBuf, short pathOff, short depth, byte[] outBuf, short outOff) {
+        walkPathToLeaf(pathBuf, pathOff, depth);
+
+        // Output: compressed pubkey || chain code.
+        short pubLen = computePubkey(state, STATE_K_OFF, state, STATE_PUB_OFF);
+        Util.arrayCopyNonAtomic(state, STATE_PUB_OFF, outBuf, outOff, pubLen);
+        Util.arrayCopyNonAtomic(
+                state, STATE_C_OFF, outBuf, (short) (outOff + pubLen), Constants.CHAIN_CODE_LEN);
+
+        wipeTransientSecrets();
+        return (short) (pubLen + Constants.CHAIN_CODE_LEN);
+    }
+
+    /**
+     * Derives the BIP-32 child private scalar at the given path and writes the 32-byte big-endian
+     * scalar to {@code outBuf} at {@code outOff}.
+     *
+     * <p>This is the secret-exposing variant of {@link #derivePath}; it exists so that {@link
+     * EcdsaK1} (and the upcoming Schnorr / pubkey-recovery callers) can pull the leaf scalar into
+     * their own transient buffer just long enough to load it into an {@link ECPrivateKey} or to
+     * feed it into a software signer. The caller MUST wipe {@code outBuf[outOff..+32]} as soon as
+     * it has consumed the scalar — preferably alongside its own per-call cleanup, so the scalar
+     * never lingers past the signing primitive's own scope.
+     *
+     * @return the number of bytes written, i.e. {@link ModN#LEN}
+     */
+    public short deriveLeafScalar(
+            byte[] pathBuf, short pathOff, short depth, byte[] outBuf, short outOff) {
+        walkPathToLeaf(pathBuf, pathOff, depth);
+        Util.arrayCopyNonAtomic(state, STATE_K_OFF, outBuf, outOff, ModN.LEN);
+        wipeTransientSecrets();
+        return ModN.LEN;
+    }
+
+    /**
+     * Walks the BIP-32 chain from the master to the leaf indicated by {@code pathBuf[pathOff ..
+     * pathOff + 4*depth]}, leaving the leaf scalar in {@code state[STATE_K_OFF..K+32]} and the leaf
+     * chain code in {@code state[STATE_C_OFF..C+32]}.
+     */
+    private void walkPathToLeaf(byte[] pathBuf, short pathOff, short depth) {
         if (depth < 0 || depth > Constants.HD_MAX_DEPTH) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
@@ -127,23 +166,26 @@ public final class Bip32 {
             short idxOff = (short) (pathOff + level * INDEX_LEN);
             ckdPriv(pathBuf, idxOff);
         }
+    }
 
-        // Output: compressed pubkey || chain code.
-        short pubLen = computePubkey(state, STATE_K_OFF, state, STATE_PUB_OFF);
-        Util.arrayCopyNonAtomic(state, STATE_PUB_OFF, outBuf, outOff, pubLen);
-        Util.arrayCopyNonAtomic(
-                state, STATE_C_OFF, outBuf, (short) (outOff + pubLen), Constants.CHAIN_CODE_LEN);
-
-        // Wipe every transient slot that touched a secret scalar:
-        //   - state[K_OFF..K_OFF+32]   the leaf private scalar
-        //   - state[I_OFF..I_OFF+64]   the last HMAC output (its left half is also a scalar)
-        //   - scalarKey               EEPROM-backed ECPrivateKey holding the leaf scalar
-        // The chain code at state[C_OFF] and the public key at state[PUB_OFF] are intentionally
-        // left in place — they are public outputs and the buffer is CLEAR_ON_DESELECT regardless.
+    /**
+     * Wipes every transient slot that touched a secret scalar:
+     *
+     * <ul>
+     *   <li>{@code state[K_OFF..K_OFF+32]} — the leaf private scalar
+     *   <li>{@code state[I_OFF..I_OFF+64]} — the last HMAC output (its left half is also a scalar)
+     *   <li>{@code scalarKey} — the EEPROM-backed {@link ECPrivateKey} holding the leaf scalar used
+     *       by the non-hardened branch
+     * </ul>
+     *
+     * The chain code at {@code state[C_OFF]} and the public key at {@code state[PUB_OFF]} are
+     * intentionally left in place — they are public outputs and the buffer is {@code
+     * CLEAR_ON_DESELECT} regardless.
+     */
+    private void wipeTransientSecrets() {
         Util.arrayFillNonAtomic(state, STATE_K_OFF, ModN.LEN, (byte) 0);
         Util.arrayFillNonAtomic(state, STATE_I_OFF, HASH_LEN, (byte) 0);
         scalarKey.clearKey();
-        return (short) (pubLen + Constants.CHAIN_CODE_LEN);
     }
 
     /** One iteration of {@code CKDpriv}: state.k/state.c → state.k/state.c. */

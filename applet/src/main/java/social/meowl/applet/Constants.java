@@ -109,8 +109,15 @@ public final class Constants {
      */
     public static final byte INS_EXPORT_XPUB = (byte) 0x42;
 
-    // Reserved for Phase 5: INS_SIGN_ECDSA_K1 = 0x50, INS_SIGN_SCHNORR_K1 = 0x51,
-    //                       INS_SIGN_ED25519 = 0x52.
+    /**
+     * {@code SIGN_ECDSA_K1} — sign a host-supplied 32-byte digest with the secp256k1 private key
+     * derived at the given BIP-32 path. The response is a fixed-length {@code r(32) ‖ s(32)} pair
+     * with {@code s} normalised to the low half of {@code n} (per BIP-62 / EIP-2). See {@code
+     * docs/adr/0010-signing-api-contract.md}. (Phase 5)
+     */
+    public static final byte INS_SIGN_ECDSA_K1 = (byte) 0x50;
+
+    // Reserved for the rest of Phase 5: INS_SIGN_SCHNORR_K1 = 0x51, INS_SIGN_ED25519 = 0x52.
 
     /*  Status words — ISO 7816-4 standard codes plus applet-private extensions in the 6Fxx
      *  range. Keep the comments authoritative: every host SDK decodes against this table.
@@ -286,6 +293,27 @@ public final class Constants {
 
     /** Curve identifier selecting Ed25519 SLIP-10. */
     public static final byte CURVE_ED25519 = (byte) 0x01;
+
+    /*  Signing (Phase 5) — see docs/adr/0010-signing-api-contract.md  */
+
+    /**
+     * Length of the digest accepted by every Phase 5 signing primitive. Always 32 bytes (per
+     * ADR-0007: the card signs hashes only).
+     */
+    public static final short DIGEST_LEN = (short) 32;
+
+    /**
+     * Length of the ECDSA / Schnorr signature returned by the Phase 5 signing primitives: {@code
+     * r(32) ‖ s(32)}. Recovery byte computation is host-side; see ADR-0010.
+     */
+    public static final short SIG_LEN_R_S = (short) 64;
+
+    /**
+     * Maximum length of a DER-encoded ECDSA signature returned by {@code
+     * Signature.ALG_ECDSA_SHA_256}: {@code 0x30 ‖ len(1) ‖ 0x02 ‖ rLen(1) ‖ r(≤33) ‖ 0x02 ‖ sLen(1)
+     * ‖ s(≤33)} → {@code 2 + 2 + 33 + 2 + 33 = 72 bytes}.
+     */
+    public static final short ECDSA_DER_MAX_LEN = (short) 72;
 
     /*  PKI personalisation (Phase 3)  */
 
