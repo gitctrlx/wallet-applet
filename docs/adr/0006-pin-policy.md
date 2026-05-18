@@ -16,11 +16,29 @@ Modern hardware wallets converge on a single PIN that gates every sensitive oper
 
 - **Exactly one PIN** guards every sensitive command (everything except `GET_INFO`, `INIT_SECURE_CHANNEL`, `OPEN_SECURE_CHANNEL`, and `RESET_TO_FACTORY`).
 - **Exactly one PUK** can unblock the PIN after the PIN's retry counter hits zero. Exhausting the PUK's own retry counter **permanently bricks** the card.
-- PIN: 4–16 ASCII bytes, default retry counter `3`.
-- PUK: 8–32 ASCII bytes, default retry counter `5`.
-- Both counters and material are backed by JavaCard's `OwnerPIN`, which provides constant-time comparison and an atomic decrement-on-mismatch.
+- PIN: 4–16 bytes (no charset enforced on-card; the host wallet may impose ASCII), default retry counter `3`.
+- PUK: 8–32 bytes (no charset enforced on-card), default retry counter `5`.
+- Both counters and material are backed by JavaCard's `OwnerPIN`. The JC 3.x specification does not document `OwnerPIN.check` as constant-time, but the bounded retry counter (3 attempts then permanent block) makes the residual brute-force window negligible.
 - The PIN and PUK are set during the `SETUP` APDU. Both can be rotated afterwards by the `CHANGE_PIN` and `CHANGE_PUK` APDUs respectively, each of which requires the current corresponding value.
-- `UNBLOCK_PIN` consumes a PUK attempt regardless of whether the new-PIN candidate is valid; the new PIN must satisfy length/charset policy or the attempt is wasted.
+- `UNBLOCK_PIN` consumes a PUK attempt regardless of whether the new-PIN candidate is valid; the new PIN must satisfy length policy or the attempt is wasted.
+
+### Status-word table (ISO 7816-4 conformant)
+
+| Condition                                           | Status word         |
+| --------------------------------------------------- | -----------------   |
+| Successful verification                             | `9000`              |
+| Wrong PIN, `n` retries remaining (`n` ∈ {1, 2})     | `63C` ‖ `n`         |
+| PIN length outside `[PIN_MIN_LEN, PIN_MAX_LEN]`     | `6700`              |
+| PIN blocked (or PUK blocked)                        | `6983`              |
+| Lifecycle gate violation (e.g. `VERIFY_PIN` before `SETUP_DONE`) | `6FB0` |
+
+### Atomicity invariant
+
+`SETUP` performs four mutations: install PIN, install PUK, set `provisioned` flag, advance lifecycle from `PERSONALIZED` to `SETUP_DONE`. All four commit inside a single `JCSystem.beginTransaction()` / `commitTransaction()` block so a torn power-off cannot leave the card in an intermediate state. This was identified during the Phase 3 audit: a previous draft used two separate transactions and could brick the card if power was lost between them (`VERIFY_PIN` would be gated out by the FSM while `SETUP` would be rejected by the `provisioned` flag, forcing the user through `RESET_TO_FACTORY`).
+
+### Length-policy violation does not consume a retry
+
+A `VERIFY_PIN` whose payload length is outside `[PIN_MIN_LEN, PIN_MAX_LEN]` returns `SW_WRONG_LENGTH` (`6700`) and does **not** decrement the retry counter. Such a payload is a host-side protocol error, not a guess at the secret; a constant `6700` response carries no information about the PIN. This rule is verified by the `underLengthPinDoesNotConsumeRetry` regression test.
 
 ## Consequences
 

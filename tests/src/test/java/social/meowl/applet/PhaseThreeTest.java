@@ -267,7 +267,7 @@ class PhaseThreeTest {
                 sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, "999999".getBytes());
             }
             ResponseAPDU r = sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, DEFAULT_PIN);
-            assertEquals(Constants.SW_PIN_BLOCKED & 0xFFFF, r.getSW());
+            assertEquals(Constants.SW_AUTH_BLOCKED & 0xFFFF, r.getSW());
         }
 
         @Test
@@ -289,6 +289,47 @@ class PhaseThreeTest {
             assertEquals(
                     0x9000,
                     sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, newPin).getSW());
+        }
+
+        @Test
+        @DisplayName(
+                "VERIFY_PIN with under-length PIN returns SW_WRONG_LENGTH and does NOT consume a"
+                        + " retry")
+        void underLengthPinDoesNotConsumeRetry() throws Exception {
+            sendInnerExpectOk(
+                    Constants.INS_SETUP, (byte) 0, (byte) 0, encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
+            // Send a clearly-too-short PIN. Must return SW_WRONG_LENGTH.
+            byte[] tooShort = new byte[] {0x31, 0x32, 0x33};
+            assertEquals(
+                    Constants.SW_WRONG_LENGTH & 0xFFFF,
+                    sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, tooShort).getSW());
+            // Now the correct PIN must still succeed — the prior call did not consume a retry.
+            assertEquals(
+                    0x9000,
+                    sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, DEFAULT_PIN).getSW());
+            // Send another deliberately wrong (but well-formed) PIN: the counter must show 2
+            // retries remaining, confirming the previous under-length attempt was free.
+            int sw =
+                    sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, "999999".getBytes())
+                            .getSW();
+            assertEquals(Constants.SW_PIN_RETRIES_BASE & 0xFFF0, sw & 0xFFF0);
+            assertEquals(Constants.PIN_RETRY_LIMIT - 1, sw & 0x000F);
+        }
+
+        @Test
+        @DisplayName(
+                "VERIFY_PIN with over-max-length PIN returns SW_WRONG_LENGTH (no exception leak)")
+        void overLengthPinReturnsWrongLength() throws Exception {
+            sendInnerExpectOk(
+                    Constants.INS_SETUP, (byte) 0, (byte) 0, encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
+            byte[] tooLong = new byte[Constants.PIN_MAX_LEN + 1];
+            for (int i = 0; i < tooLong.length; i++) {
+                tooLong[i] = (byte) '0';
+            }
+            assertEquals(
+                    Constants.SW_WRONG_LENGTH & 0xFFFF,
+                    sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, tooLong).getSW(),
+                    "over-length PIN must be rejected cleanly, not via the OwnerPIN ABE path");
         }
 
         @Test

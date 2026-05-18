@@ -228,8 +228,14 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         if ((short) (cursor + pukLen) != (short) (dataOff + dataLen)) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        pinManager.setup(buffer, pinDataOff, pinLen, buffer, pukDataOff, pukLen);
-        state.transitionTo(LifecycleState.SETUP_DONE);
+        // PIN install, PUK install, provisioned flag and lifecycle advance must commit as one
+        // unit: a power loss between them would leave the card in an unrecoverable state where
+        // VERIFY_PIN is gated out by the lifecycle FSM and SETUP is rejected by the
+        // already-provisioned guard.
+        JCSystem.beginTransaction();
+        pinManager.setupInTx(buffer, pinDataOff, pinLen, buffer, pukDataOff, pukLen);
+        state.transitionToInTx(LifecycleState.SETUP_DONE);
+        JCSystem.commitTransaction();
         return 0;
     }
 

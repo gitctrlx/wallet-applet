@@ -55,6 +55,10 @@ public final class LifecycleState {
     /**
      * Advances to {@code target}, which must equal {@code current + 1} and stay within the legal
      * range. Throws {@link Constants#SW_LIFECYCLE_INVALID} if the move is not permitted.
+     *
+     * <p>This variant manages its own transaction. Use {@link #transitionToInTx(byte)} when the
+     * caller already holds a {@link JCSystem#beginTransaction() transaction} and wants the
+     * lifecycle advance to commit atomically with sibling mutations.
      */
     public void transitionTo(byte target) {
         if (!isLegalForward(current, target)) {
@@ -63,6 +67,19 @@ public final class LifecycleState {
         JCSystem.beginTransaction();
         current = target;
         JCSystem.commitTransaction();
+    }
+
+    /**
+     * Atomicity-aware variant of {@link #transitionTo(byte)} that does not open its own
+     * transaction. The caller is responsible for wrapping this call in {@code
+     * JCSystem.beginTransaction / commitTransaction} so the lifecycle advance commits together with
+     * any companion state mutations.
+     */
+    public void transitionToInTx(byte target) {
+        if (!isLegalForward(current, target)) {
+            ISOException.throwIt(Constants.SW_LIFECYCLE_INVALID);
+        }
+        current = target;
     }
 
     /**

@@ -150,8 +150,12 @@ public final class Constants {
      */
     public static final short SW_PIN_RETRIES_BASE = (short) 0x63C0;
 
-    /** Applet-private {@code 6983} — the PIN (or PUK) is blocked: authentication method blocked. */
-    public static final short SW_PIN_BLOCKED = (short) 0x6983;
+    /**
+     * ISO 7816-4 {@code 6983} — Authentication method blocked. Used both for an exhausted PIN retry
+     * counter and an exhausted PUK retry counter; the JC platform treats both as the same
+     * cryptographic class.
+     */
+    public static final short SW_AUTH_BLOCKED = (short) 0x6983;
 
     /** Applet-private {@code 6FE0} — a required JavaCard feature is not available on this card. */
     public static final short SW_UNSUPPORTED_FEATURE = (short) 0x6FE0;

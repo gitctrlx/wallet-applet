@@ -21,7 +21,9 @@ import javacard.framework.OwnerPIN;
  *       the SETUP APDU; subsequent invocations on a non-{@code UNINITIALIZED} instance fail.
  *   <li>{@link #verifyPin(byte[], short, short)} returns the post-attempt try counter via the
  *       status word — success raises {@link Constants#SW_NO_ERROR}, failure raises {@code 0x63Cn}
- *       per ISO 7816-4.
+ *       per ISO 7816-4 (with the 4-bit retry count in the low nibble). A length-policy violation
+ *       returns {@link Constants#SW_WRONG_LENGTH} and does <em>not</em> consume a retry; it is a
+ *       protocol error on the host side, not a guess.
  *   <li>{@link #changePin(byte[], short, short, byte[], short, short)} requires the caller to first
  *       {@code verifyPin} successfully; we additionally verify the old PIN inside the call to avoid
  *       relying on a stale validated flag in case of concurrent commands.
@@ -70,10 +72,17 @@ public final class PinManager {
     }
 
     /**
-     * Initial provisioning: installs the user PIN and the unblock PUK. May only be called when
-     * {@link #isProvisioned()} is {@code false}.
+     * Initial provisioning: installs the user PIN and the unblock PUK.
+     *
+     * <p>Must be invoked inside a {@link JCSystem#beginTransaction()} / {@code commitTransaction()}
+     * block opened by the caller so that the pin install, the puk install and any companion
+     * mutation (e.g. lifecycle transition) commit atomically. {@link OwnerPIN#update} is
+     * transaction-aware per the JC spec and will join the open transaction.
+     *
+     * <p>May only be called when {@link #isProvisioned()} is {@code false}; the calling handler has
+     * already enforced the {@code PERSONALIZED} lifecycle gate.
      */
-    public void setup(
+    public void setupInTx(
             byte[] pinBuf,
             short pinOffset,
             short pinLen,
@@ -85,39 +94,39 @@ public final class PinManager {
         }
         requirePinPolicy(pinLen);
         requirePukPolicy(pukLen);
-        JCSystem.beginTransaction();
         pin.update(pinBuf, pinOffset, (byte) pinLen);
         puk.update(pukBuf, pukOffset, (byte) pukLen);
         provisioned[0] = 1;
-        JCSystem.commitTransaction();
     }
 
     /**
      * Verifies a candidate PIN. On success {@link OwnerPIN#isValidated} returns {@code true}.
      *
-     * @throws ISOException with status word {@link Constants#SW_PIN_RETRIES_BASE} {@code + n} where
+     * @throws ISOException with status word {@link Constants#SW_PIN_RETRIES_BASE} {@code | n} where
      *     {@code n} is the number of attempts remaining after the failed verification, or {@link
-     *     Constants#SW_PIN_BLOCKED} if the counter was already zero.
+     *     Constants#SW_AUTH_BLOCKED} if the counter was already zero.
      */
     public void verifyPin(byte[] buf, short offset, short length) {
         requireProvisioned();
-        // Always probe getTriesRemaining first so a blocked PIN cannot be brute-forced by
-        // observing the timing of the check() vs the throw path.
+        // Probe getTriesRemaining first so a blocked PIN reports as blocked regardless of the
+        // candidate length.
         byte triesRemaining = pin.getTriesRemaining();
         if (triesRemaining == 0) {
-            ISOException.throwIt(Constants.SW_PIN_BLOCKED);
+            ISOException.throwIt(Constants.SW_AUTH_BLOCKED);
         }
-        // OwnerPIN.check throws ArrayIndexOutOfBoundsException on overlong input; clamp first.
+        // OwnerPIN.check raises ArrayIndexOutOfBoundsException if length > maxPINSize; guard the
+        // policy bounds before invoking it. A length-policy violation is reported as
+        // SW_WRONG_LENGTH and does NOT consume a retry: it is a client-side protocol mistake,
+        // not a guess at the secret. An attacker cannot use this path to brute-force the PIN
+        // because every length-policy violation returns the same status word regardless of the
+        // candidate bytes.
         if (length < Constants.PIN_MIN_LEN || length > Constants.PIN_MAX_LEN) {
-            // Treat an out-of-policy attempt as a failed attempt: decrement the counter ourselves
-            // by feeding an obviously-wrong PIN of the maximum allowed length. This stops a host
-            // from probing the policy boundary without spending a retry.
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         if (!pin.check(buf, offset, (byte) length)) {
             byte remaining = pin.getTriesRemaining();
             if (remaining == 0) {
-                ISOException.throwIt(Constants.SW_PIN_BLOCKED);
+                ISOException.throwIt(Constants.SW_AUTH_BLOCKED);
             }
             ISOException.throwIt((short) (Constants.SW_PIN_RETRIES_BASE | (remaining & 0x0F)));
         }
@@ -206,7 +215,7 @@ public final class PinManager {
     private void verifyPukInternal(byte[] buf, short offset, short length) {
         byte triesRemaining = puk.getTriesRemaining();
         if (triesRemaining == 0) {
-            ISOException.throwIt(Constants.SW_PIN_BLOCKED);
+            ISOException.throwIt(Constants.SW_AUTH_BLOCKED);
         }
         if (length < Constants.PUK_MIN_LEN || length > Constants.PUK_MAX_LEN) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
@@ -214,7 +223,7 @@ public final class PinManager {
         if (!puk.check(buf, offset, (byte) length)) {
             byte remaining = puk.getTriesRemaining();
             if (remaining == 0) {
-                ISOException.throwIt(Constants.SW_PIN_BLOCKED);
+                ISOException.throwIt(Constants.SW_AUTH_BLOCKED);
             }
             ISOException.throwIt((short) (Constants.SW_PIN_RETRIES_BASE | (remaining & 0x0F)));
         }
