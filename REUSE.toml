@@ -1,0 +1,27 @@
+version = 1
+
+[[annotations]]
+path = [
+    ".github/**",
+    ".vscode/**",
+    "config/**",
+    "gradle/**",
+    "**/*.kts",
+    "**/*.toml",
+    "**/*.properties",
+    "**/*.yml",
+    "**/*.yaml",
+    "**/*.editorconfig",
+    "**/*.gitattributes",
+    "**/*.gitignore",
+    "**/*.gitmodules",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 meowl.social contributors"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+[[annotations]]
+path = ["README.md", "CONTRIBUTING.md", "SECURITY.md", "LICENSE"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 meowl.social contributors"
+SPDX-License-Identifier = "AGPL-3.0-or-later"

@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "vscjava.vscode-java-pack",
+    "vscjava.vscode-gradle",
+    "redhat.java",
+    "EditorConfig.EditorConfig",
+    "DavidAnson.vscode-markdownlint",
+    "fnando.linter"
+  ]
+}
