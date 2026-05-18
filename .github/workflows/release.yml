@@ -32,9 +32,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: write       # create the release
-      id-token: write       # Sigstore OIDC
-      attestations: write   # write attestation to the repo
+      contents: write # create the release
+      id-token: write # Sigstore OIDC
+      attestations: write # write attestation to the repo
 
     steps:
       - name: Checkout (with SDK submodule)
@@ -67,6 +67,7 @@ jobs:
           (cd release && sha256sum * > sha256sums.txt)
 
       - name: Attest SLSA build provenance
+        continue-on-error: true # Only works for public repos on Team/Pro/Free plans
         uses: actions/attest-build-provenance@v4
         with:
           subject-path: release/meowl-applet.cap
