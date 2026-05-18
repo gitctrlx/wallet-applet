@@ -1,38 +1,47 @@
 [versions]
-# Toolchain
-jdk = "21"
+# Build / runtime toolchain
+jdk = "25"
+gradle = "9.5.1"
 
-# JavaCard
-javacard-sdk = "jc320v26.0_kit"    # Oracle JC SDK kit folder name under sdks/
-javacard-target = "3.0.5"          # ant-javacard targetsdk (max card compatibility)
+# JavaCard SDK kit (folder under sdks/, comes from oracle_javacard_sdks submodule).
+javacard-sdk = "jc320v26.0_kit"
+# CAP file targetsdk — keep 3.0.5 for maximum card compatibility (Keycard etc.).
+javacard-target = "3.0.5"
 
-# Build tooling
-ant-javacard = "26.05.15"
-spotless = "7.2.1"
-
-# Card runtime / simulator
-jcardsim = "3.0.5.11"
-
-# Host side
-apdu4j = "25.03.11"
+# Martin Paljak ecosystem (published to mvn.javacard.pro). Date-versioned.
+ant-javacard      = "26.05.15"
+apdu4j            = "26.04.20.1"
 globalplatformpro = "26.04.20.1"
-bouncycastle = "1.79"
-slf4j = "2.0.16"
 
-# Testing
-junit = "5.11.4"
+# Card simulator (com.klinec fork on Maven Central).
+jcardsim = "3.0.6.0"
+
+# Host-side libs.
+bouncycastle = "1.84"
+slf4j        = "2.0.18"
+
+# Testing.
+junit = "6.0.3"
+
+# Static analysis / formatting.
+spotless           = "8.5.1"
+google-java-format = "1.35.0"
+ktlint             = "1.8.0"
+foojay-resolver    = "1.0.0"
 
 [libraries]
-ant-javacard       = { module = "com.github.martinpaljak:ant-javacard", version.ref = "ant-javacard" }
-jcardsim           = { module = "com.klinec:jcardsim",                 version.ref = "jcardsim" }
-apdu4j-pcsc        = { module = "com.github.martinpaljak:apdu4j-pcsc", version.ref = "apdu4j" }
-apdu4j-core        = { module = "com.github.martinpaljak:apdu4j-core", version.ref = "apdu4j" }
-globalplatformpro  = { module = "com.github.martinpaljak:gppro",       version.ref = "globalplatformpro" }
-bouncycastle-prov  = { module = "org.bouncycastle:bcprov-jdk18on",     version.ref = "bouncycastle" }
-slf4j-api          = { module = "org.slf4j:slf4j-api",                 version.ref = "slf4j" }
-slf4j-simple       = { module = "org.slf4j:slf4j-simple",              version.ref = "slf4j" }
-junit-bom          = { module = "org.junit:junit-bom",                 version.ref = "junit" }
-junit-jupiter      = { module = "org.junit.jupiter:junit-jupiter" }
+ant-javacard      = { module = "com.github.martinpaljak:ant-javacard",     version.ref = "ant-javacard" }
+jcardsim          = { module = "com.klinec:jcardsim",                      version.ref = "jcardsim" }
+apdu4j-pcsc       = { module = "com.github.martinpaljak:apdu4j-pcsc",      version.ref = "apdu4j" }
+apdu4j-core       = { module = "com.github.martinpaljak:apdu4j-core",      version.ref = "apdu4j" }
+gppro             = { module = "com.github.martinpaljak:gppro",            version.ref = "globalplatformpro" }
+bouncycastle-prov = { module = "org.bouncycastle:bcprov-jdk18on",          version.ref = "bouncycastle" }
+slf4j-api         = { module = "org.slf4j:slf4j-api",                      version.ref = "slf4j" }
+slf4j-simple      = { module = "org.slf4j:slf4j-simple",                   version.ref = "slf4j" }
+junit-bom               = { module = "org.junit:junit-bom",                version.ref = "junit" }
+junit-jupiter           = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 
 [plugins]
-spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+spotless          = { id = "com.diffplug.spotless",                           version.ref = "spotless" }
+foojay-resolver   = { id = "org.gradle.toolchains.foojay-resolver-convention", version.ref = "foojay-resolver" }

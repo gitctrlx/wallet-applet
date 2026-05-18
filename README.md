@@ -16,15 +16,29 @@
 | Simulator    | [`jcardsim`](https://github.com/licel/jcardsim) (`com.klinec` fork)                                                   |
 | Card loader  | [GlobalPlatformPro](https://github.com/martinpaljak/GlobalPlatformPro)                                                |
 | Host I/O     | [`apdu4j`](https://github.com/martinpaljak/apdu4j)                                                                    |
-| Test         | JUnit 5 + BouncyCastle                                                                                                |
+| Test         | JUnit 6 + BouncyCastle                                                                                                |
 | CI           | GitHub Actions                                                                                                        |
 | License      | AGPL-3.0-or-later (REUSE 3.3 compliant)                                                                               |
 
 ## Prerequisites
 
-- **JDK 21** on `PATH` (Temurin recommended).
+- **JDK 25** on `PATH` (Temurin LTS recommended). Older 21 LTS also works locally
+  because Gradle's toolchain auto-provisions 25 via foojay.
 - **Git** with submodule support — the JavaCard SDK is a git submodule.
 - A **PC/SC** reader if you want to load on a physical card.
+
+> **Behind a corporate or Clash/V2Ray-style proxy?** The JVM does **not** read
+> Windows or shell proxy settings automatically. Add the following to
+> `~/.gradle/gradle.properties` (or pass via `GRADLE_OPTS`) so the wrapper, the
+> Spotless plugin, and dependency resolution can reach `services.gradle.org`
+> and Maven Central:
+>
+> ```properties
+> systemProp.https.proxyHost=127.0.0.1
+> systemProp.https.proxyPort=7897
+> systemProp.http.proxyHost=127.0.0.1
+> systemProp.http.proxyPort=7897
+> ```
 
 ## First-time setup
 

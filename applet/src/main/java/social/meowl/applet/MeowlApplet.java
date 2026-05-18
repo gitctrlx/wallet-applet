@@ -8,16 +8,15 @@ import javacard.framework.APDU;
 import javacard.framework.Applet;
 import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
-import javacard.framework.JCSystem;
 import javacard.framework.OwnerPIN;
+import javacard.framework.Util;
 
 /**
  * Skeleton applet for the meowl.social hardware wallet.
  *
- * <p>Replace the placeholder INS handlers with the wallet's real protocol
- * (key derivation, signing, secure channel, etc.). This class intentionally
- * stays minimal so that it compiles for {@code targetsdk} 3.0.5 and can be
- * loaded onto a wide range of cards.
+ * <p>Replace the placeholder INS handlers with the wallet's real protocol (key derivation, signing,
+ * secure channel, etc.). This class intentionally stays minimal so that it compiles for {@code
+ * targetsdk} 3.0.5 and can be loaded onto a wide range of cards.
  */
 public final class MeowlApplet extends Applet {
 
@@ -26,11 +25,13 @@ public final class MeowlApplet extends Applet {
 
     /** INS: get applet & protocol version. */
     public static final byte INS_GET_INFO = (byte) 0x01;
+
     /** INS: verify user PIN. */
     public static final byte INS_VERIFY_PIN = (byte) 0x20;
 
     /** PIN policy. */
     private static final byte PIN_MAX_TRIES = (byte) 3;
+
     private static final byte PIN_MAX_LENGTH = (byte) 8;
 
     /** Big-endian protocol version exposed via INS_GET_INFO. */
@@ -78,13 +79,8 @@ public final class MeowlApplet extends Applet {
     private void getInfo(APDU apdu) {
         byte[] buffer = apdu.getBuffer();
         short len = (short) VERSION.length;
-        JCSystem.beginTransaction();
-        try {
-            buffer[0] = VERSION[0];
-            buffer[1] = VERSION[1];
-        } finally {
-            JCSystem.commitTransaction();
-        }
+        // APDU buffer is transient (RAM): no transaction needed, write directly.
+        Util.arrayCopyNonAtomic(VERSION, (short) 0, buffer, (short) 0, len);
         apdu.setOutgoingAndSend((short) 0, len);
     }
 

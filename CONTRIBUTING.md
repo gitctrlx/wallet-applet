@@ -12,7 +12,7 @@ cd meowl-applet
 ./gradlew spotlessCheck :applet:buildCap :tests:test
 ```
 
-Requires **JDK 21** on `PATH` (Temurin 21 works perfectly on Linux/macOS/Windows).
+Requires **JDK 25** on `PATH` (Temurin 25 LTS — Gradle auto-provisions if missing).
 
 ## Workflow
 
@@ -37,7 +37,7 @@ Requires **JDK 21** on `PATH` (Temurin 21 works perfectly on Linux/macOS/Windows
 
 ## Coding rules
 
-- **Java source compat: 1.7** for `applet/` (Converter limit). Use `var` only in `tools/`.
+- **Java source compat: 1.8** for `applet/` (JCDK v26.0 converter limit). Use `var` only in `tools/` and `tests/`.
 - **No `String` in applet code paths** — concatenation allocates and JC has no GC.
 - **No floating point**, **no multi-dim arrays**, **no threading**.
 - Sensitive data lives in `JCSystem.makeTransientByteArray(...)` and is wiped

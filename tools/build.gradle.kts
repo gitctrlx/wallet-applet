@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Host-side companion tools:
-//   * `gp`        — runs GlobalPlatformPro from the project (load / list / delete applets).
-//   * `meowl`     — minimal APDU CLI talking to a real card via apdu4j.
+//   * `gp`         — runs GlobalPlatformPro (list / install / delete applets).
+//   * `installCap` — builds the CAP then installs it via GP with default keys.
+//   * `meowl` (run)— APDU CLI talking to a real PC/SC card via apdu4j.
 
 plugins {
     application
@@ -12,11 +13,15 @@ plugins {
 description = "meowl-applet — host-side tooling (gp wrapper + APDU CLI)"
 
 java {
-    toolchain.languageVersion = JavaLanguageVersion.of(libs.versions.jdk.get().toInt())
+    toolchain.languageVersion =
+        JavaLanguageVersion.of(
+            libs.versions.jdk
+                .get()
+                .toInt(),
+        )
 }
 
-// GP is consumed at runtime via the `gp` task — isolated configuration so it
-// does not pollute the application classpath.
+// Isolated classpath: keeps GlobalPlatformPro out of the application's runtime.
 val gpCli: Configuration by configurations.creating
 
 dependencies {
@@ -25,35 +30,46 @@ dependencies {
     implementation(libs.slf4j.api)
     runtimeOnly(libs.slf4j.simple)
 
-    gpCli(libs.globalplatformpro) { isTransitive = true }
+    gpCli(libs.gppro) { isTransitive = true }
 }
 
 application {
     mainClass = "social.meowl.tools.Cli"
+    applicationName = "meowl"
 }
+
+private val gpToolMain = "pro.javacard.gp.GPTool"
 
 tasks.register<JavaExec>("gp") {
     group = "javacard"
-    description = "Runs GlobalPlatformPro (pass GP args via -Pargs=\"...\")."
+    description = "Runs GlobalPlatformPro (pass GP args via `-Pargs=\"...\"`)."
     classpath = gpCli
-    mainClass = "pro.javacard.gp.GPTool"
-    val gpArgs = providers.gradleProperty("args").getOrElse("--help")
-    args = gpArgs.split(" ").filter { it.isNotBlank() }
+    mainClass = gpToolMain
     standardInput = System.`in`
+
+    val gpArgs = providers.gradleProperty("args").getOrElse("--help")
+    argumentProviders.add { gpArgs.split(' ').filter { it.isNotBlank() } }
 }
 
-tasks.register("installCap") {
+tasks.register<JavaExec>("installCap") {
     group = "javacard"
-    description = "Installs the freshly built CAP to a connected card via GlobalPlatformPro."
+    description = "Installs the freshly built CAP onto a connected card via GP (default keys)."
     dependsOn(":applet:buildCap")
-    doLast {
-        val cap = rootProject.layout.projectDirectory.dir("applet/build/cap").file("meowl-applet.cap").asFile
+
+    val capProvider =
+        rootProject.layout.projectDirectory
+            .dir("applet/build/cap")
+            .file("meowl-applet.cap")
+
+    inputs.file(capProvider)
+
+    classpath = gpCli
+    mainClass = gpToolMain
+    standardInput = System.`in`
+
+    argumentProviders.add {
+        val cap = capProvider.asFile
         check(cap.isFile) { "CAP file not found at $cap. Run :applet:buildCap first." }
-        javaexec {
-            classpath = gpCli
-            mainClass = "pro.javacard.gp.GPTool"
-            args("--install", cap.absolutePath, "--default")
-            standardInput = System.`in`
-        }
+        listOf("--install", cap.absolutePath, "--default")
     }
 }
