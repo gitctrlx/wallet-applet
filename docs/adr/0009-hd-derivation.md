@@ -50,15 +50,18 @@ The raw input seed is processed at import time and immediately overwritten; the 
 ### Derivation primitives
 
 - `HMAC-SHA-512` via `Signature.ALG_HMAC_SHA_512`. If the silicon does not advertise the algorithm at install time, the applet refuses to install on that card (no software fallback in v1.0).
-- `serP(point(k_par))` (non-hardened secp256k1) via `KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY` with the parent private key as init and {@code G} (the curve base point) as the input public key. The output is `0x04 ‖ x ‖ y`; we compress to `serP` form per SEC 1 §2.3.3.
-- 256-bit modular addition mod n (for `k_i = (parse256(I_L) + k_par) mod n`) via a small custom `ModN` helper that performs add-with-carry and a conditional `−n`. See implementation notes in `Bip32.java`.
-- Per BIP-32 §"Private parent key → private child key", if `parse256(I_L) ≥ n` or the resulting `k_i = 0` we **fail the derivation** (return `SW_CONDITIONS_NOT_SATISFIED`) rather than silently incrementing `i`; the probability of either condition is `~2⁻¹²⁷` and our host SDK can pick a different `i` if it ever happens.
+- `serP(point(k_par))` (non-hardened secp256k1) via `KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY` with the parent private key as init and `G` (the curve base point) as the input public key. The output is `0x04 ‖ x ‖ y`; we compress to `serP` form per SEC 1 §2.3.3.
+- 256-bit modular addition mod n (for `k_i = (parse256(I_L) + k_par) mod n`) via a small custom `ModN` helper that performs add-with-carry and a conditional `−n`. See implementation notes in `Bip32.java` and the dedicated KAT regression set in `ModNTest.java`.
+- **Master-key validity check** (BIP-32 §"Master key generation"): after deriving `k_master = parse256(I_L)` from the seed, we require `0 < k_master < n` and otherwise reject the seed with `SW_CONDITIONS_NOT_SATISFIED`. For `IMPORT_SEED` the host is expected to replace the seed; for `GENERATE_SEED` the card resamples internally (up to a defensive cap of 8 attempts) before surfacing the same error code. Failure probability per draw is below `2⁻¹²⁷`.
+- **Per-child validity check** (BIP-32 §"Private parent key → private child key"): if `parse256(I_L) ≥ n` or the resulting `k_i = 0` we **fail the derivation** (return `SW_CONDITIONS_NOT_SATISFIED`) rather than silently incrementing `i`; the host SDK can pick a different `i` if it ever happens.
+- **Scalar-key hygiene**: the `ECPrivateKey` slot used for non-hardened EC scalar multiplication is EEPROM-backed on the cards we target (Java Card 3.0.5 does not universally support `TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT`). We compensate by calling `clearKey()` at the tail of every `derivePath` to scrub the leaf scalar from EEPROM, and we (re-)install the curve parameters at the head of every `computeCompressedPubkey` call because some implementations (notably JCardSim, and certain JCOP profiles) treat `clearKey()` as a full reset that drops the curve parameters as well.
 
 ### Test vectors
 
-- BIP-32 official vectors 1, 2, 3, 4 (`bip-0032.mediawiki`).
+- BIP-32 official vectors 1, 2, 3 (`bip-0032.mediawiki`). Vector 3 is included specifically because the first hardened child's `I_L` has a leading zero byte — a case that any naïve "trim leading zero" implementation would mishandle.
 - SLIP-10 official Ed25519 vectors 1 and 2 (`slip-0010.md`).
-- Cross-check secp256k1 against `kobe` (`m/44'/60'/0'/0/0` for EVM, `m/84'/0'/0'/0/0` for BTC SegWit).
+- `ModN` KAT set covering `addMod` boundary cases (`0+0`, `(n−1)+1`, `(n−1)+(n−1)`, leading-zero operands, in-place aliasing), `lessThanN` boundary cases (`0`, `n−1`, `n`, `n+1`, all-`0xFF`), and 50 randomised inputs cross-checked against `BigInteger`.
+- Negative coverage on `EXPORT_XPUB`: depth > 8 → `SW_WRONG_LENGTH`, unknown curve byte → `SW_INCORRECT_P1P2`, truncated path → `SW_WRONG_LENGTH`, missing PIN session → `SW_SECURITY_STATUS_NOT_SATISFIED`, missing seed → `SW_LIFECYCLE_INVALID`, SLIP-10 non-hardened index → `SW_INCORRECT_P1P2`.
 
 ## Consequences
 

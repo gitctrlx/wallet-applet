@@ -56,6 +56,22 @@ class PhaseFourTest {
     /** BIP-32 test vector 1 seed (16 bytes hex 000102030405060708090a0b0c0d0e0f). */
     private static final byte[] BIP32_VECTOR_1_SEED = hex("000102030405060708090a0b0c0d0e0f");
 
+    /** BIP-32 test vector 2 seed (64 bytes — exercises the upper bound of {@code SEED_MAX_LEN}). */
+    private static final byte[] BIP32_VECTOR_2_SEED =
+            hex(
+                    "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f"
+                            + "9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542");
+
+    /**
+     * BIP-32 test vector 3 seed — chosen by the spec authors to exercise the case where {@code I_L}
+     * from the first hardened child has a leading zero byte, which any naïve implementation that
+     * prefix-trims would mishandle.
+     */
+    private static final byte[] BIP32_VECTOR_3_SEED =
+            hex(
+                    "4b381541583be4423346c643850da4b320e46a87ae3d2a4e6da11eba819cd4ac"
+                            + "ba45d239319ac14f863b8d5ab5a0d0c64d2e8a1e7d1457df2e5a3c51c73235be");
+
     private CardSimulator simulator;
     private Session session;
 
@@ -234,6 +250,243 @@ class PhaseFourTest {
             // Index 0 (top bit clear) is illegal for ed25519 under SLIP-10.
             ResponseAPDU r = exportXpubResp(Constants.CURVE_ED25519, new int[] {0});
             assertEquals(Constants.SW_INCORRECT_P1P2 & 0xFFFF, r.getSW());
+        }
+    }
+
+    @Nested
+    @DisplayName("BIP-32 Vector 2 — 64-byte seed, deepest hardened-mixed path")
+    class Bip32Vector2 {
+
+        @BeforeEach
+        void importVector2Seed() {
+            sendInnerExpectOk(
+                    Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(BIP32_VECTOR_2_SEED));
+        }
+
+        @Test
+        @DisplayName("Vector 2 / m — master xpub matches reference")
+        void masterXpub() {
+            byte[] resp = exportXpub(Constants.CURVE_SECP256K1, new int[] {});
+            assertArrayEquals(
+                    hex("03cbcaa9c98c877a26977d00825c956a238e8dddfbd322cce4f74b0b5bd6ace4a7"),
+                    Arrays.copyOfRange(resp, 0, 33));
+            assertArrayEquals(
+                    hex("60499f801b896d83179a4374aeb7822aaeaceaa0db1f85ee3e904c4defbd9689"),
+                    Arrays.copyOfRange(resp, 33, 65));
+        }
+
+        @Test
+        @DisplayName("Vector 2 / m/0 — non-hardened first child")
+        void mZero() {
+            byte[] resp = exportXpub(Constants.CURVE_SECP256K1, new int[] {0});
+            assertArrayEquals(
+                    hex("02fc9e5af0ac8d9b3cecfe2a888e2117ba3d089d8585886c9c826b6b22a98d12ea"),
+                    Arrays.copyOfRange(resp, 0, 33));
+            assertArrayEquals(
+                    hex("f0909affaa7ee7abe5dd4e100598d4dc53cd709d5a5c2cac40e7412f232f7c9c"),
+                    Arrays.copyOfRange(resp, 33, 65));
+        }
+
+        @Test
+        @DisplayName("Vector 2 / m/0/2147483647H/1/2147483646H/2 — full 5-level mixed path")
+        void deepMixed() {
+            // Indices: 0, 0xFFFFFFFF (=2^32-1, hardened 2^31+0x7FFFFFFF), 1, 0xFFFFFFFE
+            // (=hardened 2^31+0x7FFFFFFE), 2.
+            int[] path = {0, 0xFFFFFFFF, 1, 0xFFFFFFFE, 2};
+            byte[] resp = exportXpub(Constants.CURVE_SECP256K1, path);
+            assertArrayEquals(
+                    hex("024d902e1a2fc7a8755ab5b694c575fce742c48d9ff192e63df5193e4c7afe1f9c"),
+                    Arrays.copyOfRange(resp, 0, 33));
+            assertArrayEquals(
+                    hex("9452b549be8cea3ecb7a84bec10dcfd94afe4d129ebfd3b3cb58eedf394ed271"),
+                    Arrays.copyOfRange(resp, 33, 65));
+        }
+    }
+
+    @Nested
+    @DisplayName("BIP-32 Vector 3 — leading-zero I_L edge case")
+    class Bip32Vector3 {
+
+        @BeforeEach
+        void importVector3Seed() {
+            sendInnerExpectOk(
+                    Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(BIP32_VECTOR_3_SEED));
+        }
+
+        @Test
+        @DisplayName("Vector 3 / m — master xpub matches reference")
+        void masterXpub() {
+            byte[] resp = exportXpub(Constants.CURVE_SECP256K1, new int[] {});
+            assertArrayEquals(
+                    hex("03683af1ba5743bdfc798cf814efeeab2735ec52d95eced528e692b8e34c4e5669"),
+                    Arrays.copyOfRange(resp, 0, 33));
+            assertArrayEquals(
+                    hex("01d28a3e53cffa419ec122c968b3259e16b65076495494d97cae10bbfec3c36f"),
+                    Arrays.copyOfRange(resp, 33, 65));
+        }
+
+        @Test
+        @DisplayName("Vector 3 / m/0H — first hardened child has a leading-zero I_L byte")
+        void mZeroHardened() {
+            byte[] resp = exportXpub(Constants.CURVE_SECP256K1, new int[] {0x80000000});
+            assertArrayEquals(
+                    hex("026557fdda1d5d43d79611f784780471f086d58e8126b8c40acb82272a7712e7f2"),
+                    Arrays.copyOfRange(resp, 0, 33));
+            assertArrayEquals(
+                    hex("e5fea12a97b927fc9dc3d2cb0d1ea1cf50aa5a1fdc1f933e8906bb38df3377bd"),
+                    Arrays.copyOfRange(resp, 33, 65));
+        }
+    }
+
+    @Nested
+    @DisplayName("SLIP-10 Vector 2 — second seed, deeper hardened path")
+    class Slip10Vector2 {
+
+        @BeforeEach
+        void importVector2Seed() {
+            sendInnerExpectOk(
+                    Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(BIP32_VECTOR_2_SEED));
+        }
+
+        @Test
+        @DisplayName("SLIP-10 Vector 2 / m — master chain code matches")
+        void masterChainCode() {
+            byte[] resp = exportXpub(Constants.CURVE_ED25519, new int[] {});
+            assertArrayEquals(
+                    hex("ef70a74db9c3a5af931b5fe73ed8e1a53464133654fd55e7a66f8570b8e33c3b"), resp);
+        }
+
+        @Test
+        @DisplayName("SLIP-10 Vector 2 / m/0H — first hardened chain code matches")
+        void zeroHardenedChainCode() {
+            byte[] resp = exportXpub(Constants.CURVE_ED25519, new int[] {0x80000000});
+            assertArrayEquals(
+                    hex("0b78a3226f915c082bf118f83618a618ab6dec793752624cbeb622acb562862d"), resp);
+        }
+    }
+
+    @Nested
+    @DisplayName("Multi-derivation + cross-curve — same seed, repeated calls in one session")
+    class MultiDerivation {
+
+        @BeforeEach
+        void importVector1Seed() {
+            sendInnerExpectOk(
+                    Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(BIP32_VECTOR_1_SEED));
+        }
+
+        @Test
+        @DisplayName("Two consecutive secp256k1 derivations — second still produces correct output")
+        void backToBackBip32() {
+            // First derivation: m/0H. Triggers Bip32.scalarKey.clearKey() at the end.
+            byte[] first = exportXpub(Constants.CURVE_SECP256K1, new int[] {0x80000000});
+            // Second derivation on the same simulator instance must work despite the post-clear
+            // state of scalarKey — the EC scalar mult inside ckdPriv re-initialises the key.
+            byte[] second = exportXpub(Constants.CURVE_SECP256K1, new int[] {0x80000000, 1});
+            assertArrayEquals(
+                    hex("035a784662a4a20a65bf6aab9ae98a6c068a81c52e4b032c0fb5400c706cfccc56"),
+                    Arrays.copyOfRange(first, 0, 33));
+            assertArrayEquals(
+                    hex("03501e454bf00751f24b1b489aa925215d66af2234e3891c3b21a52bedb3cd711c"),
+                    Arrays.copyOfRange(second, 0, 33));
+        }
+
+        @Test
+        @DisplayName("Same seed feeds both secp256k1 and Ed25519 trees in one session")
+        void crossCurveSameSeed() {
+            byte[] k1 = exportXpub(Constants.CURVE_SECP256K1, new int[] {});
+            byte[] ed = exportXpub(Constants.CURVE_ED25519, new int[] {});
+            assertArrayEquals(
+                    hex("873dff81c02f525623fd1fe5167eac3a55a049de3d314bb42ee227ffed37d508"),
+                    Arrays.copyOfRange(k1, 33, 65));
+            assertArrayEquals(
+                    hex("90046a93de5380a72b5e45010748567d5ea02bbf6522f979e05c0d8d8ca9fffb"), ed);
+        }
+
+        @Test
+        @DisplayName("Determinism — same path yields the same output across calls")
+        void deterministicRepeatedPath() {
+            int[] path = {0x80000000, 1, 0x80000002, 2, 1000000000};
+            byte[] first = exportXpub(Constants.CURVE_SECP256K1, path);
+            byte[] second = exportXpub(Constants.CURVE_SECP256K1, path);
+            assertArrayEquals(first, second);
+        }
+    }
+
+    @Nested
+    @DisplayName("EXPORT_XPUB — negative cases")
+    class ExportXpubNegative {
+
+        @BeforeEach
+        void importVector1Seed() {
+            sendInnerExpectOk(
+                    Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(BIP32_VECTOR_1_SEED));
+        }
+
+        @Test
+        @DisplayName("depth > HD_MAX_DEPTH (=8) is rejected with SW_WRONG_LENGTH")
+        void depthTooDeep() {
+            int[] tooDeep = new int[Constants.HD_MAX_DEPTH + 1];
+            for (int i = 0; i < tooDeep.length; i++) tooDeep[i] = 0x80000000 | i;
+            ResponseAPDU r = exportXpubResp(Constants.CURVE_SECP256K1, tooDeep);
+            assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, r.getSW());
+        }
+
+        @Test
+        @DisplayName("Unknown curve byte (0x02) is rejected with SW_INCORRECT_P1P2")
+        void unknownCurve() {
+            ResponseAPDU r = exportXpubResp((byte) 0x02, new int[] {});
+            assertEquals(Constants.SW_INCORRECT_P1P2 & 0xFFFF, r.getSW());
+        }
+
+        @Test
+        @DisplayName("Truncated path (declared depth > supplied path bytes) is rejected")
+        void truncatedPath() {
+            // Encode path with depth=2 but only one index of payload.
+            byte[] req = new byte[2 + 4];
+            req[0] = Constants.CURVE_SECP256K1;
+            req[1] = 2; // claims depth = 2
+            // remaining 4 bytes = a single index, so total dataLen = 6 ≠ 2 + 4*2 = 10
+            ResponseAPDU r = sendInner(Constants.INS_EXPORT_XPUB, (byte) 0, (byte) 0, req);
+            assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, r.getSW());
+        }
+    }
+
+    @Nested
+    @DisplayName("Lifecycle / PIN gating — Phase 4 INS commands")
+    class Phase4Gating {
+
+        @Test
+        @DisplayName("EXPORT_XPUB before SEEDED is rejected with SW_LIFECYCLE_INVALID")
+        void exportBeforeSeeded() {
+            // setUp() leaves the card in SETUP_DONE. EXPORT_XPUB requires SEEDED.
+            ResponseAPDU r = exportXpubResp(Constants.CURVE_SECP256K1, new int[] {});
+            assertEquals(Constants.SW_LIFECYCLE_INVALID & 0xFFFF, r.getSW());
+        }
+
+        @Test
+        @DisplayName("IMPORT_SEED without a verified PIN is rejected with SW_SECURITY_STATUS")
+        void importWithoutPinIsRejected() throws Exception {
+            // Re-handshake the SC: this clears the session-scoped PIN-verified flag.
+            session = openSession();
+            ResponseAPDU r =
+                    sendInner(
+                            Constants.INS_IMPORT_SEED,
+                            (byte) 0,
+                            (byte) 0,
+                            prefixLen(BIP32_VECTOR_1_SEED));
+            assertEquals(Constants.SW_SECURITY_STATUS_NOT_SATISFIED & 0xFFFF, r.getSW());
+        }
+
+        @Test
+        @DisplayName("EXPORT_XPUB without a verified PIN is rejected (after SC re-handshake)")
+        void exportWithoutPinIsRejected() throws Exception {
+            sendInnerExpectOk(
+                    Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(BIP32_VECTOR_1_SEED));
+            // SC re-handshake invalidates the PIN session.
+            session = openSession();
+            ResponseAPDU r = exportXpubResp(Constants.CURVE_SECP256K1, new int[] {});
+            assertEquals(Constants.SW_SECURITY_STATUS_NOT_SATISFIED & 0xFFFF, r.getSW());
         }
     }
 

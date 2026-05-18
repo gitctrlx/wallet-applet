@@ -115,11 +115,21 @@ public final class MasterSeed {
     }
 
     /**
-     * Installs a host-supplied seed and computes both master-key chains atomically. Caller must
+     * Installs a host-supplied seed and computes both master-key chains. <strong>Caller must
+     * already hold a {@link JCSystem#beginTransaction() JavaCard transaction}</strong> so the
+     * master material commit and the companion lifecycle advance ({@code SETUP_DONE → SEEDED}) land
+     * atomically.
+     *
+     * <p>Per <a href="https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki">BIP-32</a>
+     * §"Master key generation", if {@code parse256(I_L) == 0} or {@code parse256(I_L) ≥ n} the
+     * resulting BIP-32 master key is invalid and the seed must be rejected. Throws {@link
+     * Constants#SW_CONDITIONS_NOT_SATISFIED} so the host can replace the seed (the occurrence
+     * probability for a uniform seed is below {@code 2⁻¹²⁷}). SLIP-10 imposes no such check on the
+     * Ed25519 master, so the SLIP-10 derivation is accepted unconditionally.
      *
      * @param seedBuf buffer holding the seed
      * @param seedOff offset of the first seed byte
-     * @param seedLen seed length in bytes; must lie in [SEED_MIN_LEN, SEED_MAX_LEN]
+     * @param seedLen seed length in bytes; must lie in {@code [SEED_MIN_LEN, SEED_MAX_LEN]}
      */
     public void importSeed(byte[] seedBuf, short seedOff, short seedLen) {
         if (seededFlag[0] != 0) {
@@ -136,6 +146,7 @@ public final class MasterSeed {
                 seedLen,
                 bip32Master,
                 (short) 0);
+        requireValidBip32MasterKey();
         hmacInto(
                 HMAC_LABEL_SLIP10,
                 (short) HMAC_LABEL_SLIP10.length,
@@ -176,26 +187,53 @@ public final class MasterSeed {
             random =
                     javacard.security.RandomData.getInstance(javacard.security.RandomData.ALG_TRNG);
         }
-        random.nextBytes(outBuf, outOff, Constants.SEED_GENERATED_LEN);
+        // Resample until the BIP-32 master k passes the parse256(I_L) ∈ (0, n) check. The bound
+        // is below 2⁻¹²⁷ per draw so the loop terminates in a single iteration with overwhelming
+        // probability; the cap (8 attempts) is purely defensive.
+        for (short attempt = 0; attempt < (short) 8; attempt++) {
+            random.nextBytes(outBuf, outOff, Constants.SEED_GENERATED_LEN);
+            hmacInto(
+                    HMAC_LABEL_BIP32,
+                    (short) HMAC_LABEL_BIP32.length,
+                    outBuf,
+                    outOff,
+                    Constants.SEED_GENERATED_LEN,
+                    bip32Master,
+                    (short) 0);
+            if (ModN.lessThanN(bip32Master, (short) 0) && !ModN.isZero(bip32Master, (short) 0)) {
+                hmacInto(
+                        HMAC_LABEL_SLIP10,
+                        (short) HMAC_LABEL_SLIP10.length,
+                        outBuf,
+                        outOff,
+                        Constants.SEED_GENERATED_LEN,
+                        slip10Master,
+                        (short) 0);
+                seededFlag[0] = 1;
+                return Constants.SEED_GENERATED_LEN;
+            }
+        }
+        // Exhausted the resample budget; surface a clean SW so the host knows to retry. Wipe the
+        // partially-written master material first so a torn rollback can't leak it.
+        Util.arrayFillNonAtomic(bip32Master, (short) 0, MASTER_LEN, (byte) 0);
+        Util.arrayFillNonAtomic(outBuf, outOff, Constants.SEED_GENERATED_LEN, (byte) 0);
+        ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
+        return 0; // unreachable
+    }
 
-        hmacInto(
-                HMAC_LABEL_BIP32,
-                (short) HMAC_LABEL_BIP32.length,
-                outBuf,
-                outOff,
-                Constants.SEED_GENERATED_LEN,
-                bip32Master,
-                (short) 0);
-        hmacInto(
-                HMAC_LABEL_SLIP10,
-                (short) HMAC_LABEL_SLIP10.length,
-                outBuf,
-                outOff,
-                Constants.SEED_GENERATED_LEN,
-                slip10Master,
-                (short) 0);
-        seededFlag[0] = 1;
-        return Constants.SEED_GENERATED_LEN;
+    /**
+     * Enforces BIP-32 §"Master key generation" validity on the {@code k_master} half of {@link
+     * #bip32Master}: {@code 0 < parse256(I_L) < n}. Failure throws {@link
+     * Constants#SW_CONDITIONS_NOT_SATISFIED} (occurrence probability is below {@code 2⁻¹²⁷}; the
+     * host's expected response is to retry with a fresh seed).
+     */
+    private void requireValidBip32MasterKey() {
+        if (ModN.isZero(bip32Master, (short) 0) || !ModN.lessThanN(bip32Master, (short) 0)) {
+            // Wipe the partially-written master before bailing so a future commit (or a
+            // diagnostic dump) cannot expose a structurally invalid key.
+            Util.arrayFillNonAtomic(bip32Master, (short) 0, MASTER_LEN, (byte) 0);
+            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
+        }
     }
 
     /**

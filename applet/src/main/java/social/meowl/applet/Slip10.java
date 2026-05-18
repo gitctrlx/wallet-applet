@@ -28,10 +28,13 @@ import javacard.security.Signature;
  * Constants#SW_INCORRECT_P1P2}; this is the safe interpretation of the spec's "non-hardened
  * derivation is not defined" rule.
  *
- * <p>Phase 4 exports the chain code only; the public-key computation requires Ed25519 scalar
- * multiplication which is implemented alongside Ed25519 signing in Phase 5. Callers requesting an
- * Ed25519 pubkey will receive {@link Constants#SW_INS_NOT_SUPPORTED} from {@link
- * MeowlApplet#handleExportXpub}, not a partial response.
+ * <p>Phase 4 returns only the leaf <strong>chain code</strong> from {@link #deriveChainCode}: the
+ * public-key computation requires Ed25519 scalar multiplication, which JC 3.0.5 does not provide
+ * natively and which we implement as part of the Ed25519 signing primitive in Phase 5. The Phase 4
+ * {@code EXPORT_XPUB} APDU therefore intentionally omits the pubkey from its Ed25519 response
+ * rather than returning a zero-padded placeholder; the chain code alone is enough for hosts that
+ * just need to prepare the next derivation level (the root node's pubkey is recoverable by the
+ * Phase 5 signing path once it lands).
  */
 public final class Slip10 {
 

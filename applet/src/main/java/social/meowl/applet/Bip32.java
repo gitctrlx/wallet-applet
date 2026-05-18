@@ -51,6 +51,12 @@ public final class Bip32 {
     /** HMAC-SHA-512 output length. */
     private static final short HASH_LEN = (short) 64;
 
+    /**
+     * BIP-32 hardened derivation prefix byte ({@code 0x00}). Held as a static one-byte array so the
+     * per-iteration HMAC does not allocate a fresh array on the JC heap each time.
+     */
+    private static final byte[] HARDENED_PREFIX = {(byte) 0x00};
+
     private final MasterSeed masterSeed;
     private final Signature hmac;
     private final HMACKey chainKey;
@@ -128,9 +134,15 @@ public final class Bip32 {
         Util.arrayCopyNonAtomic(
                 state, STATE_C_OFF, outBuf, (short) (outOff + pubLen), Constants.CHAIN_CODE_LEN);
 
-        // Wipe the secret scalar from state so it is not left around for a subsequent path.
+        // Wipe every transient slot that touched a secret scalar:
+        //   - state[K_OFF..K_OFF+32]   the leaf private scalar
+        //   - state[I_OFF..I_OFF+64]   the last HMAC output (its left half is also a scalar)
+        //   - scalarKey               EEPROM-backed ECPrivateKey holding the leaf scalar
+        // The chain code at state[C_OFF] and the public key at state[PUB_OFF] are intentionally
+        // left in place — they are public outputs and the buffer is CLEAR_ON_DESELECT regardless.
         Util.arrayFillNonAtomic(state, STATE_K_OFF, ModN.LEN, (byte) 0);
         Util.arrayFillNonAtomic(state, STATE_I_OFF, HASH_LEN, (byte) 0);
+        scalarKey.clearKey();
         return (short) (pubLen + Constants.CHAIN_CODE_LEN);
     }
 
@@ -144,8 +156,7 @@ public final class Bip32 {
 
         if (hardened) {
             // Data = 0x00 || ser256(k_par) || ser32(i)
-            byte[] zero = {(byte) 0x00};
-            hmac.update(zero, (short) 0, (short) 1);
+            hmac.update(HARDENED_PREFIX, (short) 0, (short) 1);
             hmac.update(state, STATE_K_OFF, ModN.LEN);
         } else {
             // Data = serP(point(k_par)) || ser32(i)
@@ -185,6 +196,11 @@ public final class Bip32 {
 
     private short computeCompressedPubkey(
             byte[] scalar, short scalarOff, byte[] outBuf, short outOff) {
+        // Curve parameters may have been dropped by a prior {@code clearKey()} (see comment in
+        // the constructor). Re-install them every call; the underlying setX() are idempotent
+        // and the cost (≤5 EEPROM writes) is negligible next to the EC scalar multiplication
+        // that follows.
+        Secp256k1.setCurveParameters(scalarKey);
         scalarKey.setS(scalar, scalarOff, ModN.LEN);
         scalarMult.init(scalarKey);
         short uLen =
