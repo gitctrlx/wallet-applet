@@ -1,19 +1,17 @@
 # SPDX-FileCopyrightText: 2026 meowl.social contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Tag-driven release pipeline.
+# Tag-driven release. Produces a verifiable, signed CAP file.
 #
 #   git tag v1.0.0 && git push origin v1.0.0
 #
-# Produces:
-#   - meowl-applet.cap                (the CAP file)
-#   - sha256sums.txt                  (digests of every release artifact)
-#   - meowl-sbom.cdx.json             (CycloneDX SBOM)
-#   - SLSA L3 build provenance        (Sigstore keyless via OIDC)
-#   - signed in-toto attestation      (uploaded to Rekor transparency log)
+# Artefacts attached to the GitHub Release:
+#   - meowl-applet.cap        the CAP file
+#   - meowl-sbom.cdx.json     CycloneDX 1.6 SBOM
+#   - sha256sums.txt          digests of every artefact
 #
-# The CAP file is also attested via `actions/attest-build-provenance`, so
-# end-users can verify with:
+# The CAP file is also attested via Sigstore keyless signing
+# (actions/attest-build-provenance). Verify with:
 #
 #   gh attestation verify meowl-applet.cap --repo qntx/meowl-applet
 name: Release
@@ -25,37 +23,24 @@ on:
 permissions:
   contents: read
 
-# Never cancel an in-flight release: tags are immutable and a half-published
-# release is worse than a slow one.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Build CAP + SBOM
+  release:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     permissions:
-      contents: read
-      id-token: write # required for keyless Sigstore signing
-      attestations: write # to write attestations to this repo
-
-    outputs:
-      cap-digest: ${{ steps.digest.outputs.sha256 }}
-      version: ${{ steps.meta.outputs.version }}
+      contents: write       # create the release
+      id-token: write       # Sigstore OIDC
+      attestations: write   # write attestation to the repo
 
     steps:
-      - name: Harden runner
-        uses: step-security/harden-runner@v2
-        with:
-          egress-policy: audit
-
-      - name: Checkout (with submodules)
+      - name: Checkout (with SDK submodule)
         uses: actions/checkout@v6
         with:
           submodules: recursive
-          fetch-depth: 0
 
       - name: Set up JDK 25
         uses: actions/setup-java@v5
@@ -63,21 +48,16 @@ jobs:
           distribution: temurin
           java-version: "25"
 
-      - uses: gradle/actions/setup-gradle@v6
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
         with:
           validate-wrappers: true
           cache-read-only: true
 
-      - name: Extract version from tag
-        id: meta
-        shell: bash
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
-      - name: Build CAP + tests + SBOM
+      - name: Build + test + SBOM
         run: ./gradlew :applet:buildCap :tests:test :applet:cyclonedxDirectBom
 
-      - name: Stage release artifacts
-        id: digest
+      - name: Stage release artefacts
         shell: bash
         run: |
           set -euo pipefail
@@ -85,83 +65,19 @@ jobs:
           cp applet/build/cap/meowl-applet.cap release/
           cp applet/build/reports/meowl-sbom.cdx.json release/
           (cd release && sha256sum * > sha256sums.txt)
-          sha=$(sha256sum release/meowl-applet.cap | awk '{print $1}')
-          echo "sha256=$sha" >> "$GITHUB_OUTPUT"
-          {
-            echo "## Release ${{ steps.meta.outputs.version }}"
-            echo
-            echo "| artifact | sha256 |"
-            echo "|---|---|"
-            while read -r line; do
-              h=$(echo "$line" | awk '{print $1}')
-              f=$(echo "$line" | awk '{print $2}')
-              echo "| \`$f\` | \`$h\` |"
-            done < release/sha256sums.txt
-          } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Attest SLSA build provenance for CAP
+      - name: Attest SLSA build provenance
         uses: actions/attest-build-provenance@v4
         with:
           subject-path: release/meowl-applet.cap
 
-      - name: Upload release artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-artifacts
-          path: release/
-          if-no-files-found: error
-          retention-days: 90
-
-  publish:
-    name: Publish GitHub Release
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write # to create the release
-
-    steps:
-      - name: Harden runner
-        uses: step-security/harden-runner@v2
-        with:
-          egress-policy: audit
-
-      - uses: actions/checkout@v6
-
-      - name: Download release artifacts
-        uses: actions/download-artifact@v8
-        with:
-          name: release-artifacts
-          path: release/
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          name: meowl-applet ${{ needs.build.outputs.version }}
-          tag_name: ${{ github.ref_name }}
-          draft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
           fail_on_unmatched_files: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
             release/meowl-applet.cap
             release/meowl-sbom.cdx.json
             release/sha256sums.txt
-          body: |
-            ## meowl-applet ${{ needs.build.outputs.version }}
-
-            **CAP digest (sha256):** `${{ needs.build.outputs.cap-digest }}`
-
-            ### Verify this release
-
-            Verify the SLSA build provenance attestation (requires `gh` ≥ 2.49):
-
-            ```bash
-            gh attestation verify meowl-applet.cap --repo ${{ github.repository }}
-            ```
-
-            Verify checksums:
-
-            ```bash
-            sha256sum -c sha256sums.txt
-            ```

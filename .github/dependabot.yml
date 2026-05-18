@@ -1,58 +1,19 @@
 # SPDX-FileCopyrightText: 2026 meowl.social contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
-#
-# Dependabot v2 — keep dependencies fresh AND keep the PR queue manageable
-# via aggressive grouping. One PR per ecosystem per week is the target.
 version: 2
 updates:
   - package-ecosystem: gradle
     directory: /
     schedule:
       interval: weekly
-      day: monday
-      time: "06:00"
-      timezone: Asia/Shanghai
-    open-pull-requests-limit: 10
-    commit-message:
-      prefix: "build(deps)"
-      prefix-development: "build(deps-dev)"
-      include: scope
-    labels: [dependencies, gradle]
     groups:
-      javacard-stack:
-        patterns:
-          - "com.github.martinpaljak:*"
-          - "com.klinec:jcardsim"
-      test-stack:
-        patterns:
-          - "org.junit.*:*"
-          - "org.assertj:*"
-          - "org.mockito:*"
-      bouncycastle:
-        patterns:
-          - "org.bouncycastle:*"
-      logging:
-        patterns:
-          - "org.slf4j:*"
-          - "ch.qos.logback:*"
-      gradle-plugins:
-        patterns:
-          - "*plugin*"
-          - "com.diffplug.spotless*"
-          - "org.cyclonedx*"
+      all:
+        patterns: ["*"]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-      day: monday
-      time: "06:00"
-      timezone: Asia/Shanghai
-    open-pull-requests-limit: 5
-    commit-message:
-      prefix: "ci(deps)"
-      include: scope
-    labels: [dependencies, github-actions]
     groups:
-      all-actions:
+      all:
         patterns: ["*"]
