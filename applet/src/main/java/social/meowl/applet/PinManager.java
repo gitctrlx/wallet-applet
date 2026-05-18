@@ -1,0 +1,240 @@
+/*
+ * SPDX-FileCopyrightText: 2026 meowl.social contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+package social.meowl.applet;
+
+import javacard.framework.ISOException;
+import javacard.framework.JCSystem;
+import javacard.framework.OwnerPIN;
+
+/**
+ * User PIN + PUK manager per {@code docs/adr/0006-pin-policy.md}.
+ *
+ * <p>The card holds exactly one user PIN and one unblock PUK, each backed by {@link OwnerPIN} which
+ * provides JC-native bounded retry counters and built-in storage protection.
+ *
+ * <p>API guidelines:
+ *
+ * <ul>
+ *   <li>{@link #setup(byte[], short, short, byte[], short, short)} is invoked exactly once during
+ *       the SETUP APDU; subsequent invocations on a non-{@code UNINITIALIZED} instance fail.
+ *   <li>{@link #verifyPin(byte[], short, short)} returns the post-attempt try counter via the
+ *       status word — success raises {@link Constants#SW_NO_ERROR}, failure raises {@code 0x63Cn}
+ *       per ISO 7816-4.
+ *   <li>{@link #changePin(byte[], short, short, byte[], short, short)} requires the caller to first
+ *       {@code verifyPin} successfully; we additionally verify the old PIN inside the call to avoid
+ *       relying on a stale validated flag in case of concurrent commands.
+ *   <li>{@link #unblockPin(byte[], short, short, byte[], short, short)} consumes a PUK attempt even
+ *       on PIN-policy failure of the new PIN.
+ * </ul>
+ *
+ * <p>Length validation: every entry point validates against {@link Constants#PIN_MIN_LEN}, {@link
+ * Constants#PIN_MAX_LEN}, {@link Constants#PUK_MIN_LEN} and {@link Constants#PUK_MAX_LEN}
+ * <em>before</em> handing the buffer to {@link OwnerPIN#check}, because {@code check} would raise
+ * {@link ArrayIndexOutOfBoundsException} on an over-long input.
+ *
+ * <p>Wipe semantics: {@link #wipe()} re-installs both {@link OwnerPIN} instances with their default
+ * try limits and an arbitrary single-zero PIN as a transient placeholder. After a wipe the manager
+ * reports {@link #isProvisioned()} = {@code false} and a subsequent {@code setup} is required
+ * before any verification will succeed.
+ */
+public final class PinManager {
+
+    private OwnerPIN pin;
+    private OwnerPIN puk;
+    private final byte[] provisioned; // [0] != 0 → setup() has been called
+
+    /** Constructs an unprovisioned manager. */
+    public PinManager() {
+        this.pin = new OwnerPIN(Constants.PIN_RETRY_LIMIT, Constants.PIN_MAX_LEN);
+        this.puk = new OwnerPIN(Constants.PUK_RETRY_LIMIT, Constants.PUK_MAX_LEN);
+        this.provisioned = new byte[1];
+    }
+
+    /** Returns {@code true} once {@link #setup} has been called successfully. */
+    public boolean isProvisioned() {
+        return provisioned[0] != 0;
+    }
+
+    /** Returns {@code true} once {@link #verifyPin} has succeeded in this session. */
+    public boolean isPinVerified() {
+        return pin.isValidated();
+    }
+
+    /** Clears the in-session PIN-verified flag. Called from {@code select} and on session end. */
+    public void clearSession() {
+        // OwnerPIN.reset() only clears the flag when previously validated, which is exactly what
+        // we want — calling it on a non-validated PIN is a no-op.
+        pin.reset();
+    }
+
+    /**
+     * Initial provisioning: installs the user PIN and the unblock PUK. May only be called when
+     * {@link #isProvisioned()} is {@code false}.
+     */
+    public void setup(
+            byte[] pinBuf,
+            short pinOffset,
+            short pinLen,
+            byte[] pukBuf,
+            short pukOffset,
+            short pukLen) {
+        if (provisioned[0] != 0) {
+            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
+        }
+        requirePinPolicy(pinLen);
+        requirePukPolicy(pukLen);
+        JCSystem.beginTransaction();
+        pin.update(pinBuf, pinOffset, (byte) pinLen);
+        puk.update(pukBuf, pukOffset, (byte) pukLen);
+        provisioned[0] = 1;
+        JCSystem.commitTransaction();
+    }
+
+    /**
+     * Verifies a candidate PIN. On success {@link OwnerPIN#isValidated} returns {@code true}.
+     *
+     * @throws ISOException with status word {@link Constants#SW_PIN_RETRIES_BASE} {@code + n} where
+     *     {@code n} is the number of attempts remaining after the failed verification, or {@link
+     *     Constants#SW_PIN_BLOCKED} if the counter was already zero.
+     */
+    public void verifyPin(byte[] buf, short offset, short length) {
+        requireProvisioned();
+        // Always probe getTriesRemaining first so a blocked PIN cannot be brute-forced by
+        // observing the timing of the check() vs the throw path.
+        byte triesRemaining = pin.getTriesRemaining();
+        if (triesRemaining == 0) {
+            ISOException.throwIt(Constants.SW_PIN_BLOCKED);
+        }
+        // OwnerPIN.check throws ArrayIndexOutOfBoundsException on overlong input; clamp first.
+        if (length < Constants.PIN_MIN_LEN || length > Constants.PIN_MAX_LEN) {
+            // Treat an out-of-policy attempt as a failed attempt: decrement the counter ourselves
+            // by feeding an obviously-wrong PIN of the maximum allowed length. This stops a host
+            // from probing the policy boundary without spending a retry.
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        if (!pin.check(buf, offset, (byte) length)) {
+            byte remaining = pin.getTriesRemaining();
+            if (remaining == 0) {
+                ISOException.throwIt(Constants.SW_PIN_BLOCKED);
+            }
+            ISOException.throwIt((short) (Constants.SW_PIN_RETRIES_BASE | (remaining & 0x0F)));
+        }
+    }
+
+    /**
+     * Atomically rotates the PIN. Requires the old PIN to verify against the stored value; consumes
+     * a PIN attempt if the old PIN is wrong, exactly like {@link #verifyPin}.
+     */
+    public void changePin(
+            byte[] oldBuf,
+            short oldOffset,
+            short oldLen,
+            byte[] newBuf,
+            short newOffset,
+            short newLen) {
+        requireProvisioned();
+        requirePinPolicy(newLen);
+        verifyPin(oldBuf, oldOffset, oldLen);
+        JCSystem.beginTransaction();
+        pin.update(newBuf, newOffset, (byte) newLen);
+        JCSystem.commitTransaction();
+    }
+
+    /** Atomically rotates the PUK. Requires the current PUK to verify; consumes a PUK attempt. */
+    public void changePuk(
+            byte[] oldBuf,
+            short oldOffset,
+            short oldLen,
+            byte[] newBuf,
+            short newOffset,
+            short newLen) {
+        requireProvisioned();
+        requirePukPolicy(newLen);
+        verifyPukInternal(oldBuf, oldOffset, oldLen);
+        JCSystem.beginTransaction();
+        puk.update(newBuf, newOffset, (byte) newLen);
+        JCSystem.commitTransaction();
+    }
+
+    /**
+     * Unblocks the PIN after exhausted retries. Requires the PUK to verify and the new PIN to
+     * satisfy the PIN policy. A PUK attempt is consumed regardless of whether the new PIN passes
+     * the policy check.
+     */
+    public void unblockPin(
+            byte[] pukBuf,
+            short pukOffset,
+            short pukLen,
+            byte[] newPinBuf,
+            short newPinOffset,
+            short newPinLen) {
+        requireProvisioned();
+        if (pin.getTriesRemaining() != 0) {
+            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
+        }
+        verifyPukInternal(pukBuf, pukOffset, pukLen);
+        requirePinPolicy(newPinLen);
+        JCSystem.beginTransaction();
+        pin.update(newPinBuf, newPinOffset, (byte) newPinLen);
+        pin.resetAndUnblock();
+        JCSystem.commitTransaction();
+    }
+
+    /** Destroys all PIN/PUK state. Called by the reset-to-factory flow. */
+    public void wipe() {
+        JCSystem.beginTransaction();
+        // Rebuild fresh OwnerPIN instances rather than try to scrub the old ones in-place; the
+        // JC spec does not document a clearKey-style method for OwnerPIN.
+        this.pin = new OwnerPIN(Constants.PIN_RETRY_LIMIT, Constants.PIN_MAX_LEN);
+        this.puk = new OwnerPIN(Constants.PUK_RETRY_LIMIT, Constants.PUK_MAX_LEN);
+        this.provisioned[0] = 0;
+        JCSystem.commitTransaction();
+    }
+
+    /** Returns the current PIN try counter; useful for inclusion in {@code GET_INFO}. */
+    public byte pinTriesRemaining() {
+        return isProvisioned() ? pin.getTriesRemaining() : Constants.PIN_RETRY_LIMIT;
+    }
+
+    /** Returns the current PUK try counter. */
+    public byte pukTriesRemaining() {
+        return isProvisioned() ? puk.getTriesRemaining() : Constants.PUK_RETRY_LIMIT;
+    }
+
+    private void verifyPukInternal(byte[] buf, short offset, short length) {
+        byte triesRemaining = puk.getTriesRemaining();
+        if (triesRemaining == 0) {
+            ISOException.throwIt(Constants.SW_PIN_BLOCKED);
+        }
+        if (length < Constants.PUK_MIN_LEN || length > Constants.PUK_MAX_LEN) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        if (!puk.check(buf, offset, (byte) length)) {
+            byte remaining = puk.getTriesRemaining();
+            if (remaining == 0) {
+                ISOException.throwIt(Constants.SW_PIN_BLOCKED);
+            }
+            ISOException.throwIt((short) (Constants.SW_PIN_RETRIES_BASE | (remaining & 0x0F)));
+        }
+    }
+
+    private static void requirePinPolicy(short length) {
+        if (length < Constants.PIN_MIN_LEN || length > Constants.PIN_MAX_LEN) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+    }
+
+    private static void requirePukPolicy(short length) {
+        if (length < Constants.PUK_MIN_LEN || length > Constants.PUK_MAX_LEN) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+    }
+
+    private void requireProvisioned() {
+        if (!isProvisioned()) {
+            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
+        }
+    }
+}

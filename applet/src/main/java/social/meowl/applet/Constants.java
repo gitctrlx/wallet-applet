@@ -65,11 +65,36 @@ public final class Constants {
     /** {@code OPEN_SECURE_CHANNEL} — envelopes an inner APDU under the session keys. (Phase 2) */
     public static final byte INS_OPEN_SECURE_CHANNEL = (byte) 0x11;
 
-    // Reserved for Phase 3: INS_SETUP = 0x20, INS_VERIFY_PIN = 0x21, INS_CHANGE_PIN = 0x22,
-    //                       INS_CHANGE_PUK = 0x23, INS_UNBLOCK_PIN = 0x24,
-    //                       INS_EXPORT_PKI_PUBKEY = 0x30, INS_SIGN_PKI_CSR = 0x31,
-    //                       INS_IMPORT_PKI_CERT = 0x32, INS_EXPORT_PKI_CERT = 0x33,
-    //                       INS_LOCK_PKI = 0x34.
+    /** {@code SETUP} — initial PIN/PUK provisioning. (Phase 3) */
+    public static final byte INS_SETUP = (byte) 0x20;
+
+    /** {@code VERIFY_PIN} — unlock session-scoped PIN authorisation. (Phase 3) */
+    public static final byte INS_VERIFY_PIN = (byte) 0x21;
+
+    /** {@code CHANGE_PIN} — rotate user PIN. (Phase 3) */
+    public static final byte INS_CHANGE_PIN = (byte) 0x22;
+
+    /** {@code CHANGE_PUK} — rotate unblock PUK. (Phase 3) */
+    public static final byte INS_CHANGE_PUK = (byte) 0x23;
+
+    /** {@code UNBLOCK_PIN} — PUK-based PIN unblock. (Phase 3) */
+    public static final byte INS_UNBLOCK_PIN = (byte) 0x24;
+
+    /** {@code EXPORT_PKI_PUBKEY} — export authentikey pubkey for CSR construction. (Phase 3) */
+    public static final byte INS_EXPORT_PKI_PUBKEY = (byte) 0x30;
+
+    /** {@code SIGN_PKI_CSR} — sign a host-provided CSR digest with the authentikey. (Phase 3) */
+    public static final byte INS_SIGN_PKI_CSR = (byte) 0x31;
+
+    /** {@code IMPORT_PKI_CERT} — chunked manufacturer certificate import. (Phase 3) */
+    public static final byte INS_IMPORT_PKI_CERT = (byte) 0x32;
+
+    /** {@code EXPORT_PKI_CERT} — paged certificate export. (Phase 3) */
+    public static final byte INS_EXPORT_PKI_CERT = (byte) 0x33;
+
+    /** {@code LOCK_PKI} — finalise PKI personalisation; transitions to PERSONALIZED. (Phase 3) */
+    public static final byte INS_LOCK_PKI = (byte) 0x34;
+
     // Reserved for Phase 4: INS_IMPORT_SEED = 0x40, INS_GENERATE_SEED = 0x41,
     //                       INS_EXPORT_XPUB = 0x42.
     // Reserved for Phase 5: INS_SIGN_ECDSA_K1 = 0x50, INS_SIGN_SCHNORR_K1 = 0x51,
@@ -118,6 +143,15 @@ public final class Constants {
 
     /** Applet-private {@code 6FB2} — Secure Channel cryptographic check failed. */
     public static final short SW_SECURE_CHANNEL_FAILED = (short) 0x6FB2;
+
+    /**
+     * ISO 7816-4 {@code 63Cn} base — PIN verification failed, {@code n} attempts remain. The caller
+     * ORs in the (4-bit) remaining-tries count.
+     */
+    public static final short SW_PIN_RETRIES_BASE = (short) 0x63C0;
+
+    /** Applet-private {@code 6983} — the PIN (or PUK) is blocked: authentication method blocked. */
+    public static final short SW_PIN_BLOCKED = (short) 0x6983;
 
     /** Applet-private {@code 6FE0} — a required JavaCard feature is not available on this card. */
     public static final short SW_UNSUPPORTED_FEATURE = (short) 0x6FE0;
@@ -187,6 +221,43 @@ public final class Constants {
 
     /** Truncated HMAC-SHA-256 tag length (bytes) used as the Secure Channel MAC. */
     public static final short SC_MAC_LEN = (short) 16;
+
+    /*  PIN / PUK policy (Phase 3) — see docs/adr/0006-pin-policy.md  */
+
+    /** Minimum PIN length in bytes. */
+    public static final byte PIN_MIN_LEN = (byte) 4;
+
+    /** Maximum PIN length in bytes. */
+    public static final byte PIN_MAX_LEN = (byte) 16;
+
+    /** Default PIN try-counter limit. */
+    public static final byte PIN_RETRY_LIMIT = (byte) 3;
+
+    /** Minimum PUK length in bytes. */
+    public static final byte PUK_MIN_LEN = (byte) 8;
+
+    /** Maximum PUK length in bytes. */
+    public static final byte PUK_MAX_LEN = (byte) 32;
+
+    /** Default PUK try-counter limit. */
+    public static final byte PUK_RETRY_LIMIT = (byte) 5;
+
+    /*  PKI personalisation (Phase 3)  */
+
+    /** Maximum committed certificate size in EEPROM. Sized for a typical X.509v3 EE cert. */
+    public static final short PKI_CERT_MAX_LEN = (short) 1024;
+
+    /** Maximum payload length per IMPORT_PKI_CERT WRITE chunk. */
+    public static final short PKI_CERT_CHUNK_MAX_LEN = (short) 200;
+
+    /** {@code IMPORT_PKI_CERT} sub-command: stage the import with the declared total size. */
+    public static final byte PKI_IMPORT_P1_INIT = (byte) 0x00;
+
+    /** {@code IMPORT_PKI_CERT} sub-command: write a chunk at the given offset. */
+    public static final byte PKI_IMPORT_P1_WRITE = (byte) 0x01;
+
+    /** {@code IMPORT_PKI_CERT} sub-command: commit the staged size as the new cert length. */
+    public static final byte PKI_IMPORT_P1_FINALIZE = (byte) 0x02;
 
     /*  Reset-to-factory policy  */
 

@@ -77,6 +77,26 @@ public final class LifecycleState {
     }
 
     /**
+     * Asserts that the current state equals {@code required}, otherwise throws {@link
+     * Constants#SW_LIFECYCLE_INVALID}. Used by inner handlers to gate state-specific commands.
+     */
+    public void require(byte required) {
+        if (current != required) {
+            ISOException.throwIt(Constants.SW_LIFECYCLE_INVALID);
+        }
+    }
+
+    /**
+     * Asserts that the current state is at least {@code minimum} in the forward FSM order,
+     * otherwise throws {@link Constants#SW_LIFECYCLE_INVALID}.
+     */
+    public void requireAtLeast(byte minimum) {
+        if (current < minimum) {
+            ISOException.throwIt(Constants.SW_LIFECYCLE_INVALID);
+        }
+    }
+
+    /**
      * Pure decision function for {@link #transitionTo(byte)}. Package-private so unit tests can
      * exercise it without engaging the JavaCard transaction machinery.
      */

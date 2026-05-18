@@ -92,22 +92,39 @@ class SecureChannelTest {
     }
 
     @Test
-    @DisplayName("envelope round-trip: encrypted payload decrypts and echoes back identical")
-    void envelopeRoundTripEchoes() throws Exception {
+    @DisplayName("envelope round-trip: inner EXPORT_PKI_PUBKEY returns the authentikey")
+    void envelopeRoundTripExportPubkey() throws Exception {
         Session session = openSession();
-        byte[] plaintext = bytes(0x10, 0x20, 0x30, 0x40, 0x50);
-        byte[] envelope = session.encryptForCard(plaintext);
+        // Inner APDU: CLA INS P1 P2 LC = MEOWL EXPORT_PKI_PUBKEY 0 0 0 (no data).
+        byte[] innerApdu =
+                bytes(
+                        Constants.CLA_MEOWL & 0xFF,
+                        Constants.INS_EXPORT_PKI_PUBKEY & 0xFF,
+                        0x00,
+                        0x00,
+                        0x00);
+        byte[] envelope = session.encryptForCard(innerApdu);
         ResponseAPDU resp = transmit(INS_OPEN_SC, 0x00, 0x00, envelope);
         assertEquals(0x9000, resp.getSW(), "envelope must be accepted");
         byte[] decrypted = session.decryptFromCard(resp.getData());
-        assertArrayEquals(plaintext, decrypted);
+        // Compare against the direct GET_AUTHENTIKEY response which is exposed outside the
+        // Secure Channel — they must return the exact same 33-byte compressed point.
+        byte[] direct = transmit(INS_GET_AUTHENTIKEY, 0x00, 0x00, null).getData();
+        assertArrayEquals(direct, decrypted, "inner EXPORT_PKI_PUBKEY must equal GET_AUTHENTIKEY");
     }
 
     @Test
     @DisplayName("replay attack: re-sending the same envelope is rejected")
     void replayRejected() throws Exception {
         Session session = openSession();
-        byte[] envelope = session.encryptForCard(bytes(0xAA, 0xBB, 0xCC));
+        byte[] innerApdu =
+                bytes(
+                        Constants.CLA_MEOWL & 0xFF,
+                        Constants.INS_EXPORT_PKI_PUBKEY & 0xFF,
+                        0x00,
+                        0x00,
+                        0x00);
+        byte[] envelope = session.encryptForCard(innerApdu);
         assertEquals(0x9000, transmit(INS_OPEN_SC, 0x00, 0x00, envelope).getSW());
         // Same IV → must trip the strictly-increasing check.
         ResponseAPDU replay = transmit(INS_OPEN_SC, 0x00, 0x00, envelope);
@@ -118,7 +135,14 @@ class SecureChannelTest {
     @DisplayName("tampered MAC: any 1-bit flip in the ciphertext invalidates the envelope")
     void tamperedMacRejected() throws Exception {
         Session session = openSession();
-        byte[] envelope = session.encryptForCard(bytes(0x01, 0x02, 0x03, 0x04));
+        byte[] innerApdu =
+                bytes(
+                        Constants.CLA_MEOWL & 0xFF,
+                        Constants.INS_EXPORT_PKI_PUBKEY & 0xFF,
+                        0x00,
+                        0x00,
+                        0x00);
+        byte[] envelope = session.encryptForCard(innerApdu);
         // Flip a bit somewhere in the ciphertext (not IV, not MAC).
         envelope[Constants.SC_BLOCK_LEN + 1] ^= (byte) 0x01;
         ResponseAPDU resp = transmit(INS_OPEN_SC, 0x00, 0x00, envelope);
@@ -139,18 +163,20 @@ class SecureChannelTest {
     @DisplayName("two consecutive envelopes succeed with monotonically increasing IVs")
     void twoEnvelopesMonotonicIv() throws Exception {
         Session session = openSession();
-        byte[] first = session.encryptForCard(bytes(0x01));
-        byte[] second = session.encryptForCard(bytes(0x02));
-        assertEquals(0x9000, transmit(INS_OPEN_SC, 0x00, 0x00, first).getSW());
-        assertEquals(0x9000, transmit(INS_OPEN_SC, 0x00, 0x00, second).getSW());
+        byte[] innerApdu =
+                bytes(
+                        Constants.CLA_MEOWL & 0xFF,
+                        Constants.INS_EXPORT_PKI_PUBKEY & 0xFF,
+                        0x00,
+                        0x00,
+                        0x00);
+        ResponseAPDU first = transmit(INS_OPEN_SC, 0x00, 0x00, session.encryptForCard(innerApdu));
+        ResponseAPDU second = transmit(INS_OPEN_SC, 0x00, 0x00, session.encryptForCard(innerApdu));
+        assertEquals(0x9000, first.getSW());
+        assertEquals(0x9000, second.getSW());
         // Sanity: outbound IVs from the card must differ between the two responses.
-        // We don't check ordering here (the card chooses), but they should not collide.
-        byte[] firstResponse =
-                transmit(INS_OPEN_SC, 0x00, 0x00, session.encryptForCard(bytes(0x03))).getData();
-        byte[] secondResponse =
-                transmit(INS_OPEN_SC, 0x00, 0x00, session.encryptForCard(bytes(0x04))).getData();
-        byte[] iv1 = Arrays.copyOfRange(firstResponse, 0, Constants.SC_BLOCK_LEN);
-        byte[] iv2 = Arrays.copyOfRange(secondResponse, 0, Constants.SC_BLOCK_LEN);
+        byte[] iv1 = Arrays.copyOfRange(first.getData(), 0, Constants.SC_BLOCK_LEN);
+        byte[] iv2 = Arrays.copyOfRange(second.getData(), 0, Constants.SC_BLOCK_LEN);
         assertNotEquals(hex(iv1), hex(iv2));
     }
 

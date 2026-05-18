@@ -52,10 +52,12 @@ public final class Authentikey {
      *
      * <p>The compression rebuilds the parity byte from the {@code y} coordinate's least significant
      * bit, then prepends it to the existing {@code x} coordinate already written by {@link
-     * ECPublicKey#getW(byte[], short)}. No intermediate buffer is required: the operation is
-     * performed in two distinct byte writes against {@code dst}.
+     * ECPublicKey#getW(byte[], short)}. The trailing y-coordinate bytes (32 bytes past the 33-byte
+     * compressed point) are zeroised so no ephemeral residue leaks into outbound buffers.
      *
-     * @return the offset immediately after the 33-byte compressed point
+     * @return the number of bytes written, i.e. {@link Constants#EC_POINT_COMPRESSED_LEN}. The
+     *     return type matches the JavaCard convention of length-not-end-offset shared by {@link
+     *     ECPublicKey#getW}, {@link javacard.security.Signature#sign}, etc.
      */
     public short writeCompressedPubkeyTo(byte[] dst, short offset) {
         ensureCapacity(dst, offset, Constants.EC_POINT_UNCOMPRESSED_LEN);
@@ -67,9 +69,7 @@ public final class Authentikey {
 
         // After getW(): dst[offset .. offset+64] = 0x04 ‖ x(32) ‖ y(32).
         // SEC 1 §2.3.3 compression keeps `x(32)` in place and replaces the 0x04 prefix with
-        // 0x02 (y even) or 0x03 (y odd). The y-coordinate suffix is overwritten by the caller's
-        // next write or simply ignored; we zero the tail to keep ephemeral residue out of the
-        // outgoing buffer.
+        // 0x02 (y even) or 0x03 (y odd).
         byte yLsb = dst[(short) (offset + Constants.EC_POINT_UNCOMPRESSED_LEN - 1)];
         dst[offset] = ((yLsb & 0x01) == 0) ? (byte) 0x02 : (byte) 0x03;
         Util.arrayFillNonAtomic(
@@ -78,7 +78,7 @@ public final class Authentikey {
                 (short) (Constants.EC_POINT_UNCOMPRESSED_LEN - Constants.EC_POINT_COMPRESSED_LEN),
                 (byte) 0);
 
-        return (short) (offset + Constants.EC_POINT_COMPRESSED_LEN);
+        return Constants.EC_POINT_COMPRESSED_LEN;
     }
 
     /** Package-private access for the Secure Channel handshake signer (Phase 2). */
