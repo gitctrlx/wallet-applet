@@ -5,104 +5,55 @@
 [![CI](https://github.com/qntx/meowl-applet/actions/workflows/ci.yml/badge.svg)](https://github.com/qntx/meowl-applet/actions/workflows/ci.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](./LICENSE)
 [![JavaCard](https://img.shields.io/badge/JavaCard-3.0.5%20%E2%86%92%203.2.0-orange)](https://www.oracle.com/java/technologies/javacard-sdk-downloads.html)
+[![SLSA Level 3](https://slsa.dev/images/gh-badge-level3.svg)](https://slsa.dev)
 
-`meowl-applet` is a JavaCard applet built with the **2026-grade** toolchain:
+`meowl-applet` is the JavaCard applet that runs on the secure element of every meowl.social hardware wallet. It is compiled with the Oracle JavaCard `3.2.0 v26.0` SDK and targets the `3.0.5` runtime so the same CAP file deploys cleanly on every certified card we ship.
 
-| Layer        | Choice                                                                                                                |
-| ------------ | -------------------------------------------------                                                                     |
-| Build system | Gradle 9 + Kotlin DSL                                                                                                 |
-| CAP builder  | [`ant-javacard`](https://github.com/martinpaljak/ant-javacard) (called natively from Gradle — no dead wrapper plugin) |
-| SDK          | Oracle JavaCard `3.2.0 v26.0`, target `3.0.5`                                                                         |
-| Simulator    | [`jcardsim`](https://github.com/licel/jcardsim) (`com.klinec` fork)                                                   |
-| Card loader  | [GlobalPlatformPro](https://github.com/martinpaljak/GlobalPlatformPro)                                                |
-| Host I/O     | [`apdu4j`](https://github.com/martinpaljak/apdu4j)                                                                    |
-| Test         | JUnit 6 + BouncyCastle                                                                                                |
-| CI           | GitHub Actions                                                                                                        |
-| License      | AGPL-3.0-or-later (REUSE 3.3 compliant)                                                                               |
+## Toolchain
 
-## Prerequisites
+| Layer | Choice |
+| --- | --- |
+| Build system | Gradle 9 + Kotlin DSL |
+| CAP builder | [`ant-javacard`](https://github.com/martinpaljak/ant-javacard) (invoked natively from Gradle) |
+| SDK | Oracle JavaCard `3.2.0 v26.0`, target `3.0.5` |
+| Simulator | [`jcardsim`](https://github.com/licel/jcardsim) (`com.klinec` fork) |
+| Card loader | [GlobalPlatformPro](https://github.com/martinpaljak/GlobalPlatformPro) |
+| Host I/O | [`apdu4j`](https://github.com/martinpaljak/apdu4j) |
+| Tests | JUnit 6 + BouncyCastle |
+| CI | GitHub Actions with SLSA L3 provenance and CycloneDX SBOM |
 
-- **JDK 25** on `PATH` (Temurin LTS recommended). Older 21 LTS also works locally
-  because Gradle's toolchain auto-provisions 25 via foojay.
-- **Git** with submodule support — the JavaCard SDK is a git submodule.
-- A **PC/SC** reader if you want to load on a physical card.
+## Installing on a card
 
-> **Behind a corporate or Clash/V2Ray-style proxy?** The JVM does **not** read
-> Windows or shell proxy settings automatically. Add the following to
-> `~/.gradle/gradle.properties` (or pass via `GRADLE_OPTS`) so the wrapper, the
-> Spotless plugin, and dependency resolution can reach `services.gradle.org`
-> and Maven Central:
->
-> ```properties
-> systemProp.https.proxyHost=127.0.0.1
-> systemProp.https.proxyPort=7897
-> systemProp.http.proxyHost=127.0.0.1
-> systemProp.http.proxyPort=7897
-> ```
-
-## First-time setup
+Every tagged release publishes a verified `meowl-applet.cap`. Download the CAP, the SBOM, and `sha256sums.txt` from the [latest release](https://github.com/qntx/meowl-applet/releases/latest), then verify and install:
 
 ```bash
-git clone --recurse-submodules https://github.com/qntx/meowl-applet.git
-cd meowl-applet
-./gradlew :applet:buildCap
+# Verify checksums
+sha256sum -c sha256sums.txt
+
+# Verify the SLSA build provenance (requires gh ≥ 2.49)
+gh attestation verify meowl-applet.cap --repo qntx/meowl-applet
+
+# Install onto a card you own using GlobalPlatformPro
+gp --install meowl-applet.cap
 ```
 
-The CAP file lands in `applet/build/cap/meowl-applet.cap`.
-
-## Common tasks
-
-```bash
-# Format & lint
-./gradlew spotlessApply
-
-# Build the CAP
-./gradlew :applet:buildCap
-
-# Run the JCardSim test suite (no card required)
-./gradlew :tests:test
-
-# Install onto a connected card (uses GlobalPlatformPro with default keys)
-./gradlew :tools:installCap
-
-# Talk to the card directly
-./gradlew :tools:run --args="80010000"
-
-# Run GlobalPlatformPro with arbitrary args
-./gradlew :tools:gp -Pargs="--list"
-```
-
-## Project layout
-
-```text
-.
-├── applet/        # JavaCard source — compiled into the CAP
-├── tests/         # JCardSim integration tests
-├── tools/         # Host-side CLI + GP wrapper
-├── sdks/          # ← submodule: Oracle JavaCard SDKs
-├── gradle/        # Wrapper + libs.versions.toml (version catalog)
-├── config/        # Spotless license header template
-└── .github/       # GitHub Actions CI
-```
-
-## Configuration knobs
-
-All overridable via Gradle properties (e.g. `-Papplet.appletAid=...`):
-
-| Property              | Default                              | Purpose                |
-| --------------------- | ------------------------------------ | ---------------------- |
-| `applet.packageAid`   | `F06D656F776C`                       | CAP package AID (hex)  |
-| `applet.appletAid`    | `F06D656F776C01`                     | Applet instance AID    |
-| `applet.class`        | `social.meowl.applet.MeowlApplet`    | Applet class           |
-| `applet.packageName`  | `social.meowl.applet`                | Java package           |
-| `appletVersion`       | `0.1.0-SNAPSHOT`                     | Package version        |
-
-> **Note**: the default AID prefix `F0` lives in the ISO/IEC 7816-5 *proprietary*
-> range, fine for development. For production register your own RID with
-> ISO/IEC 7816-5 or use a 5-byte GP development AID.
+> The default AID prefix `F0` lives in the ISO/IEC 7816-5 *proprietary* range — fine for development. For production deployments register your own RID per ISO/IEC 7816-5.
 
 ## License
 
-[AGPL-3.0-or-later](./LICENSE). See [`SECURITY.md`](./SECURITY.md) for the
-threat model and disclosure policy, [`CONTRIBUTING.md`](./CONTRIBUTING.md) for
-development workflow.
+Licensed under the GNU Affero General Public License Version 3.0 ([LICENSE](LICENSE) or <https://www.gnu.org/licenses/agpl-3.0.html>).
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in this project shall be licensed under the same terms, without any additional conditions.
+
+---
+
+<div align="center">
+
+A **[QNTX](https://qntx.fun)** open-source project.
+
+<a href="https://qntx.fun"><img alt="QNTX" width="369" src="https://raw.githubusercontent.com/qntx/.github/main/profile/qntx-banner.svg" /></a>
+
+<!--prettier-ignore-->
+Code is law. We write both.
+
+</div>

@@ -42,3 +42,6 @@ replay_pid*
 # Local overrides
 local.properties
 gradle.properties.local
+
+# Third-party reference repos
+3rdparty

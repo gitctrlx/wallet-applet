@@ -1,8 +1,23 @@
 # Contributing to meowl-applet
 
-Thanks for your interest! This repo holds the JavaCard applet powering the
-meowl.social hardware wallet. Because it ends up on a tamper-resistant chip
-running custodial keys, contributions are reviewed strictly.
+Thanks for your interest. This applet is the trust anchor of every meowl.social hardware wallet — it runs on a tamper-resistant secure element holding custodial keys, so contributions are reviewed strictly. Read [`SECURITY.md`](./SECURITY.md) for the threat model before proposing changes that touch sensitive code paths.
+
+## Prerequisites
+
+- **JDK 25** on `PATH` — Temurin 25 LTS recommended. Gradle's toolchain auto-provisions via foojay if missing, but having a system JDK avoids the first-run download.
+- **Git** with submodule support — the Oracle JavaCard SDK ships as a submodule under `sdks/`.
+- A **PC/SC** reader (built-in on Windows/macOS; install `pcscd` on Linux) only if you want to install onto a physical card.
+
+### Behind a proxy
+
+The JVM does **not** pick up Windows or shell proxy settings automatically. Add the following to `~/.gradle/gradle.properties` (or pass via `GRADLE_OPTS`) so the wrapper, dependency resolution, and the Spotless plugin can reach `services.gradle.org` and Maven Central:
+
+```properties
+systemProp.https.proxyHost=127.0.0.1
+systemProp.https.proxyPort=7897
+systemProp.http.proxyHost=127.0.0.1
+systemProp.http.proxyPort=7897
+```
 
 ## Quick start
 
@@ -12,20 +27,62 @@ cd meowl-applet
 ./gradlew spotlessCheck :applet:buildCap :tests:test
 ```
 
-Requires **JDK 25** on `PATH` (Temurin 25 LTS — Gradle auto-provisions if missing).
+The CAP file lands in `applet/build/cap/meowl-applet.cap`.
+
+## Project layout
+
+```text
+.
+├── applet/   # JavaCard source — compiled into the CAP
+├── tests/    # JCardSim integration tests (JUnit 6)
+├── tools/    # Host-side CLI + GlobalPlatformPro wrapper
+├── sdks/     # ← submodule: Oracle JavaCard SDKs
+├── gradle/   # Wrapper + libs.versions.toml (version catalog)
+├── config/   # Spotless license header template
+└── .github/  # GitHub Actions CI + Dependabot
+```
+
+## Common tasks
+
+```bash
+# Format Java and Kotlin Gradle files
+./gradlew spotlessApply
+
+# Build the CAP file
+./gradlew :applet:buildCap
+
+# Run the JCardSim test suite (no physical card required)
+./gradlew :tests:test
+
+# Install onto a connected card using GlobalPlatformPro defaults
+./gradlew :tools:installCap
+
+# Send an APDU through apdu4j to the connected card
+./gradlew :tools:run --args="80010000"
+
+# Pass arbitrary arguments through to GlobalPlatformPro
+./gradlew :tools:gp -Pargs="--list"
+```
+
+## Configuration knobs
+
+Applet identifiers and the CAP package version are overridable via Gradle properties (`-Papplet.xxx=...`):
+
+| Property | Default | Purpose |
+| --- | --- | --- |
+| `applet.packageAid` | `F06D656F776C` | CAP package AID (hex) |
+| `applet.appletAid` | `F06D656F776C01` | Applet instance AID |
+| `applet.class` | `social.meowl.applet.MeowlApplet` | Applet class FQN |
+| `applet.packageName` | `social.meowl.applet` | Java package |
+| `applet.capVersion` | `0.1` | CAP package version (MAJOR.MINOR) |
 
 ## Workflow
 
 1. Open an issue first for non-trivial changes.
-2. Branch from `main`: `git checkout -b feat/<topic>` or `fix/<topic>`.
-3. Make your change. Keep diffs focused.
-4. Run the full local pipeline:
-
-   ```bash
-   ./gradlew spotlessApply :applet:buildCap :tests:test
-   ```
-
-5. Commit using **Conventional Commits** (English):
+2. Branch from `main` using a Conventional-Commits-style prefix: `git checkout -b feat/<topic>` or `fix/<topic>`.
+3. Keep the diff focused — one logical change per PR.
+4. Run the full local pipeline before pushing: `./gradlew spotlessApply :applet:buildCap :tests:test`.
+5. Commit using **Conventional Commits** in English (subject ≤ 72 chars):
 
    ```text
    feat(applet): add PIN unblock flow
@@ -33,21 +90,21 @@ Requires **JDK 25** on `PATH` (Temurin 25 LTS — Gradle auto-provisions if miss
    docs: explain target SDK choice
    ```
 
-6. Open a PR against `main`. CI must pass.
+6. Open a PR against `main`. CI is the source of truth — `commitlint`, Spotless, the CAP build, and the JCardSim test suite must all pass.
 
 ## Coding rules
 
-- **Java source compat: 1.8** for `applet/` (JCDK v26.0 converter limit). Use `var` only in `tools/` and `tests/`.
-- **No `String` in applet code paths** — concatenation allocates and JC has no GC.
-- **No floating point**, **no multi-dim arrays**, **no threading**.
-- Sensitive data lives in `JCSystem.makeTransientByteArray(...)` and is wiped
-  after use.
-- Run **Spotless** (`./gradlew spotlessApply`) before pushing; CI rejects unformatted code.
+- **Java source/target: 1.8** in `applet/` (JCDK v26.0 converter limit). `var` is permitted only in `tools/` and `tests/`.
+- **No `String` in applet code paths** — concatenation allocates and the card has no GC. Use `byte[]` plus `Util.arrayCopyNonAtomic`.
+- **No floating point**, **no multi-dimensional arrays**, **no threads**.
+- Sensitive data must live in `JCSystem.makeTransientByteArray(...)` and be wiped after use.
+- All write paths to persistent state must be wrapped in `JCSystem.beginTransaction()` / `commitTransaction()`.
+- Run `./gradlew spotlessApply` before pushing — CI rejects unformatted code.
 
-## Adding new APDUs
+## Adding a new APDU
 
 1. Reserve an `INS` constant in `MeowlApplet`.
-2. Add a private handler and dispatch in `process(...)`.
-3. Add a JCardSim test under `tests/` exercising both success and the
-   relevant failure SWs.
-4. Document the APDU in `docs/protocol.md` (create if missing).
+2. Add a private handler and dispatch it from `process(...)`.
+3. Add a JCardSim test under `tests/` covering both the success path and the relevant failure status words.
+4. Document the APDU in `docs/protocol.md` (create the file if it does not yet exist).
+5. If the APDU exposes secrets, justify the secure-channel choice in the PR description.
