@@ -1,0 +1,432 @@
+/*
+ * SPDX-FileCopyrightText: 2026 meowl.social contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+package social.meowl.applet;
+
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.licel.jcardsim.smartcardio.CardSimulator;
+import com.licel.jcardsim.utils.AIDUtil;
+import java.math.BigInteger;
+import java.security.SecureRandom;
+import java.security.Security;
+import java.util.Arrays;
+import javacard.framework.AID;
+import javax.crypto.Cipher;
+import javax.crypto.Mac;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
+import javax.smartcardio.CommandAPDU;
+import javax.smartcardio.ResponseAPDU;
+import org.bouncycastle.asn1.x9.X9ECParameters;
+import org.bouncycastle.crypto.ec.CustomNamedCurves;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.math.ec.ECPoint;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+/**
+ * End-to-end Secure Channel tests against the JCardSim-simulated applet.
+ *
+ * <p>Verifies the entire handshake (ECDH + HKDF-SHA-256 + authentikey ECDSA signature) and the
+ * envelope round-trip (encrypt, MAC, IV monotonicity, replay defense).
+ */
+class SecureChannelTest {
+
+    private static final byte[] APPLET_AID_BYTES = {
+        (byte) 0xF0, 0x6D, 0x65, 0x6F, 0x77, 0x6C, 0x01
+    };
+
+    private static final int CLA = Constants.CLA_MEOWL & 0xFF;
+    private static final int INS_INIT_SC = Constants.INS_INIT_SECURE_CHANNEL & 0xFF;
+    private static final int INS_OPEN_SC = Constants.INS_OPEN_SECURE_CHANNEL & 0xFF;
+    private static final int INS_GET_AUTHENTIKEY = Constants.INS_GET_AUTHENTIKEY & 0xFF;
+
+    private static final X9ECParameters SECP256K1 = CustomNamedCurves.getByName("secp256k1");
+    private static final byte[] HKDF_INFO = "meowl-sc-v1".getBytes();
+
+    private static final SecureRandom RANDOM = new SecureRandom();
+
+    private CardSimulator simulator;
+
+    @BeforeAll
+    static void registerProvider() {
+        if (Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null) {
+            Security.addProvider(new BouncyCastleProvider());
+        }
+    }
+
+    @BeforeEach
+    void setUp() {
+        simulator = new CardSimulator();
+        AID aid = AIDUtil.create(APPLET_AID_BYTES);
+        simulator.installApplet(aid, MeowlApplet.class);
+        simulator.selectApplet(aid);
+    }
+
+    @Test
+    @DisplayName("handshake returns card ephemeral pubkey + authentikey-signed payload")
+    void handshakeShape() {
+        Session session = openSession();
+        assertEquals(Constants.EC_POINT_UNCOMPRESSED_LEN, session.cardEphPub.length);
+        assertEquals(0x04, session.cardEphPub[0] & 0xFF);
+        assertTrue(session.signature.length > 0, "signature must be non-empty DER");
+    }
+
+    @Test
+    @DisplayName("authentikey signature verifies over (cardEphPub || clientEphPub)")
+    void authentikeySignatureVerifies() throws Exception {
+        Session session = openSession();
+        // Independently fetch the authentikey to verify the handshake signature against it.
+        byte[] authentikeyPub = compressedAuthentikey();
+
+        byte[] message = concat(session.cardEphPub, session.clientEphPub);
+        boolean ok = EcdsaVerifier.verifySecp256k1(authentikeyPub, message, session.signature);
+        assertTrue(ok, "authentikey ECDSA signature must verify");
+    }
+
+    @Test
+    @DisplayName("envelope round-trip: encrypted payload decrypts and echoes back identical")
+    void envelopeRoundTripEchoes() throws Exception {
+        Session session = openSession();
+        byte[] plaintext = bytes(0x10, 0x20, 0x30, 0x40, 0x50);
+        byte[] envelope = session.encryptForCard(plaintext);
+        ResponseAPDU resp = transmit(INS_OPEN_SC, 0x00, 0x00, envelope);
+        assertEquals(0x9000, resp.getSW(), "envelope must be accepted");
+        byte[] decrypted = session.decryptFromCard(resp.getData());
+        assertArrayEquals(plaintext, decrypted);
+    }
+
+    @Test
+    @DisplayName("replay attack: re-sending the same envelope is rejected")
+    void replayRejected() throws Exception {
+        Session session = openSession();
+        byte[] envelope = session.encryptForCard(bytes(0xAA, 0xBB, 0xCC));
+        assertEquals(0x9000, transmit(INS_OPEN_SC, 0x00, 0x00, envelope).getSW());
+        // Same IV → must trip the strictly-increasing check.
+        ResponseAPDU replay = transmit(INS_OPEN_SC, 0x00, 0x00, envelope);
+        assertEquals(Constants.SW_SECURE_CHANNEL_FAILED & 0xFFFF, replay.getSW());
+    }
+
+    @Test
+    @DisplayName("tampered MAC: any 1-bit flip in the ciphertext invalidates the envelope")
+    void tamperedMacRejected() throws Exception {
+        Session session = openSession();
+        byte[] envelope = session.encryptForCard(bytes(0x01, 0x02, 0x03, 0x04));
+        // Flip a bit somewhere in the ciphertext (not IV, not MAC).
+        envelope[Constants.SC_BLOCK_LEN + 1] ^= (byte) 0x01;
+        ResponseAPDU resp = transmit(INS_OPEN_SC, 0x00, 0x00, envelope);
+        assertEquals(Constants.SW_SECURE_CHANNEL_FAILED & 0xFFFF, resp.getSW());
+    }
+
+    @Test
+    @DisplayName("envelope before handshake: card returns SW_SECURE_CHANNEL_REQUIRED")
+    void envelopeBeforeHandshake() {
+        // We construct a clearly-invalid envelope; what matters is the card refuses to look at it.
+        byte[] garbage =
+                new byte[Constants.SC_BLOCK_LEN + Constants.SC_BLOCK_LEN + Constants.SC_MAC_LEN];
+        ResponseAPDU resp = transmit(INS_OPEN_SC, 0x00, 0x00, garbage);
+        assertEquals(Constants.SW_SECURE_CHANNEL_REQUIRED & 0xFFFF, resp.getSW());
+    }
+
+    @Test
+    @DisplayName("two consecutive envelopes succeed with monotonically increasing IVs")
+    void twoEnvelopesMonotonicIv() throws Exception {
+        Session session = openSession();
+        byte[] first = session.encryptForCard(bytes(0x01));
+        byte[] second = session.encryptForCard(bytes(0x02));
+        assertEquals(0x9000, transmit(INS_OPEN_SC, 0x00, 0x00, first).getSW());
+        assertEquals(0x9000, transmit(INS_OPEN_SC, 0x00, 0x00, second).getSW());
+        // Sanity: outbound IVs from the card must differ between the two responses.
+        // We don't check ordering here (the card chooses), but they should not collide.
+        byte[] firstResponse =
+                transmit(INS_OPEN_SC, 0x00, 0x00, session.encryptForCard(bytes(0x03))).getData();
+        byte[] secondResponse =
+                transmit(INS_OPEN_SC, 0x00, 0x00, session.encryptForCard(bytes(0x04))).getData();
+        byte[] iv1 = Arrays.copyOfRange(firstResponse, 0, Constants.SC_BLOCK_LEN);
+        byte[] iv2 = Arrays.copyOfRange(secondResponse, 0, Constants.SC_BLOCK_LEN);
+        assertNotEquals(hex(iv1), hex(iv2));
+    }
+
+    private byte[] compressedAuthentikey() {
+        ResponseAPDU resp = transmit(INS_GET_AUTHENTIKEY, 0x00, 0x00, null);
+        assertEquals(0x9000, resp.getSW());
+        return resp.getData();
+    }
+
+    private Session openSession() {
+        // 1. Generate a client ephemeral keypair on secp256k1.
+        BigInteger clientPriv;
+        ECPoint clientPub;
+        do {
+            byte[] candidate = new byte[32];
+            RANDOM.nextBytes(candidate);
+            clientPriv = new BigInteger(1, candidate);
+        } while (clientPriv.signum() == 0 || clientPriv.compareTo(SECP256K1.getN()) >= 0);
+        clientPub = SECP256K1.getG().multiply(clientPriv).normalize();
+        byte[] clientPubEnc = clientPub.getEncoded(false); // 0x04 || x || y
+
+        // 2. Send INIT_SECURE_CHANNEL.
+        ResponseAPDU resp = transmit(INS_INIT_SC, 0x00, 0x00, clientPubEnc);
+        assertEquals(0x9000, resp.getSW(), "handshake must succeed");
+        byte[] body = resp.getData();
+        byte[] cardEphPub = Arrays.copyOfRange(body, 0, Constants.EC_POINT_UNCOMPRESSED_LEN);
+        short sigLen =
+                (short)
+                        (((body[Constants.EC_POINT_UNCOMPRESSED_LEN] & 0xFF) << 8)
+                                | (body[Constants.EC_POINT_UNCOMPRESSED_LEN + 1] & 0xFF));
+        byte[] signature =
+                Arrays.copyOfRange(
+                        body,
+                        Constants.EC_POINT_UNCOMPRESSED_LEN + 2,
+                        Constants.EC_POINT_UNCOMPRESSED_LEN + 2 + sigLen);
+
+        // 3. Derive shared secret on the host side.
+        ECPoint cardPub = SECP256K1.getCurve().decodePoint(cardEphPub).normalize();
+        ECPoint sharedPoint = cardPub.multiply(clientPriv).normalize();
+        byte[] sharedX = bigIntToFixed(sharedPoint.getAffineXCoord().toBigInteger(), 32);
+        byte[] clientX = Arrays.copyOfRange(clientPubEnc, 1, 33);
+        byte[] cardX = Arrays.copyOfRange(cardEphPub, 1, 33);
+        byte[] salt = concat(clientX, cardX);
+        byte[] prk = HkdfSha256.extract(salt, sharedX);
+        byte[] okm = HkdfSha256.expand(prk, HKDF_INFO, 32 + 32 + 16);
+        byte[] kEnc = Arrays.copyOfRange(okm, 0, 32);
+        byte[] kMac = Arrays.copyOfRange(okm, 32, 64);
+        byte[] ivBase = Arrays.copyOfRange(okm, 64, 80);
+
+        return new Session(clientPubEnc, cardEphPub, signature, kEnc, kMac, ivBase);
+    }
+
+    private ResponseAPDU transmit(int ins, int p1, int p2, byte[] data) {
+        CommandAPDU cmd =
+                data == null
+                        ? new CommandAPDU(CLA, ins, p1, p2)
+                        : new CommandAPDU(CLA, ins, p1, p2, data);
+        return simulator.transmitCommand(cmd);
+    }
+
+    private static byte[] bytes(int... ints) {
+        byte[] out = new byte[ints.length];
+        for (int i = 0; i < ints.length; i++) {
+            out[i] = (byte) ints[i];
+        }
+        return out;
+    }
+
+    private static byte[] concat(byte[] a, byte[] b) {
+        byte[] out = new byte[a.length + b.length];
+        System.arraycopy(a, 0, out, 0, a.length);
+        System.arraycopy(b, 0, out, a.length, b.length);
+        return out;
+    }
+
+    private static byte[] bigIntToFixed(BigInteger n, int len) {
+        byte[] raw = n.toByteArray();
+        if (raw.length == len) {
+            return raw;
+        }
+        byte[] out = new byte[len];
+        if (raw.length > len) {
+            System.arraycopy(raw, raw.length - len, out, 0, len);
+        } else {
+            System.arraycopy(raw, 0, out, len - raw.length, raw.length);
+        }
+        return out;
+    }
+
+    private static String hex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
+    }
+
+    /** Per-session client state derived from the handshake. */
+    private static final class Session {
+        final byte[] clientEphPub;
+        final byte[] cardEphPub;
+        final byte[] signature;
+        final byte[] kEnc;
+        final byte[] kMac;
+        final byte[] ivBase;
+        long inboundCounter;
+        long outboundCounter;
+
+        Session(
+                byte[] clientEphPub,
+                byte[] cardEphPub,
+                byte[] signature,
+                byte[] kEnc,
+                byte[] kMac,
+                byte[] ivBase) {
+            this.clientEphPub = clientEphPub;
+            this.cardEphPub = cardEphPub;
+            this.signature = signature;
+            this.kEnc = kEnc;
+            this.kMac = kMac;
+            this.ivBase = ivBase;
+            this.inboundCounter = 0L;
+            this.outboundCounter = 0L;
+        }
+
+        byte[] encryptForCard(byte[] plaintext) throws Exception {
+            inboundCounter++;
+            byte[] iv = ivFromCounter(inboundCounter);
+            byte[] padded = pkcs5Pad(plaintext);
+            Cipher cipher = Cipher.getInstance("AES/CBC/NoPadding");
+            cipher.init(
+                    Cipher.ENCRYPT_MODE, new SecretKeySpec(kEnc, "AES"), new IvParameterSpec(iv));
+            byte[] ct = cipher.doFinal(padded);
+
+            // MAC = HMAC-SHA256(K_mac, [CLA INS P1 P2 LC] ‖ IV ‖ ct)[0..16].
+            int lc = iv.length + ct.length + Constants.SC_MAC_LEN;
+            byte[] header = {(byte) CLA, (byte) INS_OPEN_SC, 0x00, 0x00, (byte) lc};
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(kMac, "HmacSHA256"));
+            mac.update(header);
+            mac.update(iv);
+            mac.update(ct);
+            byte[] fullTag = mac.doFinal();
+            byte[] tag = Arrays.copyOf(fullTag, Constants.SC_MAC_LEN);
+
+            return concat(concat(iv, ct), tag);
+        }
+
+        byte[] decryptFromCard(byte[] envelope) throws Exception {
+            byte[] iv = Arrays.copyOfRange(envelope, 0, Constants.SC_BLOCK_LEN);
+            byte[] ct =
+                    Arrays.copyOfRange(
+                            envelope,
+                            Constants.SC_BLOCK_LEN,
+                            envelope.length - Constants.SC_MAC_LEN);
+            byte[] tag =
+                    Arrays.copyOfRange(
+                            envelope, envelope.length - Constants.SC_MAC_LEN, envelope.length);
+
+            // Verify MAC = HMAC-SHA256(K_mac, 0xFF ‖ IV ‖ ct)[0..16].
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(kMac, "HmacSHA256"));
+            mac.update((byte) 0xFF);
+            mac.update(iv);
+            mac.update(ct);
+            byte[] expected = Arrays.copyOf(mac.doFinal(), Constants.SC_MAC_LEN);
+            if (!Arrays.equals(expected, tag)) {
+                throw new IllegalStateException("response MAC mismatch");
+            }
+
+            Cipher cipher = Cipher.getInstance("AES/CBC/NoPadding");
+            cipher.init(
+                    Cipher.DECRYPT_MODE, new SecretKeySpec(kEnc, "AES"), new IvParameterSpec(iv));
+            byte[] padded = cipher.doFinal(ct);
+            return pkcs5Unpad(padded);
+        }
+
+        private byte[] ivFromCounter(long counter) {
+            byte[] iv = new byte[Constants.SC_BLOCK_LEN];
+            // Big-endian counter into the last 8 bytes; first 8 zero. The card's
+            // strictly-increasing
+            // check operates on the full 16-byte buffer.
+            for (int i = 0; i < 8; i++) {
+                iv[Constants.SC_BLOCK_LEN - 1 - i] = (byte) ((counter >>> (8 * i)) & 0xFF);
+            }
+            return iv;
+        }
+
+        private static byte[] pkcs5Pad(byte[] in) {
+            int rem = in.length % Constants.SC_BLOCK_LEN;
+            int padLen = Constants.SC_BLOCK_LEN - rem;
+            byte[] out = new byte[in.length + padLen];
+            System.arraycopy(in, 0, out, 0, in.length);
+            for (int i = in.length; i < out.length; i++) {
+                out[i] = (byte) padLen;
+            }
+            return out;
+        }
+
+        private static byte[] pkcs5Unpad(byte[] padded) {
+            int padLen = padded[padded.length - 1] & 0xFF;
+            return Arrays.copyOfRange(padded, 0, padded.length - padLen);
+        }
+    }
+
+    /** Minimal RFC 5869 HKDF-SHA-256 helper for tests. */
+    private static final class HkdfSha256 {
+        static byte[] extract(byte[] salt, byte[] ikm) {
+            try {
+                Mac mac = Mac.getInstance("HmacSHA256");
+                mac.init(new SecretKeySpec(salt.length == 0 ? new byte[32] : salt, "HmacSHA256"));
+                return mac.doFinal(ikm);
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        }
+
+        static byte[] expand(byte[] prk, byte[] info, int length) {
+            try {
+                Mac mac = Mac.getInstance("HmacSHA256");
+                byte[] out = new byte[length];
+                byte[] prev = new byte[0];
+                int pos = 0;
+                byte counter = 1;
+                while (pos < length) {
+                    mac.init(new SecretKeySpec(prk, "HmacSHA256"));
+                    mac.update(prev);
+                    mac.update(info);
+                    mac.update(counter);
+                    prev = mac.doFinal();
+                    int take = Math.min(prev.length, length - pos);
+                    System.arraycopy(prev, 0, out, pos, take);
+                    pos += take;
+                    counter++;
+                }
+                return out;
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        }
+    }
+
+    /** Verifies a DER-encoded ECDSA signature over secp256k1 produced from a SHA-256 digest. */
+    private static final class EcdsaVerifier {
+        static boolean verifySecp256k1(byte[] compressedPubkey, byte[] message, byte[] derSig)
+                throws Exception {
+            ECPoint point = SECP256K1.getCurve().decodePoint(compressedPubkey).normalize();
+            java.security.spec.ECPoint w =
+                    new java.security.spec.ECPoint(
+                            point.getAffineXCoord().toBigInteger(),
+                            point.getAffineYCoord().toBigInteger());
+            java.security.spec.EllipticCurve curve =
+                    new java.security.spec.EllipticCurve(
+                            new java.security.spec.ECFieldFp(
+                                    SECP256K1.getCurve().getField().getCharacteristic()),
+                            SECP256K1.getCurve().getA().toBigInteger(),
+                            SECP256K1.getCurve().getB().toBigInteger());
+            java.security.spec.ECParameterSpec params =
+                    new java.security.spec.ECParameterSpec(
+                            curve,
+                            new java.security.spec.ECPoint(
+                                    SECP256K1.getG().getAffineXCoord().toBigInteger(),
+                                    SECP256K1.getG().getAffineYCoord().toBigInteger()),
+                            SECP256K1.getN(),
+                            SECP256K1.getH().intValue());
+            java.security.spec.ECPublicKeySpec spec =
+                    new java.security.spec.ECPublicKeySpec(w, params);
+            java.security.KeyFactory kf =
+                    java.security.KeyFactory.getInstance("EC", BouncyCastleProvider.PROVIDER_NAME);
+            java.security.PublicKey pub = kf.generatePublic(spec);
+            java.security.Signature sig =
+                    java.security.Signature.getInstance(
+                            "SHA256withECDSA", BouncyCastleProvider.PROVIDER_NAME);
+            sig.initVerify(pub);
+            sig.update(message);
+            return sig.verify(derSig);
+        }
+    }
+}

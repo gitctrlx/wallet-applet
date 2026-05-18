@@ -59,7 +59,12 @@ public final class Constants {
     /** {@code RESET_TO_FACTORY} — wipes secrets after N consecutive invocations. (Phase 1) */
     public static final byte INS_RESET_TO_FACTORY = (byte) 0x03;
 
-    // Reserved for Phase 2: INS_INIT_SECURE_CHANNEL = 0x10, INS_OPEN_SECURE_CHANNEL = 0x11.
+    /** {@code INIT_SECURE_CHANNEL} — ECDH handshake; establishes session keys. (Phase 2) */
+    public static final byte INS_INIT_SECURE_CHANNEL = (byte) 0x10;
+
+    /** {@code OPEN_SECURE_CHANNEL} — envelopes an inner APDU under the session keys. (Phase 2) */
+    public static final byte INS_OPEN_SECURE_CHANNEL = (byte) 0x11;
+
     // Reserved for Phase 3: INS_SETUP = 0x20, INS_VERIFY_PIN = 0x21, INS_CHANGE_PIN = 0x22,
     //                       INS_CHANGE_PUK = 0x23, INS_UNBLOCK_PIN = 0x24,
     //                       INS_EXPORT_PKI_PUBKEY = 0x30, INS_SIGN_PKI_CSR = 0x31,
@@ -107,6 +112,12 @@ public final class Constants {
 
     /** Applet-private {@code 6FB0} — lifecycle state forbids this command. */
     public static final short SW_LIFECYCLE_INVALID = (short) 0x6FB0;
+
+    /** Applet-private {@code 6FB1} — command requires an open Secure Channel. */
+    public static final short SW_SECURE_CHANNEL_REQUIRED = (short) 0x6FB1;
+
+    /** Applet-private {@code 6FB2} — Secure Channel cryptographic check failed. */
+    public static final short SW_SECURE_CHANNEL_FAILED = (short) 0x6FB2;
 
     /** Applet-private {@code 6FE0} — a required JavaCard feature is not available on this card. */
     public static final short SW_UNSUPPORTED_FEATURE = (short) 0x6FE0;
@@ -165,6 +176,17 @@ public final class Constants {
 
     /** Length of a compressed EC point ({@code 0x02|0x03 || x}). */
     public static final short EC_POINT_COMPRESSED_LEN = (short) 33;
+
+    /*  Secure Channel sizes (Phase 2)  */
+
+    /** AES key length (bytes) used by the Secure Channel — AES-256. */
+    public static final short SC_KEY_LEN = (short) 32;
+
+    /** AES-CBC block size and IV length (bytes). */
+    public static final short SC_BLOCK_LEN = (short) 16;
+
+    /** Truncated HMAC-SHA-256 tag length (bytes) used as the Secure Channel MAC. */
+    public static final short SC_MAC_LEN = (short) 16;
 
     /*  Reset-to-factory policy  */
 

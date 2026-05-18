@@ -19,25 +19,24 @@ HMAC-SHA1 and AES-128 are not broken, but they are below the contemporary 128-bi
 
 ## Decision
 
-**Preferred suite (`SC-V1`):**
+**Single suite (`SC-V1`)** — AES-256-CBC + HMAC-SHA-256:
 
-- **Handshake:** ECDH over secp256k1 with ephemeral keys on both sides; the card additionally signs its ephemeral public key with the long-lived `authentikey` ([ADR-0005](./0005-authentikey-lifecycle.md)) so the host can authenticate the card.
-- **Key derivation:** HKDF-SHA-256 (RFC 5869) expands the shared secret + the concatenation of both ephemeral public keys (as salt) + the literal `"meowl-sc-v1"` (as info) into 80 bytes:
-  - 32 bytes → `K_enc` (AES-256 key).
-  - 32 bytes → `K_mac` (HMAC-SHA-256 key, used only in the fallback suite).
-  - 16 bytes → `IV_seed` (initial counter value).
-- **Encryption:** AES-256-GCM, 12-byte IV (4-byte monotonically increasing counter ‖ 8-byte random per message), 16-byte authentication tag.
-- **Additional Authenticated Data:** the outer APDU header (`CLA ‖ INS ‖ P1 ‖ P2 ‖ LC`) is fed to GCM as AAD, preventing a man-in-the-middle from altering the header without invalidating the tag.
+- **Handshake:** ECDH over secp256k1 with ephemeral keys on both sides (host uses 65-byte uncompressed SEC1 form). The card additionally signs the concatenation of both ephemeral public keys with the long-lived `authentikey` ([ADR-0005](./0005-authentikey-lifecycle.md)) so the host can authenticate the card.
+- **Key derivation:** HKDF-SHA-256 (RFC 5869) extract+expand.
+  - `salt = client_eph_x ‖ card_eph_x` (64 bytes)
+  - `ikm  = shared_x` (32 bytes, the x-coordinate of the ECDH point)
+  - `info = "meowl-sc-v1"` (11 bytes)
+  - `okm  = HKDF-Expand(PRK, info, 80)` split as:
+    - 32 bytes → `K_enc` (AES-256 key)
+    - 32 bytes → `K_mac` (HMAC-SHA-256 key)
+    - 16 bytes → `IV_base` (XOR-mixed with a monotonic counter to produce each outbound IV)
+- **Confidentiality:** AES-256-CBC with PKCS#5 padding. Every direction carries a fresh 16-byte IV.
+- **Authentication:** HMAC-SHA-256 keyed with `K_mac`, truncated to 16 bytes (`SC_MAC_LEN`).
+  - **Inbound MAC** = `HMAC(K_mac, outer_header[CLA,INS,P1,P2,LC] ‖ IV ‖ ciphertext)[0..16]`
+  - **Outbound MAC** = `HMAC(K_mac, 0xFF ‖ IV ‖ ciphertext)[0..16]` (`0xFF` is a fixed direction-tag).
+- **Replay defense:** the card stores the last accepted inbound IV; each new inbound IV must strictly exceed it.
 
-**Fallback suite (`SC-V1-CBC`):**
-
-If the host detects via `GET_INFO` capability bits that the card lacks AES-GCM (commonly true on JavaCard 3.0.5 silicon — GCM only became standard at JC 3.1):
-
-- Same handshake and HKDF derivation.
-- **Encryption:** AES-256-CBC with a 16-byte IV (4-byte counter ‖ 12-byte random).
-- **Authentication:** HMAC-SHA-256 over `IV ‖ AAD ‖ ciphertext` using `K_mac`. Truncated to 16 bytes for wire economy.
-
-The card advertises which suite is available via the `CAP_SC_GCM` and `CAP_SC_CBC_HMAC` bits in `GET_INFO`. The host picks the strongest mutually supported suite.
+We deliberately ship a single cipher suite, not the dual GCM/CBC scheme the original plan suggested. The rationale: AES-256-CBC + HMAC-SHA-256 reaches the same 256-bit security level as AES-256-GCM, is supported by every JavaCard 3.0.4+ silicon we target, and removes the complexity of capability-driven cipher-suite negotiation between host and card. The `CAP_SC_CBC_HMAC` capability bit is advertised in `GET_INFO`; `CAP_SC_GCM` is reserved for a future revision should silicon support warrant it.
 
 ## Consequences
 
@@ -49,9 +48,9 @@ The card advertises which suite is available via the `CAP_SC_GCM` and `CAP_SC_CB
 
 ### Negative
 
-- **GCM availability:** Phase 2 must probe AES-GCM at applet install time. If unavailable, fall back to CBC-HMAC. Both code paths must ship and both must be tested.
 - **Slightly heavier handshake** than Satochip's (extra 32-byte HKDF expansion plus a card-signed ephemeral pubkey), at the cost of dozens of milliseconds per session establishment — acceptable.
+- **PKCS#5 padding** is conceptually weaker than an AEAD construction (an attacker can in principle mount a padding-oracle attack if MAC verification is constant-time-incorrect). We mitigate by always MAC-then-decrypt: the cipher is only invoked once the MAC has verified, and `Util.arrayCompare` is constant-time per the JC spec.
 
 ### Neutral
 
-- The fallback CBC-HMAC suite is identical in security level to the GCM one (both at 256-bit symmetric strength); GCM is preferred only for cleaner code and AEAD's compactness.
+- A future ADR may introduce an AES-256-GCM suite as `CAP_SC_GCM` once silicon support is widespread, but this is purely an internal simplification — the security level is identical.

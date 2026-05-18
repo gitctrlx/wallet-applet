@@ -32,11 +32,13 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     private final LifecycleState state;
     private final Authentikey authentikey;
     private final ResetToFactory resetTrigger;
+    private final SecureChannel secureChannel;
 
     private MeowlApplet() {
         this.state = new LifecycleState();
         this.authentikey = new Authentikey();
         this.resetTrigger = new ResetToFactory();
+        this.secureChannel = new SecureChannel(this.authentikey);
         register();
     }
 
@@ -47,10 +49,11 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
 
     @Override
     public boolean select() {
-        // Re-arm the reset trigger so a residual countdown from a previous session never bleeds
-        // into a fresh one. (The transient counter is also cleared by CLEAR_ON_RESET, but be
-        // explicit on every select() for clarity.)
+        // Re-arm the reset trigger and tear down any residual Secure Channel session so state
+        // never bleeds across selects. The transient buffers behind both helpers are also
+        // cleared by CLEAR_ON_DESELECT, this is belt-and-braces.
         resetTrigger.rearm();
+        secureChannel.reset();
         return true;
     }
 
@@ -75,6 +78,8 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
             resetTrigger.rearm();
         }
 
+        // Read the data field once for the handlers that need it. setIncomingAndReceive()
+        // returns the number of bytes available in the buffer past OFFSET_CDATA.
         short responseLen;
         switch (ins) {
             case Constants.INS_GET_INFO:
@@ -87,11 +92,37 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
                 // Always throws — never returns. The status word encodes the countdown.
                 resetTrigger.recordInvocation(this);
                 return;
+            case Constants.INS_INIT_SECURE_CHANNEL:
+                responseLen = handleInitSecureChannel(apdu, buffer);
+                break;
+            case Constants.INS_OPEN_SECURE_CHANNEL:
+                responseLen = handleOpenSecureChannel(apdu, buffer);
+                break;
             default:
                 ISOException.throwIt(Constants.SW_INS_NOT_SUPPORTED);
                 return;
         }
         apdu.setOutgoingAndSend((short) 0, responseLen);
+    }
+
+    /**
+     * Drives the ECDH + HKDF handshake. The client ephemeral pubkey arrives in the data field (65
+     * bytes uncompressed); we return the card ephemeral pubkey ‖ sigLen ‖ ECDSA signature over both
+     * ephemeral pubkeys.
+     */
+    private short handleInitSecureChannel(APDU apdu, byte[] buffer) {
+        short lc = apdu.setIncomingAndReceive();
+        return secureChannel.initHandshake(buffer, ISO7816.OFFSET_CDATA, lc);
+    }
+
+    /**
+     * Phase 2 placeholder for the envelope: decrypts the inner APDU, then echoes the plaintext back
+     * through a fresh outbound envelope. Phase 3+ replaces the echo with inner-INS dispatch.
+     */
+    private short handleOpenSecureChannel(APDU apdu, byte[] buffer) {
+        short lc = apdu.setIncomingAndReceive();
+        short plainLen = secureChannel.unwrap(buffer, ISO7816.OFFSET_CDATA, lc);
+        return secureChannel.wrap(buffer, ISO7816.OFFSET_CDATA, plainLen);
     }
 
     /**
@@ -129,13 +160,15 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     }
 
     /**
-     * Phase 1 wipe behaviour: collapse the lifecycle FSM to {@link LifecycleState#UNINITIALIZED}.
-     * Phases 2+ extend this hook to also clear the seed, PIN/PUK and PKI material. The authentikey
-     * is preserved by design ({@code docs/adr/0005-authentikey-lifecycle.md}).
+     * Phase 1 wipe behaviour: collapse the lifecycle FSM to {@link LifecycleState#UNINITIALIZED}
+     * and tear down any open Secure Channel session. Phases 3+ extend this hook to also clear the
+     * seed, PIN/PUK and PKI material. The authentikey is preserved by design ({@code
+     * docs/adr/0005-authentikey-lifecycle.md}).
      */
     @Override
     public void wipe() {
         state.reset();
+        secureChannel.reset();
     }
 
     /**
@@ -143,6 +176,6 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
      * its own bit as its handlers come online.
      */
     private static short advertisedCapabilities() {
-        return Constants.CAP_RESET_TO_FACTORY;
+        return (short) (Constants.CAP_RESET_TO_FACTORY | Constants.CAP_SC_CBC_HMAC);
     }
 }
