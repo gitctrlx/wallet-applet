@@ -333,6 +333,41 @@ class PhaseThreeTest {
         }
 
         @Test
+        @DisplayName(
+                "CHANGE_PUK requires PIN session-verified — fresh SC after VERIFY_PIN must"
+                        + " invalidate")
+        void changePukSessionIsInvalidatedByReHandshake() throws Exception {
+            sendInnerExpectOk(
+                    Constants.INS_SETUP, (byte) 0, (byte) 0, encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
+            // Verify PIN inside the current Secure Channel.
+            assertEquals(
+                    0x9000,
+                    sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, DEFAULT_PIN).getSW());
+            // While in the same SC, CHANGE_PUK is allowed.
+            byte[] freshPuk = "ZZZZZZZZ".getBytes();
+            sendInnerExpectOk(
+                    Constants.INS_CHANGE_PUK,
+                    (byte) 0,
+                    (byte) 0,
+                    encodeLengthPrefixedPair(DEFAULT_PUK, freshPuk));
+
+            // Open a brand new Secure Channel. CHANGE_PUK should now be rejected by the
+            // session-verify gate even though the PIN was validated in the previous session.
+            session = openSession();
+            byte[] yetAnotherPuk = "YYYYYYYY".getBytes();
+            ResponseAPDU r =
+                    sendInner(
+                            Constants.INS_CHANGE_PUK,
+                            (byte) 0,
+                            (byte) 0,
+                            encodeLengthPrefixedPair(freshPuk, yetAnotherPuk));
+            assertEquals(
+                    Constants.SW_SECURITY_STATUS_NOT_SATISFIED & 0xFFFF,
+                    r.getSW(),
+                    "PIN-validated flag must not carry across Secure Channel re-handshakes");
+        }
+
+        @Test
         @DisplayName("CHANGE_PIN: rotates the PIN; old PIN no longer verifies")
         void changePin() throws Exception {
             sendInnerExpectOk(

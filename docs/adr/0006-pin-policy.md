@@ -45,7 +45,11 @@ A `VERIFY_PIN` whose payload length is outside `[PIN_MIN_LEN, PIN_MAX_LEN]` retu
 ### Positive
 
 - **Cognitively simple:** users learn one PIN. No risk of "which slot was that?" confusion.
-- **Auditable:** every gated command's authorisation rule reads "PIN was verified in this Secure Channel session", full stop.
+- **Auditable per-command rule.** Each gated command has exactly one of three authorisation rules, picked by what attacks are realistic against that command:
+  - **Self-verify rule:** the command's own data field carries the credential and the handler verifies it inline (`CHANGE_PIN` verifies the old PIN, `UNBLOCK_PIN` verifies the PUK). The card does not look at a session flag.
+  - **Session-verify rule:** the handler checks {@code pinManager.isPinVerified()} (i.e. `OwnerPIN.isValidated()`). The host must have run `VERIFY_PIN` earlier in the same Secure Channel session. This is the rule for `CHANGE_PUK` and (later, Phase 5) the signing commands — anywhere a stolen card with an unknown PIN must not be hijackable by rotating credentials.
+  - **No-auth rule:** the command is part of factory personalisation or session bootstrap (`EXPORT_PKI_PUBKEY`, `SIGN_PKI_CSR`, `IMPORT_PKI_CERT`, `LOCK_PKI`, `INIT_SECURE_CHANNEL`, `GET_INFO`, `RESET_TO_FACTORY`, `EXPORT_PKI_CERT`). These either touch only public data or are inherently un-authenticatable before the PIN exists.
+- **Session boundary integrity.** The PIN-validated flag is invalidated on `select()`, on Secure Channel re-handshake (`INIT_SECURE_CHANNEL`), and on `RESET_TO_FACTORY`. An attacker who steals an authenticated card and tries to re-establish a Secure Channel cannot inherit the prior PIN authorisation.
 - **No ACL bitmask overhead** in EEPROM or in command processing.
 
 ### Negative

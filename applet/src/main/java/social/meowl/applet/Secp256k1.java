@@ -19,14 +19,23 @@ import javacard.security.ECKey;
  */
 public final class Secp256k1 {
 
-    /** Length of an EC scalar (private key / hash / x-coordinate). */
-    public static final short SCALAR_LEN = (short) 32;
+    /**
+     * Length of an EC scalar (private key / hash / x-coordinate).
+     *
+     * <p>Package-private and only used internally by {@link #setCurveParameters(ECKey)}; external
+     * callers must use {@link Constants#EC_SCALAR_LEN} instead so the size constant has a single
+     * authoritative definition.
+     */
+    private static final short SCALAR_LEN = (short) 32;
 
-    /** Length of an uncompressed EC point ({@code 0x04 || x || y}). */
-    public static final short POINT_UNCOMPRESSED_LEN = (short) 65;
+    /**
+     * Length of an uncompressed EC point ({@code 0x04 || x || y}). Same single-source rationale as
+     * {@link #SCALAR_LEN}; external callers must use {@link Constants#EC_POINT_UNCOMPRESSED_LEN}.
+     */
+    private static final short POINT_UNCOMPRESSED_LEN = (short) 65;
 
     /** Cofactor {@code h = 1}. */
-    public static final short COFACTOR = (short) 0x01;
+    private static final short COFACTOR = (short) 0x01;
 
     private static final short OFFSET_P = (short) 0;
     private static final short OFFSET_A = (short) 32;

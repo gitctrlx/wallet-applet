@@ -116,8 +116,20 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         apdu.setOutgoingAndSend((short) 0, responseLen);
     }
 
+    /**
+     * Opens a fresh Secure Channel session.
+     *
+     * <p>Before the handshake we explicitly tear down <em>both</em> the prior Secure Channel
+     * session keys (so the new handshake cannot accidentally leave the old key material "borrowed"
+     * if it throws) and the PIN-verified flag. Without the latter, an attacker who obtained access
+     * to an already-authenticated card could open a fresh Secure Channel session and inherit the
+     * {@code OwnerPIN.isValidated()} flag from the previous session, defeating the "PIN binds to
+     * the Secure Channel session" property advertised in ADR-0006.
+     */
     private short handleInitSecureChannel(APDU apdu, byte[] buffer) {
         short lc = apdu.setIncomingAndReceive();
+        secureChannel.reset();
+        pinManager.clearSession();
         return secureChannel.initHandshake(buffer, ISO7816.OFFSET_CDATA, lc);
     }
 
