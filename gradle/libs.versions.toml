@@ -28,6 +28,7 @@ spotless           = "8.5.1"
 google-java-format = "1.35.0"
 ktlint             = "1.8.0"
 foojay-resolver    = "1.0.0"
+cyclonedx          = "3.2.4"
 
 [libraries]
 ant-javacard      = { module = "com.github.martinpaljak:ant-javacard",     version.ref = "ant-javacard" }
@@ -45,3 +46,4 @@ junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher
 [plugins]
 spotless          = { id = "com.diffplug.spotless",                           version.ref = "spotless" }
 foojay-resolver   = { id = "org.gradle.toolchains.foojay-resolver-convention", version.ref = "foojay-resolver" }
+cyclonedx         = { id = "org.cyclonedx.bom",                               version.ref = "cyclonedx" }

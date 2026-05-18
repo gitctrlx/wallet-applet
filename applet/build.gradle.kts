@@ -7,6 +7,7 @@
 
 plugins {
     `java-library`
+    alias(libs.plugins.cyclonedx)
 }
 
 description = "meowl-applet — JavaCard applet (CAP build)"
@@ -122,3 +123,20 @@ val buildCap by tasks.registering {
 }
 
 tasks.named("assemble") { dependsOn(buildCap) }
+
+// CycloneDX SBOM for the build classpath that produces the CAP. The runtime
+// classpath is empty (the applet runs on the card), so the SBOM describes
+// what was used to build the artefact. JSON-only; schema defaults to v1.6.
+tasks.cyclonedxDirectBom {
+    projectType = org.cyclonedx.model.Component.Type.APPLICATION
+    componentName = "meowl-applet"
+    includeConfigs = listOf("antJavaCard", "compileClasspath")
+    skipConfigs = listOf(".*[Tt]est.*")
+    includeBuildSystem = true
+    jsonOutput =
+        layout.buildDirectory
+            .file("reports/meowl-sbom.cdx.json")
+            .get()
+            .asFile
+    xmlOutput.unsetConvention()
+}
