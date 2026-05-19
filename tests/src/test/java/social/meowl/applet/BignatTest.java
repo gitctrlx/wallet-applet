@@ -27,8 +27,7 @@ class BignatTest {
 
     private static final SecureRandom RNG = new SecureRandom();
     private static final BigInteger SECP256K1_N =
-            new BigInteger(
-                    "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141", 16);
+            new BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141", 16);
 
     @RepeatedTest(200)
     @DisplayName("add: 32-byte unsigned addition matches BigInteger")

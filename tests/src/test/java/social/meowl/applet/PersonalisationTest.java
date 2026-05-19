@@ -33,9 +33,9 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 /**
- * End-to-end tests for the personalisation flow — PIN/PUK setup plus PKI manufacturer-cert
- * import and lock. All these INS are reachable only through the Secure Channel envelope, so every
- * test opens a session first and dispatches inner APDUs via {@code OPEN_SECURE_CHANNEL}.
+ * End-to-end tests for the personalisation flow — PIN/PUK setup plus PKI manufacturer-cert import
+ * and lock. All these INS are reachable only through the Secure Channel envelope, so every test
+ * opens a session first and dispatches inner APDUs via {@code OPEN_SECURE_CHANNEL}.
  *
  * <p>The {@link Session} helper is a self-contained client-side mirror of the meowl Secure Channel
  * protocol — ECDH on secp256k1, HKDF-SHA-256 KDF, AES-256-CBC, HMAC-SHA-256 — built on BouncyCastle

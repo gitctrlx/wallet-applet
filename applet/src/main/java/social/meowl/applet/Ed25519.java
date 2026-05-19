@@ -15,27 +15,25 @@ import javacard.security.MessageDigest;
  * <p>JavaCard 3.0.5 ships no native Ed25519, so the entire signing pipeline lives in user code:
  * SHA-512 expansion of the SLIP-10 leaf seed (clamped per RFC 8032 §5.1.5), public-key derivation
  * via {@link Edwards25519#scalarMult} of the clamped scalar against the base point,
- * tagged-domain-separated SHA-512 calls for the deterministic ephemeral scalar {@code r} and
- * the challenge {@code k}, a second base-point scalar multiplication for {@code R = r · B}, a
- * software big-integer multiplication for {@code S = (r + k · s) mod ℓ}, and finally an
- * RFC 8032 §5.1.2 little-endian compressed encoding of the signature.
+ * tagged-domain-separated SHA-512 calls for the deterministic ephemeral scalar {@code r} and the
+ * challenge {@code k}, a second base-point scalar multiplication for {@code R = r · B}, a software
+ * big-integer multiplication for {@code S = (r + k · s) mod ℓ}, and finally an RFC 8032 §5.1.2
+ * little-endian compressed encoding of the signature.
  *
  * <p>Wire input: 32-byte SLIP-10 leaf private key plus the message bytes verbatim. RFC 8032
- * specifies that the message is hashed inside the algorithm, so the host supplies the raw
- * payload (this is the only path that produces a verifier-compatible signature for chains like
- * Solana / Sui / TON / Aptos that wrap the message in chain-specific framing the host already
- * applied; per the hash-only invariant of {@code docs/specs/meap-6.md} the card never parses
- * the message).
+ * specifies that the message is hashed inside the algorithm, so the host supplies the raw payload
+ * (this is the only path that produces a verifier-compatible signature for chains like Solana / Sui
+ * / TON / Aptos that wrap the message in chain-specific framing the host already applied; per the
+ * hash-only invariant of {@code docs/specs/meap-6.md} the card never parses the message).
  *
  * <p>Wire output: 64 bytes laid out as {@code R(32) ‖ S(32)}, both in RFC 8032 little-endian
  * compressed form.
  *
  * <p>All intermediate state (clamped scalar {@code s}, ephemeral {@code r}, challenge {@code k},
- * computed point coordinates, SHA-512 chunks) lives in a single
- * {@link JCSystem#CLEAR_ON_DESELECT} transient byte array and is wiped by an explicit
- * {@code finally} clause at the end of {@link #sign}; the {@code CLEAR_ON_DESELECT} lifecycle
- * alone is not sufficient because a subsequent call within the same session would otherwise see
- * stale secrets in the slot.
+ * computed point coordinates, SHA-512 chunks) lives in a single {@link JCSystem#CLEAR_ON_DESELECT}
+ * transient byte array and is wiped by an explicit {@code finally} clause at the end of {@link
+ * #sign}; the {@code CLEAR_ON_DESELECT} lifecycle alone is not sufficient because a subsequent call
+ * within the same session would otherwise see stale secrets in the slot.
  */
 public final class Ed25519 {
 
@@ -49,9 +47,9 @@ public final class Ed25519 {
     public static final short SIGNATURE_LEN = (short) 64;
 
     /**
-     * Group order {@code ℓ = 2²⁵² + 27742317777372353535851937790883648493} as a 32-byte
-     * big-endian constant. Used as the modulus when reducing the SHA-512-derived ephemeral
-     * scalar {@code r} and the final {@code S = (r + k · s) mod ℓ}.
+     * Group order {@code ℓ = 2²⁵² + 27742317777372353535851937790883648493} as a 32-byte big-endian
+     * constant. Used as the modulus when reducing the SHA-512-derived ephemeral scalar {@code r}
+     * and the final {@code S = (r + k · s) mod ℓ}.
      */
     public static final byte[] GROUP_L = {
         (byte) 0x10, (byte) 0x00, (byte) 0x00, (byte) 0x00,
@@ -91,7 +89,8 @@ public final class Ed25519 {
     private static final short BASE_PT_OFF = (short) 256;
     private static final short POINT_OFF = (short) 384;
     private static final short WORK_OFF = (short) 512;
-    private static final short SCRATCH_LEN = (short) (WORK_OFF + Edwards25519.SCALAR_MULT_SCRATCH_LEN);
+    private static final short SCRATCH_LEN =
+            (short) (WORK_OFF + Edwards25519.SCALAR_MULT_SCRATCH_LEN);
 
     private final MessageDigest sha512;
     private final byte[] scratch;
@@ -108,8 +107,8 @@ public final class Ed25519 {
 
     /**
      * Derives the compressed Ed25519 public key from the supplied 32-byte leaf private key and
-     * writes the 32-byte encoding to {@code outBuf} at {@code outOff}. Returns
-     * {@link #PUBLIC_KEY_LEN}.
+     * writes the 32-byte encoding to {@code outBuf} at {@code outOff}. Returns {@link
+     * #PUBLIC_KEY_LEN}.
      */
     public short publicKey(byte[] skBuf, short skOff, byte[] outBuf, short outOff) {
         try {
@@ -123,9 +122,9 @@ public final class Ed25519 {
 
     /**
      * RFC 8032 §5.1.6 sign operation. Produces a 64-byte {@code R ‖ S} signature for the message
-     * {@code msgBuf[msgOff..msgOff+msgLen]} under the SLIP-10 leaf private key
-     * {@code skBuf[skOff..skOff+32]}. Writes the signature to {@code outBuf} at {@code outOff}
-     * and returns {@link #SIGNATURE_LEN}.
+     * {@code msgBuf[msgOff..msgOff+msgLen]} under the SLIP-10 leaf private key {@code
+     * skBuf[skOff..skOff+32]}. Writes the signature to {@code outBuf} at {@code outOff} and returns
+     * {@link #SIGNATURE_LEN}.
      */
     public short sign(
             byte[] skBuf,
@@ -136,22 +135,18 @@ public final class Ed25519 {
             byte[] outBuf,
             short outOff) {
         try {
-            //  1. h = SHA-512(sk); s ← clamp(h[0..32]) reversed to BE; A = s · B; A_enc = encode(A).
+            //  1. h = SHA-512(sk); s ← clamp(h[0..32]) reversed to BE; A = s · B; A_enc =
+            // encode(A).
             computePublicKey(skBuf, skOff);
 
-            //  2. r = SHA-512(h[32..64] ‖ M)  (h[32..64] = prefix is still in scratch[HASH_OFF+32]).
+            //  2. r = SHA-512(h[32..64] ‖ M)  (h[32..64] = prefix is still in
+            // scratch[HASH_OFF+32]).
             sha512.reset();
             sha512.update(scratch, (short) (HASH_OFF + 32), (short) 32);
             sha512.doFinal(msgBuf, msgOff, msgLen, scratch, HASH_OFF);
             //     Reverse the 64-byte LE digest into BE then reduce mod ℓ.
             reverseBytes(scratch, HASH_OFF, SHA512_LEN);
-            Bignat.mod(
-                    scratch,
-                    HASH_OFF,
-                    SHA512_LEN,
-                    GROUP_L,
-                    (short) 0,
-                    (short) 32);
+            Bignat.mod(scratch, HASH_OFF, SHA512_LEN, GROUP_L, (short) 0, (short) 32);
             Util.arrayCopyNonAtomic(
                     scratch, (short) (HASH_OFF + 32), scratch, R_BE_OFF, (short) 32);
 
@@ -160,16 +155,8 @@ public final class Ed25519 {
             //     the SHA-512 / Bignat workspace from step 2 is anchored at HASH_OFF, well clear
             //     of BASE_PT_OFF. The POINT_OFF slot used to hold A is reused for R.
             Edwards25519.scalarMult(
-                    scratch,
-                    R_BE_OFF,
-                    scratch,
-                    BASE_PT_OFF,
-                    scratch,
-                    POINT_OFF,
-                    scratch,
-                    WORK_OFF);
-            Edwards25519.encodePoint(
-                    scratch, POINT_OFF, scratch, R_ENC_OFF, scratch, WORK_OFF);
+                    scratch, R_BE_OFF, scratch, BASE_PT_OFF, scratch, POINT_OFF, scratch, WORK_OFF);
+            Edwards25519.encodePoint(scratch, POINT_OFF, scratch, R_ENC_OFF, scratch, WORK_OFF);
 
             //  4. k = SHA-512(R_enc ‖ A_enc ‖ M) mod ℓ.
             sha512.reset();
@@ -177,53 +164,27 @@ public final class Ed25519 {
             sha512.update(scratch, A_ENC_OFF, (short) 32);
             sha512.doFinal(msgBuf, msgOff, msgLen, scratch, HASH_OFF);
             reverseBytes(scratch, HASH_OFF, SHA512_LEN);
-            Bignat.mod(
-                    scratch,
-                    HASH_OFF,
-                    SHA512_LEN,
-                    GROUP_L,
-                    (short) 0,
-                    (short) 32);
+            Bignat.mod(scratch, HASH_OFF, SHA512_LEN, GROUP_L, (short) 0, (short) 32);
             Util.arrayCopyNonAtomic(
                     scratch, (short) (HASH_OFF + 32), scratch, K_BE_OFF, (short) 32);
 
             //  5. S = (r + k · s) mod ℓ.
             //     k_times_s_64 ← k · s (full 64-byte product) in scratch[HASH_OFF..HASH_OFF+64].
-            Bignat.mult(
-                    scratch,
-                    K_BE_OFF,
-                    scratch,
-                    S_BE_OFF,
-                    (short) 32,
-                    scratch,
-                    HASH_OFF);
-            Bignat.mod(
-                    scratch,
-                    HASH_OFF,
-                    SHA512_LEN,
-                    GROUP_L,
-                    (short) 0,
-                    (short) 32);
+            Bignat.mult(scratch, K_BE_OFF, scratch, S_BE_OFF, (short) 32, scratch, HASH_OFF);
+            Bignat.mod(scratch, HASH_OFF, SHA512_LEN, GROUP_L, (short) 0, (short) 32);
             //     k·s mod ℓ now lives at scratch[HASH_OFF+32..HASH_OFF+64]. Add r and reduce.
-            Util.arrayCopyNonAtomic(
-                    scratch, R_BE_OFF, scratch, S_OUT_BE_OFF, (short) 32);
+            Util.arrayCopyNonAtomic(scratch, R_BE_OFF, scratch, S_OUT_BE_OFF, (short) 32);
             boolean carry =
-                    Bignat.add(
-                            scratch, S_OUT_BE_OFF,
-                            scratch, (short) (HASH_OFF + 32),
-                            (short) 32);
+                    Bignat.add(scratch, S_OUT_BE_OFF, scratch, (short) (HASH_OFF + 32), (short) 32);
             //     Result is in [0, 2ℓ). Reduce: if carry || result ≥ ℓ, subtract ℓ.
-            if (carry
-                    || !Bignat.lessThan(
-                            scratch, S_OUT_BE_OFF, GROUP_L, (short) 0, (short) 32)) {
+            if (carry || !Bignat.lessThan(scratch, S_OUT_BE_OFF, GROUP_L, (short) 0, (short) 32)) {
                 Bignat.sub(scratch, S_OUT_BE_OFF, GROUP_L, (short) 0, (short) 32);
             }
 
             //  6. Output R_enc ‖ S_LE. R_enc is already LE; reverse S_OUT_BE to LE in the output.
             Util.arrayCopyNonAtomic(scratch, R_ENC_OFF, outBuf, outOff, (short) 32);
             for (short i = 0; i < (short) 32; i++) {
-                outBuf[(short) (outOff + 32 + i)] =
-                        scratch[(short) (S_OUT_BE_OFF + 31 - i)];
+                outBuf[(short) (outOff + 32 + i)] = scratch[(short) (S_OUT_BE_OFF + 31 - i)];
             }
             return SIGNATURE_LEN;
         } finally {
@@ -233,10 +194,10 @@ public final class Ed25519 {
 
     /**
      * Common path of {@link #publicKey} and {@link #sign} — populates {@code scratch[S_BE_OFF]}
-     * with the clamped private scalar (BE), {@code scratch[HASH_OFF+32..HASH_OFF+64]} with the
-     * RFC 8032 §5.1.6 prefix (h[32..64], reused in step 4 of the sign flow), and
-     * {@code scratch[A_ENC_OFF]} with the compressed public-key encoding. Caller is responsible
-     * for the {@link #wipeScratch} cleanup in a {@code finally} clause.
+     * with the clamped private scalar (BE), {@code scratch[HASH_OFF+32..HASH_OFF+64]} with the RFC
+     * 8032 §5.1.6 prefix (h[32..64], reused in step 4 of the sign flow), and {@code
+     * scratch[A_ENC_OFF]} with the compressed public-key encoding. Caller is responsible for the
+     * {@link #wipeScratch} cleanup in a {@code finally} clause.
      */
     private void computePublicKey(byte[] skBuf, short skOff) {
         // h = SHA-512(sk), kept in scratch[HASH_OFF..HASH_OFF+64].
@@ -256,14 +217,7 @@ public final class Ed25519 {
         // A = s · B, then encode A into scratch[A_ENC_OFF].
         Edwards25519.setBase(scratch, BASE_PT_OFF);
         Edwards25519.scalarMult(
-                scratch,
-                S_BE_OFF,
-                scratch,
-                BASE_PT_OFF,
-                scratch,
-                POINT_OFF,
-                scratch,
-                WORK_OFF);
+                scratch, S_BE_OFF, scratch, BASE_PT_OFF, scratch, POINT_OFF, scratch, WORK_OFF);
         Edwards25519.encodePoint(scratch, POINT_OFF, scratch, A_ENC_OFF, scratch, WORK_OFF);
         // The clamped LE scalar at HASH_OFF[0..32] is no longer needed; the prefix at
         // HASH_OFF[32..64] is intact and will be used by the sign flow's r-hash step.

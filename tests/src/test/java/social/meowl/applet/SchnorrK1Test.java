@@ -42,8 +42,8 @@ import org.junit.jupiter.api.Test;
  * x-only public key that {@code EXPORT_XPUB} would return for the same path.
  *
  * <p>BIP-340 official sign vectors take an arbitrary {@code sk}, which the card never accepts —
- * every signing key is BIP-32 derived. The verification half of those vectors is still useful
- * for confirming the host-side verifier itself; one such vector is exercised in {@link
+ * every signing key is BIP-32 derived. The verification half of those vectors is still useful for
+ * confirming the host-side verifier itself; one such vector is exercised in {@link
  * Bip340ReferenceVectors}.
  */
 class SchnorrK1Test {
@@ -305,11 +305,12 @@ class SchnorrK1Test {
     class Bip340ReferenceVectors {
 
         /**
-         * Vector 0 from <a href="https://github.com/bitcoin/bips/blob/master/bip-0340/test-vectors.csv">
-         * the BIP-340 test vector CSV</a>: known-good (pk, m, sig) tuple. The card never produces
-         * this exact signature (the secret key {@code 3} is not BIP-32-derivable from our seed),
-         * but verifying it exercises the host-side {@link Bip340#verify} reference used by every
-         * other test in this class.
+         * Vector 0 from <a
+         * href="https://github.com/bitcoin/bips/blob/master/bip-0340/test-vectors.csv">the BIP-340
+         * test vector CSV</a>: known-good (pk, m, sig) tuple. The card never produces this exact
+         * signature (the secret key {@code 3} is not BIP-32-derivable from our seed), but verifying
+         * it exercises the host-side {@link Bip340#verify} reference used by every other test in
+         * this class.
          */
         @Test
         @DisplayName("Vector 0 — known-good (pk, m, sig) verifies")
@@ -319,7 +320,7 @@ class SchnorrK1Test {
             byte[] sig =
                     hex(
                             "E907831F80848D1069A5371B402410364BDF1C5F8307B0084C55F1CE2DCA8215"
-                                    + "25F66A4A85EA8B71E482A74F382D2CE5EBEEE8FDB2172F477DF4900D310536C0");
+                                + "25F66A4A85EA8B71E482A74F382D2CE5EBEEE8FDB2172F477DF4900D310536C0");
             assertTrue(Bip340.verify(pk, m, sig), "BIP-340 vector 0 must verify");
         }
 
@@ -331,7 +332,7 @@ class SchnorrK1Test {
             byte[] sig =
                     hex(
                             "E907831F80848D1069A5371B402410364BDF1C5F8307B0084C55F1CE2DCA8215"
-                                    + "25F66A4A85EA8B71E482A74F382D2CE5EBEEE8FDB2172F477DF4900D310536C0");
+                                + "25F66A4A85EA8B71E482A74F382D2CE5EBEEE8FDB2172F477DF4900D310536C0");
             sig[0] ^= 0x01;
             assertTrue(!Bip340.verify(pk, m, sig), "tampered sig must fail BIP-340 verify");
         }
@@ -344,7 +345,7 @@ class SchnorrK1Test {
             byte[] sig =
                     hex(
                             "E907831F80848D1069A5371B402410364BDF1C5F8307B0084C55F1CE2DCA8215"
-                                    + "25F66A4A85EA8B71E482A74F382D2CE5EBEEE8FDB2172F477DF4900D310536C0");
+                                + "25F66A4A85EA8B71E482A74F382D2CE5EBEEE8FDB2172F477DF4900D310536C0");
             pk[31] ^= 0x01;
             assertTrue(!Bip340.verify(pk, m, sig), "verification under wrong pk must fail");
         }
@@ -400,8 +401,8 @@ class SchnorrK1Test {
     /**
      * BIP-340 host-side reference: {@link #verify} implements the verification algorithm verbatim
      * from BIP-340 §3.3, and {@link #liftX} lifts an x-only pubkey to its even-y curve point per
-     * §2. Used to check every card-produced signature in this test class — and itself exercised
-     * by the {@link Bip340ReferenceVectors} tests against the official BIP-340 CSV vectors.
+     * §2. Used to check every card-produced signature in this test class — and itself exercised by
+     * the {@link Bip340ReferenceVectors} tests against the official BIP-340 CSV vectors.
      */
     private static final class Bip340 {
 
@@ -412,8 +413,10 @@ class SchnorrK1Test {
             BigInteger r = new BigInteger(1, Arrays.copyOfRange(sig64, 0, 32));
             BigInteger s = new BigInteger(1, Arrays.copyOfRange(sig64, 32, 64));
             if (r.compareTo(CURVE_P) >= 0 || s.compareTo(CURVE_N) >= 0) return false;
-            byte[] eBytes = taggedHash("BIP0340/challenge", concat(concat(
-                    Arrays.copyOfRange(sig64, 0, 32), xOnlyPk), m));
+            byte[] eBytes =
+                    taggedHash(
+                            "BIP0340/challenge",
+                            concat(concat(Arrays.copyOfRange(sig64, 0, 32), xOnlyPk), m));
             BigInteger e = new BigInteger(1, eBytes).mod(CURVE_N);
             // R = s*G - e*P
             ECPoint R = SECP256K1.getG().multiply(s).subtract(P.multiply(e)).normalize();
@@ -429,7 +432,8 @@ class SchnorrK1Test {
                     x.modPow(BigInteger.valueOf(3), CURVE_P)
                             .add(BigInteger.valueOf(7))
                             .mod(CURVE_P);
-            // p ≡ 3 (mod 4) for secp256k1, so y = c^((p+1)/4) mod p is a square root iff one exists.
+            // p ≡ 3 (mod 4) for secp256k1, so y = c^((p+1)/4) mod p is a square root iff one
+            // exists.
             BigInteger y = c.modPow(CURVE_P.add(BigInteger.ONE).shiftRight(2), CURVE_P);
             if (!y.modPow(BigInteger.TWO, CURVE_P).equals(c)) return null;
             if (y.testBit(0)) y = CURVE_P.subtract(y); // pick the even-y root

@@ -14,7 +14,6 @@ import com.licel.jcardsim.smartcardio.CardSimulator;
 import com.licel.jcardsim.utils.AIDUtil;
 import java.math.BigInteger;
 import java.security.KeyFactory;
-import java.security.MessageDigest;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.SecureRandom;
@@ -44,16 +43,16 @@ import org.junit.jupiter.api.Test;
  * End-to-end tests for the {@code SIGN_ED25519} primitive — RFC 8032 Ed25519 signing under a
  * SLIP-10-derived key.
  *
- * <p>Every card-produced signature is checked against the JDK's built-in {@code Ed25519}
- * verifier (Java 15+, no BouncyCastle dependency needed for the verify path) using the
- * compressed public key that {@code EXPORT_XPUB} returns for the same path. The card derives
- * deterministic signatures (no aux randomness), so the test also pins the {@code (sk, M) →
- * sig} mapping against itself across repeated calls.
+ * <p>Every card-produced signature is checked against the JDK's built-in {@code Ed25519} verifier
+ * (Java 15+, no BouncyCastle dependency needed for the verify path) using the compressed public key
+ * that {@code EXPORT_XPUB} returns for the same path. The card derives deterministic signatures (no
+ * aux randomness), so the test also pins the {@code (sk, M) → sig} mapping against itself across
+ * repeated calls.
  *
- * <p>The SLIP-10 vector 1 seed is also exercised by {@link HdDerivationTest} so the public-key
- * half can be cross-checked against the official SLIP-10 reference vectors — the same pubkeys
- * {@link HdDerivationTest} expects from {@code EXPORT_XPUB} are the ones whose signatures the
- * JDK verifier accepts here, closing the loop {@code seed → SLIP-10 → leaf k → A = s·B → sign}.
+ * <p>The SLIP-10 vector 1 seed is also exercised by {@link HdDerivationTest} so the public-key half
+ * can be cross-checked against the official SLIP-10 reference vectors — the same pubkeys {@link
+ * HdDerivationTest} expects from {@code EXPORT_XPUB} are the ones whose signatures the JDK verifier
+ * accepts here, closing the loop {@code seed → SLIP-10 → leaf k → A = s·B → sign}.
  */
 class Ed25519SigningTest {
 
@@ -72,7 +71,9 @@ class Ed25519SigningTest {
     private static final byte[] DEFAULT_PIN = "123456".getBytes();
     private static final byte[] DEFAULT_PUK = "ABCDEFGH".getBytes();
 
-    /** SLIP-10 Vector 1 seed — identical to BIP-32 Vector 1, reused from {@link HdDerivationTest}. */
+    /**
+     * SLIP-10 Vector 1 seed — identical to BIP-32 Vector 1, reused from {@link HdDerivationTest}.
+     */
     private static final byte[] SLIP10_VECTOR_1_SEED = hex("000102030405060708090a0b0c0d0e0f");
 
     /** A short, fixed sample payload used by most non-edge tests. */
@@ -216,8 +217,7 @@ class Ed25519SigningTest {
             byte[] sig1 = signEd25519(path, SAMPLE_MESSAGE);
             byte[] sig2 = signEd25519(path, "Hello, meowl Ed25519?".getBytes());
             assertFalse(
-                    Arrays.equals(sig1, sig2),
-                    "different messages must produce different sigs");
+                    Arrays.equals(sig1, sig2), "different messages must produce different sigs");
         }
     }
 
@@ -231,8 +231,7 @@ class Ed25519SigningTest {
             int[] path = {};
             byte[] pk = ed25519Pubkey(path);
             assertArrayEquals(
-                    hex("a4b2856bfec510abab89753fac1ac0e1112364e7d250545963f135f2a33188ed"),
-                    pk);
+                    hex("a4b2856bfec510abab89753fac1ac0e1112364e7d250545963f135f2a33188ed"), pk);
             byte[] sig = signEd25519(path, SAMPLE_MESSAGE);
             assertTrue(jdkVerify(pk, SAMPLE_MESSAGE, sig));
         }
@@ -243,8 +242,7 @@ class Ed25519SigningTest {
             int[] path = {0x80000000};
             byte[] pk = ed25519Pubkey(path);
             assertArrayEquals(
-                    hex("8c8a13df77a28f3445213a0f432fde644acaa215fc72dcdf300d5efaa85d350c"),
-                    pk);
+                    hex("8c8a13df77a28f3445213a0f432fde644acaa215fc72dcdf300d5efaa85d350c"), pk);
             byte[] sig = signEd25519(path, SAMPLE_MESSAGE);
             assertTrue(jdkVerify(pk, SAMPLE_MESSAGE, sig));
         }
@@ -348,8 +346,7 @@ class Ed25519SigningTest {
             byte[] cardSig = signEd25519(path, SAMPLE_MESSAGE);
             byte[] sk = slip10DeriveLeafKey(SLIP10_VECTOR_1_SEED, path);
             byte[] hostSig = jdkSign(sk, SAMPLE_MESSAGE);
-            assertArrayEquals(
-                    hostSig, cardSig, "Ed25519 RFC 8032 determinism must be byte-equal");
+            assertArrayEquals(hostSig, cardSig, "Ed25519 RFC 8032 determinism must be byte-equal");
         }
 
         @Test
@@ -447,11 +444,11 @@ class Ed25519SigningTest {
     }
 
     /**
-     * Independent SLIP-10 Ed25519 leaf-key derivation in the test process — used by
-     * {@link ByteForByte} to compute the same 32-byte private key the card materialises
-     * internally, so that JDK-side signatures can be compared byte-for-byte against card
-     * output. Mirrors {@link Slip10} verbatim: HMAC-SHA-512 of the seed under the {@code
-     * "ed25519 seed"} key, hardened-only descent.
+     * Independent SLIP-10 Ed25519 leaf-key derivation in the test process — used by {@link
+     * ByteForByte} to compute the same 32-byte private key the card materialises internally, so
+     * that JDK-side signatures can be compared byte-for-byte against card output. Mirrors {@link
+     * Slip10} verbatim: HMAC-SHA-512 of the seed under the {@code "ed25519 seed"} key,
+     * hardened-only descent.
      */
     private static byte[] slip10DeriveLeafKey(byte[] seed, int[] path) throws Exception {
         Mac hmac = Mac.getInstance("HmacSHA512");
@@ -476,11 +473,10 @@ class Ed25519SigningTest {
     }
 
     /**
-     * Independent JDK-side Ed25519 signer. Wraps the 32-byte RFC 8032 raw private key in a
-     * PKCS8 {@code PrivateKeyInfo} envelope, then runs the JDK's {@code
-     * Signature.getInstance("Ed25519")} signer (Java 15+, no provider required). Used to
-     * cross-check the card's deterministic signature output against an independent reference
-     * implementation.
+     * Independent JDK-side Ed25519 signer. Wraps the 32-byte RFC 8032 raw private key in a PKCS8
+     * {@code PrivateKeyInfo} envelope, then runs the JDK's {@code Signature.getInstance("Ed25519")}
+     * signer (Java 15+, no provider required). Used to cross-check the card's deterministic
+     * signature output against an independent reference implementation.
      */
     private static byte[] jdkSign(byte[] sk32, byte[] msg) throws Exception {
         byte[] pkcs8 = new byte[ED25519_PKCS8_PREFIX.length + 32];
@@ -495,10 +491,10 @@ class Ed25519SigningTest {
     }
 
     /**
-     * JDK-side Ed25519 verifier. Wraps the 32-byte RFC 8032 pubkey in an X.509
-     * {@code SubjectPublicKeyInfo} envelope so the standard {@link KeyFactory} accepts it, then
-     * runs the JDK's {@code Signature.getInstance("Ed25519")} verifier (Java 15+, no provider
-     * required). Returns {@code false} on any exception so that tamper tests cleanly fail.
+     * JDK-side Ed25519 verifier. Wraps the 32-byte RFC 8032 pubkey in an X.509 {@code
+     * SubjectPublicKeyInfo} envelope so the standard {@link KeyFactory} accepts it, then runs the
+     * JDK's {@code Signature.getInstance("Ed25519")} verifier (Java 15+, no provider required).
+     * Returns {@code false} on any exception so that tamper tests cleanly fail.
      */
     private static boolean jdkVerify(byte[] pk32, byte[] msg, byte[] sig64) {
         try {

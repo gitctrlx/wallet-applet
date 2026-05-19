@@ -22,13 +22,13 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 /**
- * JCardSim-driven integration tests for the always-reachable outer-frame INS surface of the
- * meowl applet: {@code GET_INFO}, {@code GET_AUTHENTIKEY} and the multi-step
- * {@code RESET_TO_FACTORY} trigger.
+ * JCardSim-driven integration tests for the always-reachable outer-frame INS surface of the meowl
+ * applet: {@code GET_INFO}, {@code GET_AUTHENTIKEY} and the multi-step {@code RESET_TO_FACTORY}
+ * trigger.
  *
  * <p>Every test starts from a freshly installed applet (see {@link #setUp()}), so each scenario is
- * fully isolated. Higher-level protocol behaviour (Secure Channel, PIN, signing) is covered by
- * the dedicated test classes for each subsystem.
+ * fully isolated. Higher-level protocol behaviour (Secure Channel, PIN, signing) is covered by the
+ * dedicated test classes for each subsystem.
  */
 class MeowlAppletTest {
 

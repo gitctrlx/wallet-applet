@@ -20,14 +20,15 @@ import org.junit.jupiter.api.Test;
  * Randomised correctness tests for {@link Field25519}, oracle-checked against {@link BigInteger}.
  *
  * <p>Every operation is run on freshly drawn 32-byte field elements, the in-applet result is
- * compared byte-for-byte with the equivalent {@code BigInteger} computation modulo {@code p =
- * 2²⁵⁵ − 19}, and a small number of fixed edge cases (zero, one, {@code p − 1}) are exercised
- * separately. Inversion is correctness-checked by the round-trip identity
- * {@code a · a⁻¹ ≡ 1 (mod p)}.
+ * compared byte-for-byte with the equivalent {@code BigInteger} computation modulo {@code p = 2²⁵⁵
+ * − 19}, and a small number of fixed edge cases (zero, one, {@code p − 1}) are exercised
+ * separately. Inversion is correctness-checked by the round-trip identity {@code a · a⁻¹ ≡ 1 (mod
+ * p)}.
  */
 class Field25519Test {
 
-    private static final BigInteger P = BigInteger.ONE.shiftLeft(255).subtract(BigInteger.valueOf(19));
+    private static final BigInteger P =
+            BigInteger.ONE.shiftLeft(255).subtract(BigInteger.valueOf(19));
     private static final Random RNG = new Random(0xCAFEBABEL);
 
     private final byte[] out = new byte[Field25519.LEN];
@@ -209,7 +210,8 @@ class Field25519Test {
         void mulPMinus1Squared() {
             byte[] pMinus1 = toBytes(P.subtract(BigInteger.ONE));
             byte[] one = toBytes(BigInteger.ONE);
-            Field25519.mul(pMinus1, (short) 0, pMinus1, (short) 0, out, (short) 0, scratch, (short) 0);
+            Field25519.mul(
+                    pMinus1, (short) 0, pMinus1, (short) 0, out, (short) 0, scratch, (short) 0);
             assertArrayEquals(one, out);
         }
 

@@ -30,8 +30,8 @@ import javacard.framework.Util;
  *       via {@link #dispatchInner}.
  * </ul>
  *
- * <p>Every other INS — PIN, PKI, seed, signing — is reached only through OPEN_SECURE_CHANNEL
- * and is dispatched by {@link #dispatchInner}.
+ * <p>Every other INS — PIN, PKI, seed, signing — is reached only through OPEN_SECURE_CHANNEL and is
+ * dispatched by {@link #dispatchInner}.
  */
 public final class MeowlApplet extends Applet implements WipeTrigger {
 
@@ -483,9 +483,9 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
 
     /**
      * {@code EXPORT_XPUB} inner data layout: {@code [curve(1), depth(1), path(4*depth)]}. Returns
-     * {@code [compressed_pubkey(33), chain_code(32)]} for secp256k1 and
-     * {@code [compressed_pubkey(32), chain_code(32)]} for Ed25519 (RFC 8032 §5.1.2 LE encoded
-     * pubkey, derived on-card via {@link Ed25519#publicKey} from the SLIP-10 leaf private key).
+     * {@code [compressed_pubkey(33), chain_code(32)]} for secp256k1 and {@code
+     * [compressed_pubkey(32), chain_code(32)]} for Ed25519 (RFC 8032 §5.1.2 LE encoded pubkey,
+     * derived on-card via {@link Ed25519#publicKey} from the SLIP-10 leaf private key).
      */
     private short handleExportXpub(byte[] buffer, short dataOff, short dataLen) {
         state.require(LifecycleState.SEEDED);
@@ -588,8 +588,8 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
 
     /**
      * {@code SIGN_ED25519} inner data layout: {@code [depth(1), path(4*depth), message(*)]}. The
-     * message is the raw payload the host wants signed (not a pre-hash) because RFC 8032 hashes
-     * the message internally. Returns the 64-byte {@code R ‖ S} signature in RFC 8032 §5.1.2 LE
+     * message is the raw payload the host wants signed (not a pre-hash) because RFC 8032 hashes the
+     * message internally. Returns the 64-byte {@code R ‖ S} signature in RFC 8032 §5.1.2 LE
      * compressed form, computed entirely in software via {@link Ed25519#sign}. The signature is
      * deterministic by construction (the nonce {@code r} is derived from {@code SHA-512(prefix ‖
      * M)}); no on-card RNG is consumed.
@@ -636,20 +636,18 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     }
 
     /**
-     * Ed25519 branch of {@link #handleExportXpub}. Returns
-     * {@code [pubkey_LE(32), chain_code(32)]} with the pubkey derived on-card from the SLIP-10
-     * leaf private key. The path is staged inside {@link #innerScratch} so we can write the
-     * pubkey to the APDU buffer before reading the path a second time to recover the chain code
-     * (the path lives in the same APDU buffer region we overwrite with the response).
+     * Ed25519 branch of {@link #handleExportXpub}. Returns {@code [pubkey_LE(32), chain_code(32)]}
+     * with the pubkey derived on-card from the SLIP-10 leaf private key. The path is staged inside
+     * {@link #innerScratch} so we can write the pubkey to the APDU buffer before reading the path a
+     * second time to recover the chain code (the path lives in the same APDU buffer region we
+     * overwrite with the response).
      */
     private short handleExportXpubEd25519(byte[] buffer, short pathOff, short depth) {
         short pathLen = (short) (depth * Bip32.INDEX_LEN);
         Util.arrayCopyNonAtomic(buffer, pathOff, innerScratch, (short) 32, pathLen);
         try {
             slip10.deriveLeafKey(innerScratch, (short) 32, depth, innerScratch, (short) 0);
-            short pkLen =
-                    ed25519.publicKey(
-                            innerScratch, (short) 0, buffer, ISO7816.OFFSET_CDATA);
+            short pkLen = ed25519.publicKey(innerScratch, (short) 0, buffer, ISO7816.OFFSET_CDATA);
             short ccLen =
                     slip10.deriveChainCode(
                             innerScratch,
@@ -659,8 +657,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
                             (short) (ISO7816.OFFSET_CDATA + pkLen));
             return (short) (pkLen + ccLen);
         } finally {
-            Util.arrayFillNonAtomic(
-                    innerScratch, (short) 0, (short) (32 + pathLen), (byte) 0);
+            Util.arrayFillNonAtomic(innerScratch, (short) 0, (short) (32 + pathLen), (byte) 0);
         }
     }
 

@@ -21,10 +21,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Correctness tests for {@link Edwards25519}. The applet's point operations are oracle-checked
- * against a {@link BigInteger}-based reference implementation in this test class
- * ({@code RefPoint}) and against the RFC 8032 §7.1 known-answer vector for {@code sk → pk}
- * derivation, which exercises {@link Edwards25519#scalarMult} and
- * {@link Edwards25519#encodePoint} together.
+ * against a {@link BigInteger}-based reference implementation in this test class ({@code RefPoint})
+ * and against the RFC 8032 §7.1 known-answer vector for {@code sk → pk} derivation, which exercises
+ * {@link Edwards25519#scalarMult} and {@link Edwards25519#encodePoint} together.
  */
 class Edwards25519Test {
 
@@ -37,11 +36,9 @@ class Edwards25519Test {
                     .shiftLeft(252)
                     .add(new BigInteger("27742317777372353535851937790883648493"));
     private static final BigInteger BASE_X =
-            new BigInteger(
-                    "216936D3CD6E53FEC0A4E231FDD6DC5C692CC7609525A7B2C9562D608F25D51A", 16);
+            new BigInteger("216936D3CD6E53FEC0A4E231FDD6DC5C692CC7609525A7B2C9562D608F25D51A", 16);
     private static final BigInteger BASE_Y =
-            new BigInteger(
-                    "6666666666666666666666666666666666666666666666666666666666666658", 16);
+            new BigInteger("6666666666666666666666666666666666666666666666666666666666666658", 16);
 
     private static final Random RNG = new Random(0xDEADBEEFL);
 
@@ -81,14 +78,9 @@ class Edwards25519Test {
             BigInteger y1y2 = y.multiply(other.y).mod(P);
             BigInteger x1x2 = x.multiply(other.x).mod(P);
             BigInteger dxy = D.multiply(x1y2).multiply(x2y1).mod(P);
-            BigInteger newX =
-                    x1y2.add(x2y1)
-                            .multiply(BigInteger.ONE.add(dxy).modInverse(P))
-                            .mod(P);
+            BigInteger newX = x1y2.add(x2y1).multiply(BigInteger.ONE.add(dxy).modInverse(P)).mod(P);
             BigInteger newY =
-                    y1y2.add(x1x2)
-                            .multiply(BigInteger.ONE.subtract(dxy).modInverse(P))
-                            .mod(P);
+                    y1y2.add(x1x2).multiply(BigInteger.ONE.subtract(dxy).modInverse(P)).mod(P);
             return new RefPoint(newX, newY);
         }
 
@@ -123,10 +115,7 @@ class Edwards25519Test {
 
     /** Returns {@code true} iff the affine representative is on edwards25519. */
     private static boolean onCurve(RefPoint p) {
-        BigInteger lhs =
-                p.y.multiply(p.y)
-                        .subtract(p.x.multiply(p.x))
-                        .mod(P);
+        BigInteger lhs = p.y.multiply(p.y).subtract(p.x.multiply(p.x)).mod(P);
         BigInteger rhs =
                 BigInteger.ONE
                         .add(D.multiply(p.x).multiply(p.x).multiply(p.y).multiply(p.y))
@@ -489,9 +478,11 @@ class Edwards25519Test {
         // Sanity: both should produce on-curve points (full-scalar wraps mod 8L per Edwards
         // group structure but stays on the curve). We're not timing-measuring here — just making
         // sure the routine accepts both extremes without crashing.
-        Edwards25519.scalarMult(zero, (short) 0, base, (short) 0, out, (short) 0, scratch, (short) 0);
+        Edwards25519.scalarMult(
+                zero, (short) 0, base, (short) 0, out, (short) 0, scratch, (short) 0);
         assertTrue(affineOf(out).equalsAffine(RefPoint.IDENTITY));
-        Edwards25519.scalarMult(full, (short) 0, base, (short) 0, out, (short) 0, scratch, (short) 0);
+        Edwards25519.scalarMult(
+                full, (short) 0, base, (short) 0, out, (short) 0, scratch, (short) 0);
         assertTrue(onCurve(affineOf(out)));
         assertFalse(affineOf(out).equalsAffine(RefPoint.IDENTITY));
     }

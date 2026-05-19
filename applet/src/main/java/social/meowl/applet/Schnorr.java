@@ -14,14 +14,15 @@ import javacard.security.RandomData;
  * BIP-340 Schnorr signing primitive on secp256k1.
  *
  * <p>JavaCard 3.0.5 ships no native BIP-340 (Schnorr / Taproot) primitive; the only EC operation
- * exposed by the platform is the ECDH-based scalar multiplication used here for {@code d' · G}
- * and {@code k' · G}. Everything else — tagged hashing, parity testing, modular arithmetic — is
+ * exposed by the platform is the ECDH-based scalar multiplication used here for {@code d' · G} and
+ * {@code k' · G}. Everything else — tagged hashing, parity testing, modular arithmetic — is
  * implemented in software on top of {@link MessageDigest#ALG_SHA_256} and the multi-precision
  * primitives in {@link Bignat}.
  *
- * <p>Algorithm — verbatim from <a href="https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki#default-signing">BIP-340 §3</a>
- * with the {@code aux_rand} input drawn from the JC platform RNG so the resulting signature is
- * randomised (matching the random-nonce behaviour of {@link EcdsaK1} on real silicon; the wire
+ * <p>Algorithm — verbatim from <a
+ * href="https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki#default-signing">BIP-340
+ * §3</a> with the {@code aux_rand} input drawn from the JC platform RNG so the resulting signature
+ * is randomised (matching the random-nonce behaviour of {@link EcdsaK1} on real silicon; the wire
  * contract is specified in {@code docs/specs/meap-6.md}):
  *
  * <ol>
@@ -36,36 +37,70 @@ import javacard.security.RandomData;
  *   <li>{@code s ← (k + e · d) mod n}; emit {@code bytes(R) ‖ s} (64 bytes total).
  * </ol>
  *
- * <p>Where {@code bytes(X)} for a curve point is the big-endian {@code x}-coordinate (32 bytes,
- * SEC 1 §2.3.5 form with implicit even {@code y}). The on-card algorithm always outputs an
- * even-{@code y} {@code R}: the parity flip in step 6 enforces this so the host never has to
- * recover {@code y(R)} or carry a parity bit.
+ * <p>Where {@code bytes(X)} for a curve point is the big-endian {@code x}-coordinate (32 bytes, SEC
+ * 1 §2.3.5 form with implicit even {@code y}). The on-card algorithm always outputs an even-{@code
+ * y} {@code R}: the parity flip in step 6 enforces this so the host never has to recover {@code
+ * y(R)} or carry a parity bit.
  *
  * <p>Tagged hashing per BIP-340 §3.2: {@code tagged_hash(tag, msg) = SHA256(SHA256(tag) ‖
- * SHA256(tag) ‖ msg)}. The tag bytes for the three BIP-340 contexts ({@code "BIP0340/aux"},
- * {@code "BIP0340/nonce"}, {@code "BIP0340/challenge"}) are stored as a single concatenated
- * constant {@link #TAGS} and indexed by offset/length pairs.
+ * SHA256(tag) ‖ msg)}. The tag bytes for the three BIP-340 contexts ({@code "BIP0340/aux"}, {@code
+ * "BIP0340/nonce"}, {@code "BIP0340/challenge"}) are stored as a single concatenated constant
+ * {@link #TAGS} and indexed by offset/length pairs.
  *
  * <p>Scratch usage: 386 bytes of transient {@code CLEAR_ON_DESELECT} memory holds every
  * intermediate including the leaf scalar, the public key, the nonce point, the challenge, the
- * digest copy, and the multi-precision multiply / reduce buffer. The whole scratch is wiped via
- * a {@code finally} clause on every code path — both success and exception — so no secret
- * material survives the call.
+ * digest copy, and the multi-precision multiply / reduce buffer. The whole scratch is wiped via a
+ * {@code finally} clause on every code path — both success and exception — so no secret material
+ * survives the call.
  */
 public final class Schnorr {
 
     /** Concatenation of the three BIP-340 hash-tag strings, ASCII-encoded big-endian. */
     private static final byte[] TAGS = {
         // "BIP0340/aux" — 11 bytes, offset 0
-        (byte) 'B', (byte) 'I', (byte) 'P', (byte) '0', (byte) '3', (byte) '4', (byte) '0',
-                (byte) '/', (byte) 'a', (byte) 'u', (byte) 'x',
+        (byte) 'B',
+        (byte) 'I',
+        (byte) 'P',
+        (byte) '0',
+        (byte) '3',
+        (byte) '4',
+        (byte) '0',
+        (byte) '/',
+        (byte) 'a',
+        (byte) 'u',
+        (byte) 'x',
         // "BIP0340/nonce" — 13 bytes, offset 11
-        (byte) 'B', (byte) 'I', (byte) 'P', (byte) '0', (byte) '3', (byte) '4', (byte) '0',
-                (byte) '/', (byte) 'n', (byte) 'o', (byte) 'n', (byte) 'c', (byte) 'e',
+        (byte) 'B',
+        (byte) 'I',
+        (byte) 'P',
+        (byte) '0',
+        (byte) '3',
+        (byte) '4',
+        (byte) '0',
+        (byte) '/',
+        (byte) 'n',
+        (byte) 'o',
+        (byte) 'n',
+        (byte) 'c',
+        (byte) 'e',
         // "BIP0340/challenge" — 17 bytes, offset 24
-        (byte) 'B', (byte) 'I', (byte) 'P', (byte) '0', (byte) '3', (byte) '4', (byte) '0',
-                (byte) '/', (byte) 'c', (byte) 'h', (byte) 'a', (byte) 'l', (byte) 'l',
-                (byte) 'e', (byte) 'n', (byte) 'g', (byte) 'e',
+        (byte) 'B',
+        (byte) 'I',
+        (byte) 'P',
+        (byte) '0',
+        (byte) '3',
+        (byte) '4',
+        (byte) '0',
+        (byte) '/',
+        (byte) 'c',
+        (byte) 'h',
+        (byte) 'a',
+        (byte) 'l',
+        (byte) 'l',
+        (byte) 'e',
+        (byte) 'n',
+        (byte) 'g',
+        (byte) 'e',
     };
 
     private static final short TAG_AUX_OFF = 0;
@@ -131,9 +166,9 @@ public final class Schnorr {
     }
 
     /**
-     * Signs the 32-byte {@code digest} with the BIP-340 Schnorr scheme under the secp256k1
-     * private key derived at {@code pathBuf[pathOff..pathOff + 4*depth]}, writing {@code
-     * bytes(R) ‖ s} (64 bytes) to {@code outBuf} at {@code outOff}.
+     * Signs the 32-byte {@code digest} with the BIP-340 Schnorr scheme under the secp256k1 private
+     * key derived at {@code pathBuf[pathOff..pathOff + 4*depth]}, writing {@code bytes(R) ‖ s} (64
+     * bytes) to {@code outBuf} at {@code outOff}.
      *
      * @return the number of bytes written, {@link Constants#SIG_LEN_R_S}
      */
@@ -203,18 +238,12 @@ public final class Schnorr {
 
             // === Step 8: s = (k + e · d) mod n ===
             // 8a) e · d (32×32 → 64) into WORK_OFF.
-            Bignat.mult(
-                    scratch, E_OFF, scratch, D_OFF, COORD_LEN, scratch, WORK_OFF);
+            Bignat.mult(scratch, E_OFF, scratch, D_OFF, COORD_LEN, scratch, WORK_OFF);
             // 8b) Add k into the lower 32 bytes of WORK; propagate any carry into the upper 32.
             //     The structural bound (k + e·d < n + (n-1)² < 2^512) guarantees the add never
             //     overflows the 64-byte buffer, so the carry-propagation loop is bounded.
             boolean carry =
-                    Bignat.add(
-                            scratch,
-                            (short) (WORK_OFF + COORD_LEN),
-                            scratch,
-                            K_OFF,
-                            COORD_LEN);
+                    Bignat.add(scratch, (short) (WORK_OFF + COORD_LEN), scratch, K_OFF, COORD_LEN);
             if (carry) {
                 short i = (short) (WORK_OFF + COORD_LEN - 1);
                 while (i >= WORK_OFF) {
@@ -254,10 +283,9 @@ public final class Schnorr {
     }
 
     /**
-     * Initialises the SHA-256 instance for a tagged-hash computation: seeds the digest state
-     * with {@code SHA256(tag) ‖ SHA256(tag)}, leaving the caller free to {@link
-     * MessageDigest#update update} message segments and finalise with {@link
-     * MessageDigest#doFinal doFinal}.
+     * Initialises the SHA-256 instance for a tagged-hash computation: seeds the digest state with
+     * {@code SHA256(tag) ‖ SHA256(tag)}, leaving the caller free to {@link MessageDigest#update
+     * update} message segments and finalise with {@link MessageDigest#doFinal doFinal}.
      */
     private void taggedHashStart(short tagOff, short tagLen) {
         sha256.reset();

@@ -113,8 +113,8 @@ public final class Constants {
     public static final byte INS_SIGN_ECDSA_K1 = (byte) 0x50;
 
     /**
-     * {@code SIGN_SCHNORR_K1} — sign a 32-byte digest with the BIP-340 Schnorr scheme on
-     * secp256k1 under the BIP-32-derived leaf scalar. Inner data: {@code [depth(1), path(4*depth),
+     * {@code SIGN_SCHNORR_K1} — sign a 32-byte digest with the BIP-340 Schnorr scheme on secp256k1
+     * under the BIP-32-derived leaf scalar. Inner data: {@code [depth(1), path(4*depth),
      * digest(32)]}. Returns {@code [r(32), s(32)]} per BIP-340 §3 (R is x-only, encoded as the
      * affine x-coordinate of the nonce point with implicit even-y).
      */
@@ -125,8 +125,8 @@ public final class Constants {
      * private key derived at the given SLIP-10 path. Inner data: {@code [depth(1), path(4*depth),
      * msg(...)]}; the message is whatever bytes the host wants to authenticate (per RFC 8032 the
      * card hashes them itself — the only signing primitive in the applet that does not take a
-     * pre-computed digest, since the algorithm definition itself absorbs the message into the
-     * nonce and challenge hashes). Returns {@code [R(32), S(32)]} per RFC 8032 §5.1.6 — {@code R}
+     * pre-computed digest, since the algorithm definition itself absorbs the message into the nonce
+     * and challenge hashes). Returns {@code [R(32), S(32)]} per RFC 8032 §5.1.6 — {@code R}
      * compressed Edwards form, {@code S} little-endian scalar.
      */
     public static final byte INS_SIGN_ED25519 = (byte) 0x52;
@@ -193,9 +193,9 @@ public final class Constants {
     /**
      * Applet-private {@code 6FE1} — a should-never-happen sentinel value was produced internally
      * (e.g. a tagged-hash output that reduced to zero mod {@code n} during Schnorr signing — the
-     * BIP-340 spec mandates failing the signature in that case; the probability is ≈ 2⁻²⁵⁶).
-     * Hosts should treat this as a transient error and retry; subsequent calls draw fresh aux
-     * randomness and will not collide with overwhelming probability.
+     * BIP-340 spec mandates failing the signature in that case; the probability is ≈ 2⁻²⁵⁶). Hosts
+     * should treat this as a transient error and retry; subsequent calls draw fresh aux randomness
+     * and will not collide with overwhelming probability.
      */
     public static final short SW_INTERNAL_ERROR = (short) 0x6FE1;
 

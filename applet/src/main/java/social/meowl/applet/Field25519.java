@@ -12,27 +12,27 @@ import javacard.framework.Util;
  * <p>Every field element is represented as a 32-byte big-endian unsigned integer in {@code [0, p)};
  * inputs and outputs are always in this canonical reduced form. The class is purely static and
  * holds no state: the caller passes the operand buffers, their offsets, and a scratch buffer for
- * the operations that need one ({@link #mul}, {@link #sqr}, {@link #inv}). Output buffers may
- * alias input buffers — every method reads its inputs into local variables (or the scratch) before
+ * the operations that need one ({@link #mul}, {@link #sqr}, {@link #inv}). Output buffers may alias
+ * input buffers — every method reads its inputs into local variables (or the scratch) before
  * writing the output back.
  *
  * <p>Multiplication is schoolbook 32×32 → 64 (via {@link Bignat#mult}) followed by long-division
- * reduction against {@link #FIELD_P} (via {@link Bignat#mod}). Squaring is implemented as
- * {@link #mul}{@code (a, a)}; we deliberately do not specialise a separate squaring kernel
- * because the saving (≈25 % per square) does not justify a duplicate code path on the
- * applet-line-budget axis. Inversion uses Fermat's little theorem: {@code a⁻¹ = a^(p−2) mod p},
- * computed by 254 left-to-right square-and-multiplies; the exponent {@code p − 2 = 2²⁵⁵ − 21} has
- * Hamming weight 250 over its 255 bits so the cost is ≈ 254 squarings + 250 multiplications.
+ * reduction against {@link #FIELD_P} (via {@link Bignat#mod}). Squaring is implemented as {@link
+ * #mul}{@code (a, a)}; we deliberately do not specialise a separate squaring kernel because the
+ * saving (≈25 % per square) does not justify a duplicate code path on the applet-line-budget axis.
+ * Inversion uses Fermat's little theorem: {@code a⁻¹ = a^(p−2) mod p}, computed by 254
+ * left-to-right square-and-multiplies; the exponent {@code p − 2 = 2²⁵⁵ − 21} has Hamming weight
+ * 250 over its 255 bits so the cost is ≈ 254 squarings + 250 multiplications.
  *
  * <p>The wire format used by RFC 8032 is 32-byte little-endian; this class works exclusively in
- * big-endian for consistency with the rest of the applet ({@link Bignat}, {@link Bip32},
- * {@link Schnorr}). The endianness flip happens once, at the {@link Ed25519} wire boundary.
+ * big-endian for consistency with the rest of the applet ({@link Bignat}, {@link Bip32}, {@link
+ * Schnorr}). The endianness flip happens once, at the {@link Ed25519} wire boundary.
  *
  * <p><b>Constant-time note:</b> the operations here branch on operand magnitude (e.g. the
- * compare-and-subtract in {@link #add}). The exponent in {@link #inv} is the public modulus
- * {@code p − 2}, so the square-and-multiply schedule itself is constant-time. The compare-and-
- * subtract leaks at most one bit per call, which is the same leakage the Bitcoin-side primitives
- * already emit; the threat model (a screenless secure-element attached over PCSC) does not admit
+ * compare-and-subtract in {@link #add}). The exponent in {@link #inv} is the public modulus {@code
+ * p − 2}, so the square-and-multiply schedule itself is constant-time. The compare-and- subtract
+ * leaks at most one bit per call, which is the same leakage the Bitcoin-side primitives already
+ * emit; the threat model (a screenless secure-element attached over PCSC) does not admit
  * fine-grained timing attacks on this layer.
  */
 public final class Field25519 {
@@ -53,13 +53,14 @@ public final class Field25519 {
     };
 
     /**
-     * Scratch size required by {@link #mul} / {@link #sqr} / {@link #inv} — a 64-byte slot for
-     * the unreduced product plus a 32-byte slot {@link #inv} uses to hold the running power.
+     * Scratch size required by {@link #mul} / {@link #sqr} / {@link #inv} — a 64-byte slot for the
+     * unreduced product plus a 32-byte slot {@link #inv} uses to hold the running power.
      */
     public static final short SCRATCH_LEN = (short) 96;
 
     /** Scratch sub-offsets within the caller-supplied {@link #SCRATCH_LEN}-byte buffer. */
     private static final short SCR_PROD_OFF = (short) 0; // 64-byte product
+
     private static final short SCR_TMP_OFF = (short) 64; // 32-byte temporary
 
     private Field25519() {}
@@ -102,8 +103,8 @@ public final class Field25519 {
 
     /**
      * {@code out ← (a + b) mod p}. Inputs in {@code [0, p)}. {@code out} may alias {@code a} or
-     * {@code b}; the loop reads both operand bytes before writing the destination byte at the
-     * same index so any aliasing pattern is safe.
+     * {@code b}; the loop reads both operand bytes before writing the destination byte at the same
+     * index so any aliasing pattern is safe.
      */
     public static void add(byte[] a, short aOff, byte[] b, short bOff, byte[] out, short outOff) {
         short carry = 0;
@@ -159,9 +160,9 @@ public final class Field25519 {
 
     /**
      * {@code out ← (a · b) mod p}. {@code scratch[scratchOff..scratchOff+SCRATCH_LEN]} holds the
-     * 64-byte product during the call; on return the entire scratch slice is wiped. {@code out}
-     * may alias {@code a} or {@code b}; the implementation reads both inputs into the scratch
-     * before writing {@code out}.
+     * 64-byte product during the call; on return the entire scratch slice is wiped. {@code out} may
+     * alias {@code a} or {@code b}; the implementation reads both inputs into the scratch before
+     * writing {@code out}.
      */
     public static void mul(
             byte[] a,
@@ -199,14 +200,14 @@ public final class Field25519 {
     }
 
     /**
-     * {@code out ← a⁻¹ mod p} via {@code a^(p−2)}. Uses left-to-right square-and-multiply over
-     * the public exponent {@code p − 2 = 2²⁵⁵ − 21}, so the schedule (squarings vs. squarings +
-     * mult) is independent of the secret operand {@code a}; only the operand magnitudes differ
-     * across calls.
+     * {@code out ← a⁻¹ mod p} via {@code a^(p−2)}. Uses left-to-right square-and-multiply over the
+     * public exponent {@code p − 2 = 2²⁵⁵ − 21}, so the schedule (squarings vs. squarings + mult)
+     * is independent of the secret operand {@code a}; only the operand magnitudes differ across
+     * calls.
      *
-     * <p>The 96-byte scratch holds the running power {@code r} in its first 32 bytes (alias of
-     * the {@code SCR_TMP_OFF} slot) and the 64-byte product workspace shared with {@link #mul}
-     * in the trailing 64 bytes. {@code out} may alias {@code a}.
+     * <p>The 96-byte scratch holds the running power {@code r} in its first 32 bytes (alias of the
+     * {@code SCR_TMP_OFF} slot) and the 64-byte product workspace shared with {@link #mul} in the
+     * trailing 64 bytes. {@code out} may alias {@code a}.
      */
     public static void inv(
             byte[] a, short aOff, byte[] out, short outOff, byte[] scratch, short scratchOff) {

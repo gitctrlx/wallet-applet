@@ -33,9 +33,9 @@ import javacard.security.Signature;
  * <ul>
  *   <li>{@link #deriveChainCode} returns just the leaf chain code, suitable for hosts that only
  *       need to prepare the next derivation level on their own.
- *   <li>{@link #deriveLeafKey} returns the leaf 32-byte private key (the RFC 8032 secret-key
- *       seed for the leaf node), used by {@code SIGN_ED25519} and by the Ed25519 branch of
- *       {@code EXPORT_XPUB} for on-card public-key derivation.
+ *   <li>{@link #deriveLeafKey} returns the leaf 32-byte private key (the RFC 8032 secret-key seed
+ *       for the leaf node), used by {@code SIGN_ED25519} and by the Ed25519 branch of {@code
+ *       EXPORT_XPUB} for on-card public-key derivation.
  * </ul>
  */
 public final class Slip10 {
@@ -91,10 +91,10 @@ public final class Slip10 {
 
     /**
      * Derives the SLIP-10 Ed25519 leaf 32-byte private key at the given hardened-only path and
-     * writes it into {@code outBuf} at {@code outOff}. Returns the number of bytes written
-     * (always 32). The chain code at the leaf node is overwritten by the wipe in
-     * {@link #wipeWalkState} after the copy and is therefore unavailable to the caller via this
-     * entry point — invoke {@link #deriveChainCode} on the same path if both halves are needed.
+     * writes it into {@code outBuf} at {@code outOff}. Returns the number of bytes written (always
+     * 32). The chain code at the leaf node is overwritten by the wipe in {@link #wipeWalkState}
+     * after the copy and is therefore unavailable to the caller via this entry point — invoke
+     * {@link #deriveChainCode} on the same path if both halves are needed.
      */
     public short deriveLeafKey(
             byte[] pathBuf, short pathOff, short depth, byte[] outBuf, short outOff) {

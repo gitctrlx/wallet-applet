@@ -15,21 +15,21 @@ import javacard.framework.Util;
  * inversions until the final encoding step. The class is purely static and stateless: all working
  * memory is provided by the caller, and {@link Field25519} owns the underlying field arithmetic.
  *
- * <p>Memory layout — every point occupies {@link #POINT_LEN} = 128 contiguous big-endian bytes
- * laid out as {@code X(32) ‖ Y(32) ‖ Z(32) ‖ T(32)}. The output of {@link #pointAdd} and
- * {@link #pointDouble} is materialised at the very end (after every input byte has been read into
+ * <p>Memory layout — every point occupies {@link #POINT_LEN} = 128 contiguous big-endian bytes laid
+ * out as {@code X(32) ‖ Y(32) ‖ Z(32) ‖ T(32)}. The output of {@link #pointAdd} and {@link
+ * #pointDouble} is materialised at the very end (after every input byte has been read into
  * scratch), so the caller may freely alias the output with either input.
  *
- * <p>Formulas — addition {@code add-2008-hwcd-3} (9 multiplications) and doubling
- * {@code dbl-2008-hwcd} (3 squarings + 4 multiplications) from the Explicit-Formulas Database,
- * specialised for {@code a = -1}. Both are listed at
- * <a href="https://hyperelliptic.org/EFD/g1p/auto-twisted-extended.html">EFD</a>.
+ * <p>Formulas — addition {@code add-2008-hwcd-3} (9 multiplications) and doubling {@code
+ * dbl-2008-hwcd} (3 squarings + 4 multiplications) from the Explicit-Formulas Database, specialised
+ * for {@code a = -1}. Both are listed at <a
+ * href="https://hyperelliptic.org/EFD/g1p/auto-twisted-extended.html">EFD</a>.
  *
  * <p>Scalar multiplication is a constant-time double-and-always-add over the full 256-bit scalar
  * range, which subsumes both the BIP-340-style 253-bit reduced scalars and the RFC 8032 secret
  * scalars (clamped into {@code [2²⁵⁴, 2²⁵⁵ − 8)}). Each of the 256 iterations performs exactly one
- * doubling and one addition, with the addend selected via byte-wise masking between the input
- * point and the identity element so the secret bit never branches the control flow.
+ * doubling and one addition, with the addend selected via byte-wise masking between the input point
+ * and the identity element so the secret bit never branches the control flow.
  */
 public final class Edwards25519 {
 
@@ -54,12 +54,11 @@ public final class Edwards25519 {
     public static final short POINT_OP_SCRATCH_LEN = (short) (9 * 32 + Field25519.SCRATCH_LEN);
 
     /**
-     * Scratch budget for {@link #scalarMult} — the {@link #POINT_OP_SCRATCH_LEN} buffer used by
-     * the inner add/double pair plus a 128-byte scratch slot for the conditionally selected
-     * addend point.
+     * Scratch budget for {@link #scalarMult} — the {@link #POINT_OP_SCRATCH_LEN} buffer used by the
+     * inner add/double pair plus a 128-byte scratch slot for the conditionally selected addend
+     * point.
      */
-    public static final short SCALAR_MULT_SCRATCH_LEN =
-            (short) (POINT_OP_SCRATCH_LEN + POINT_LEN);
+    public static final short SCALAR_MULT_SCRATCH_LEN = (short) (POINT_OP_SCRATCH_LEN + POINT_LEN);
 
     /**
      * Scratch budget for {@link #encodePoint} — one Field25519 inversion buffer plus two field-
@@ -175,8 +174,8 @@ public final class Edwards25519 {
     }
 
     /**
-     * {@code out ← 2 · in} in extended coordinates. Output may alias the input — every byte of
-     * the input is consumed before any byte of the output is written.
+     * {@code out ← 2 · in} in extended coordinates. Output may alias the input — every byte of the
+     * input is consumed before any byte of the output is written.
      */
     public static void pointDouble(
             byte[] out, short outOff, byte[] in, short inOff, byte[] scratch, short scratchOff) {
@@ -262,14 +261,16 @@ public final class Edwards25519 {
                 scratch, fScr);
     }
 
-    /**
-     * {@code out ← in1 + in2} in extended coordinates. Output may alias either input.
-     */
+    /** {@code out ← in1 + in2} in extended coordinates. Output may alias either input. */
     public static void pointAdd(
-            byte[] out, short outOff,
-            byte[] in1, short in1Off,
-            byte[] in2, short in2Off,
-            byte[] scratch, short scratchOff) {
+            byte[] out,
+            short outOff,
+            byte[] in1,
+            short in1Off,
+            byte[] in2,
+            short in2Off,
+            byte[] scratch,
+            short scratchOff) {
         short fScr = (short) (scratchOff + FIELD_SCR_OFF);
 
         // A ← (Y1 − X1) · (Y2 − X2). Use A_OFF for (Y1 − X1) and SPARE_OFF for (Y2 − X2).
@@ -367,9 +368,12 @@ public final class Edwards25519 {
      * pattern leaks no timing information about which branch was taken.
      */
     private static void conditionalCopy(
-            byte[] dst, short dstOff,
-            byte[] a, short aOff,
-            byte[] b, short bOff,
+            byte[] dst,
+            short dstOff,
+            byte[] a,
+            short aOff,
+            byte[] b,
+            short bOff,
             short len,
             byte mask) {
         for (short i = 0; i < len; i++) {
@@ -384,17 +388,21 @@ public final class Edwards25519 {
      * {@code out ← scalar · in} where {@code scalar} is interpreted as a 256-bit big-endian
      * unsigned integer. Output must not alias either {@code in} or {@code scalar}.
      *
-     * <p>The implementation is a constant-time double-and-always-add over all 256 scalar bits:
-     * each iteration unconditionally doubles the accumulator and adds either the input point or
-     * the identity (selected via a {@link #conditionalCopy} of two equal-cost masks). This makes
-     * the running time independent of the scalar's Hamming weight or value, which matters because
-     * the same routine is invoked with secret scalars in {@link Ed25519}.
+     * <p>The implementation is a constant-time double-and-always-add over all 256 scalar bits: each
+     * iteration unconditionally doubles the accumulator and adds either the input point or the
+     * identity (selected via a {@link #conditionalCopy} of two equal-cost masks). This makes the
+     * running time independent of the scalar's Hamming weight or value, which matters because the
+     * same routine is invoked with secret scalars in {@link Ed25519}.
      */
     public static void scalarMult(
-            byte[] scalar, short scalarOff,
-            byte[] in, short inOff,
-            byte[] out, short outOff,
-            byte[] scratch, short scratchOff) {
+            byte[] scalar,
+            short scalarOff,
+            byte[] in,
+            short inOff,
+            byte[] out,
+            short outOff,
+            byte[] scratch,
+            short scratchOff) {
         short addendOff = (short) (scratchOff + POINT_OP_SCRATCH_LEN);
 
         // Initialise the accumulator at the identity.
@@ -415,12 +423,7 @@ public final class Edwards25519 {
 
             // addend ← (bit ? in : identity)
             setIdentity(scratch, addendOff);
-            conditionalCopy(
-                    scratch, addendOff,
-                    in, inOff,
-                    scratch, addendOff,
-                    POINT_LEN,
-                    mask);
+            conditionalCopy(scratch, addendOff, in, inOff, scratch, addendOff, POINT_LEN, mask);
 
             // R ← R + addend
             pointAdd(out, outOff, out, outOff, scratch, addendOff, scratch, scratchOff);
@@ -433,9 +436,7 @@ public final class Edwards25519 {
      * of the affine {@code x = X · Z⁻¹}.
      */
     public static void encodePoint(
-            byte[] in, short inOff,
-            byte[] out, short outOff,
-            byte[] scratch, short scratchOff) {
+            byte[] in, short inOff, byte[] out, short outOff, byte[] scratch, short scratchOff) {
         short zInvOff = (short) (scratchOff + Field25519.SCRATCH_LEN);
         short xAffOff = (short) (scratchOff + Field25519.SCRATCH_LEN + 32);
 
@@ -466,8 +467,7 @@ public final class Edwards25519 {
         }
         // Set bit 7 of the LE high byte (= byte 31 of out) to bit 0 of x_aff.
         // x_aff is BE; bit 0 lives in its last byte.
-        byte xParity =
-                (byte) ((scratch[(short) (xAffOff + Field25519.LEN - 1)] & 0x01) << 7);
+        byte xParity = (byte) ((scratch[(short) (xAffOff + Field25519.LEN - 1)] & 0x01) << 7);
         out[(short) (outOff + Field25519.LEN - 1)] |= xParity;
 
         // Wipe scratch.
