@@ -167,6 +167,42 @@ class PersonalisationTest {
         }
 
         @Test
+        @DisplayName(
+                "importInit zeros the cert buffer — a re-init+finalize without WRITE chunks must"
+                        + " export only zeros")
+        void importInitClearsCertBuffer() throws Exception {
+            // First import: fill 500 bytes with a recognisable non-zero pattern so any stale
+            // bytes would be unmistakable in the second export.
+            byte[] firstCert = new byte[500];
+            Arrays.fill(firstCert, (byte) 0xAA);
+            importCert(firstCert);
+
+            // Re-init with a shorter total, then finalise without writing any chunks. The cert
+            // buffer's first 100 bytes were just overwritten with 0xAA by the previous import;
+            // the importInit wipe must zero them again so the export below reads only 0x00.
+            sendInnerExpectOk(
+                    Constants.INS_IMPORT_PKI_CERT,
+                    Constants.PKI_IMPORT_P1_INIT,
+                    (byte) 0,
+                    shortBE((short) 100));
+            sendInnerExpectOk(
+                    Constants.INS_IMPORT_PKI_CERT,
+                    Constants.PKI_IMPORT_P1_FINALIZE,
+                    (byte) 0,
+                    new byte[0]);
+
+            // Page the whole committed window; expect 100 bytes of 0x00.
+            byte[] req = new byte[] {0x00, 0x00, 0x00, (byte) 100};
+            byte[] resp = sendInnerExpectOk(Constants.INS_EXPORT_PKI_CERT, (byte) 0, (byte) 0, req);
+            int total = ((resp[0] & 0xFF) << 8) | (resp[1] & 0xFF);
+            assertEquals(100, total);
+            byte[] data = Arrays.copyOfRange(resp, 2, resp.length);
+            byte[] expected = new byte[100];
+            assertArrayEquals(
+                    expected, data, "importInit must wipe the cert buffer of any prior content");
+        }
+
+        @Test
         @DisplayName("LOCK_PKI without a cert fails with SW_CONDITIONS_NOT_SATISFIED")
         void lockWithoutCertFails() {
             assertEquals(

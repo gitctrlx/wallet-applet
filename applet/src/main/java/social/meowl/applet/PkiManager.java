@@ -111,6 +111,13 @@ public final class PkiManager {
     /**
      * Step 1 of chunked import: declares the total certificate size and resets the working area.
      * Fails if {@code totalLen} is zero or exceeds {@link Constants#PKI_CERT_MAX_LEN}.
+     *
+     * <p>The certificate buffer is zeroed in full as part of this step. Without the wipe, an
+     * abandoned chunked import followed by a shorter re-import would leave trailing bytes of the
+     * previous attempt in {@link #cert}; while {@link #exportCert} clamps reads to {@link
+     * #importedLen} and would not currently expose them through the public API, the wipe makes the
+     * invariant "anything past {@code importedLen} is zero" hold at the buffer level so any future
+     * code reading the buffer directly cannot accidentally leak prior content.
      */
     public void importInit(short totalLen) {
         if (totalLen <= 0 || totalLen > Constants.PKI_CERT_MAX_LEN) {
@@ -121,6 +128,7 @@ public final class PkiManager {
         stagedTotalLen = totalLen;
         // Importing a new cert invalidates the previously committed one.
         importedLen = 0;
+        Util.arrayFillNonAtomic(cert, (short) 0, Constants.PKI_CERT_MAX_LEN, (byte) 0);
         JCSystem.commitTransaction();
     }
 

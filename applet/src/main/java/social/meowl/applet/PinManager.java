@@ -17,8 +17,11 @@ import javacard.framework.OwnerPIN;
  * <p>API guidelines:
  *
  * <ul>
- *   <li>{@link #setup(byte[], short, short, byte[], short, short)} is invoked exactly once during
- *       the SETUP APDU; subsequent invocations on a non-{@code UNINITIALIZED} instance fail.
+ *   <li>{@link #setupInTx(byte[], short, short, byte[], short, short)} is invoked exactly once
+ *       during the SETUP APDU; subsequent invocations on a non-{@code UNINITIALIZED} instance fail.
+ *       The name carries the {@code InTx} suffix because the caller is required to open a {@link
+ *       JCSystem#beginTransaction()} block around it; see the method-level javadoc for the
+ *       rationale.
  *   <li>{@link #verifyPin(byte[], short, short)} returns the post-attempt try counter via the
  *       status word — success raises {@link Constants#SW_NO_ERROR}, failure raises {@code 0x63Cn}
  *       per ISO 7816-4 (with the 4-bit retry count in the low nibble). A length-policy violation
@@ -38,7 +41,7 @@ import javacard.framework.OwnerPIN;
  *
  * <p>Wipe semantics: {@link #wipe()} re-installs both {@link OwnerPIN} instances with their default
  * try limits and an arbitrary single-zero PIN as a transient placeholder. After a wipe the manager
- * reports {@link #isProvisioned()} = {@code false} and a subsequent {@code setup} is required
+ * reports {@link #isProvisioned()} = {@code false} and a subsequent {@code setupInTx} is required
  * before any verification will succeed.
  */
 public final class PinManager {

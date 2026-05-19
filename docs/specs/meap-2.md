@@ -56,6 +56,8 @@ client_eph_pub  : 65 bytes  ; SEC1-uncompressed secp256k1 point: 0x04 ‖ x ‖ 
 
 A conforming applet MUST reject any other body length with `6700`. It MUST reject a body whose first byte is not `0x04` with `6FB2` (Secure Channel cryptographic check failed) — only the uncompressed encoding is accepted; the host SHOULD NOT send a compressed point even if the curve admits one.
 
+A conforming applet MUST additionally ensure that `client_eph_pub` is a valid secp256k1 point — i.e. that `y² ≡ x³ + 7 (mod p)`. The reference implementation delegates this check to the underlying `KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY` implementation, which the JC 3.0.5 specification requires to raise `CryptoException.ILLEGAL_VALUE` on a non-curve point. The applet MUST capture any exception raised by `generateSecret` (whether `CryptoException`, `ArrayIndexOutOfBoundsException` or another) and convert it to `6FB2`, never propagating the silicon-specific exception type to the host. Deployments MUST verify, as part of the silicon admission checklist, that the target card actually performs point validation in its native ECDH (cards that silently accept off-curve points MUST NOT be qualified for production); see *Invalid-point rejection* in §Security Considerations for the rationale and threat model.
+
 The card MUST then:
 
 1. Generate a fresh ephemeral secp256k1 keypair `(eph_card_priv, eph_card_pub)` using `RandomData.ALG_KEYGENERATION` (or `ALG_TRNG` fallback).
@@ -121,7 +123,7 @@ A conforming applet MUST process inbound `OPEN_SECURE_CHANNEL` APDUs as follows:
 2. **Verify replay**: compare `IV` byte-for-byte against `last_inbound_IV`. If `IV ≤ last_inbound_IV`, reject with `6FB2` (Secure Channel cryptographic check failed). The replay check MUST happen before MAC verification so a wire attacker with no MAC key still gets a hard reject; this is a defense-in-depth measure.
 3. **Verify MAC**: compute `expected_MAC = HMAC-SHA-256(K_mac, [CLA INS P1 P2 LC] ‖ IV ‖ ciphertext)[0..16]`. Compare against the received `MAC` using a constant-time equality function (the reference implementation uses `ConstantTime.equals`; `Util.arrayCompare` is **not** constant-time per the JC 3.x specification and MUST NOT be used here). If the comparison fails, reject with `6FB2`.
 4. **Decrypt**: `padded_plaintext = AES-256-CBC-decrypt(K_enc, IV, ciphertext)`. Strip the trailing PKCS#5 padding to recover the inner APDU. A pad length outside `[1, 16]` or any `pad[i] ≠ pad_length` MUST cause a `6FB2` rejection — this case can only arise from a key mismatch (the MAC having already verified) or from a buggy host, neither of which the card should accommodate.
-5. **Update replay state**: store `IV` as the new `last_inbound_IV`. The applet MUST do this **only after** the inner APDU is successfully decrypted and dispatched, to avoid advancing the counter on a malformed envelope.
+5. **Update replay state**: as soon as the MAC verification and the strict-greater-than `IV` check have both passed, store `IV` as the new `last_inbound_IV`. The applet MUST commit the replay counter at this point — before AES decryption proceeds — because any subsequent failure (PKCS#5 padding mismatch, decrypt error, inner-INS dispatch error) tears down the session entirely and requires a fresh `INIT_SECURE_CHANNEL` handshake before the host can resume; the legitimate host therefore never re-uses an `IV` and an attacker cannot exploit a stale `IV` either. Anchoring the counter advance to the MAC + IV-monotonicity check (both of which the attacker cannot pass without `K_mac`) is what makes the replay defense tight: a wire attacker fabricating an envelope under a fresh `IV` either gets a `6FB2` (MAC mismatch) without advancing the counter, or — if they somehow break the MAC — has already won and the counter advance is irrelevant.
 6. **Dispatch**: parse the inner APDU header from the decrypted plaintext and dispatch to the appropriate inner-INS handler.
 
 A conforming host MUST:
@@ -238,6 +240,16 @@ The host's ephemeral keypair MUST be drawn from a CSPRNG, not from a determinist
 ### Counterfeit cards
 
 A counterfeit card with its own legitimately-issued `authentikey` (e.g. a card from the same manufacturer programmed with a different applet) would pass the handshake's signature check. Hosts that need to bind to a *specific* card SHOULD pin the `authentikey` fingerprint on first use (TOFU) and reject any subsequent handshake that presents a different fingerprint. The optional manufacturer PKI specified in [MEAP-4](./meap-4.md) provides a stronger anchor by tying each `authentikey` to a chain of trust the host can verify.
+
+### Invalid-point rejection
+
+The handshake's secp256k1 ECDH is the only place in the applet where an attacker-controlled EC point reaches a private-scalar multiplication. If the silicon's `KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY` implementation silently accepts a point that does not lie on the curve, the resulting "shared secret" can be drawn from a twist or substitution subgroup with much smaller order; combined with multiple handshakes, an attacker can in principle recover the ephemeral private scalar. The JC 3.0.5 specification mandates that conforming implementations raise `CryptoException.ILLEGAL_VALUE` on such inputs; every JCOP 3, JCOP 4 and SECID silicon in JCAlgTest's current corpus complies. Nevertheless:
+
+- A conforming applet MUST capture any exception raised by `generateSecret` and convert it to `6FB2`, never letting the silicon-specific exception type leak to the host (which would itself be a fingerprinting channel).
+- A conforming deployment MUST include a silicon admission check that exercises the ECDH path with a deliberately off-curve point (the JCAlgTest `ec.dh.invalid-point` probe is sufficient) and verify that the card responds with `6FB2`.
+- The applet does NOT carry an in-software `y² ≡ x³ + 7 (mod p)` validator. The cost is prohibitive (≈5 KB CAP overhead and a fresh audit surface for a modular square-root implementation) and is not warranted while every modern target silicon validates correctly. A future MEAP MAY revisit this trade-off if reliable evidence emerges of production cards that fail the admission check.
+
+The damage from a missed validation is bounded by the ephemeral-ephemeral handshake construction: the long-lived `authentikey` never participates in any EC arithmetic with attacker-controlled input. The worst case is that an attacker who can mount an invalid-curve attack against a vulnerable silicon recovers the ephemeral scalar of a single handshake, which protects exactly one Secure Channel session — a session whose plaintext the attacker, being the originating host, already has.
 
 ## Copyright
 

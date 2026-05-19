@@ -1,0 +1,84 @@
+# SPDX-FileCopyrightText: 2026 meowl.social contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Enforces the Conventional Commits format documented in CONTRIBUTING.md on every
+# pull request. The job lints either the whole PR commit range (push events) or
+# every commit in the PR head ref (pull_request events). Failure blocks merge.
+name: Commit lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: commitlint-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  commitlint:
+    name: Lint commit messages
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      - name: Install commitlint
+        run: |
+          npm install --no-save \
+            @commitlint/cli@^19 \
+            @commitlint/config-conventional@^19
+
+      - name: Write commitlint config
+        run: |
+          cat > commitlint.config.cjs <<'EOF'
+          module.exports = {
+            extends: ["@commitlint/config-conventional"],
+            rules: {
+              "header-max-length": [2, "always", 100],
+              "body-max-line-length": [1, "always", 100],
+              "type-enum": [
+                2,
+                "always",
+                [
+                  "feat",
+                  "fix",
+                  "docs",
+                  "style",
+                  "refactor",
+                  "perf",
+                  "test",
+                  "build",
+                  "ci",
+                  "chore",
+                  "revert",
+                ],
+              ],
+            },
+          };
+          EOF
+
+      - name: Lint PR commit range
+        if: github.event_name == 'pull_request'
+        run: |
+          npx commitlint \
+            --from "${{ github.event.pull_request.base.sha }}" \
+            --to   "${{ github.event.pull_request.head.sha }}" \
+            --verbose
+
+      - name: Lint pushed commit
+        if: github.event_name == 'push'
+        run: npx commitlint --from "HEAD~1" --to "HEAD" --verbose
