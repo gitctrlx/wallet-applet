@@ -41,7 +41,8 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 /**
- * End-to-end Phase 5C tests: RFC 8032 Ed25519 signing under a SLIP-10-derived key.
+ * End-to-end tests for the {@code SIGN_ED25519} primitive — RFC 8032 Ed25519 signing under a
+ * SLIP-10-derived key.
  *
  * <p>Every card-produced signature is checked against the JDK's built-in {@code Ed25519}
  * verifier (Java 15+, no BouncyCastle dependency needed for the verify path) using the
@@ -49,12 +50,12 @@ import org.junit.jupiter.api.Test;
  * deterministic signatures (no aux randomness), so the test also pins the {@code (sk, M) →
  * sig} mapping against itself across repeated calls.
  *
- * <p>The SLIP-10 vector 1 seed is reused from Phase 4 so the public-key half can also be
- * cross-checked against the official SLIP-10 reference vectors — the same pubkeys
- * {@link PhaseFourTest} expects from {@code EXPORT_XPUB} are the ones whose signatures the
+ * <p>The SLIP-10 vector 1 seed is also exercised by {@link HdDerivationTest} so the public-key
+ * half can be cross-checked against the official SLIP-10 reference vectors — the same pubkeys
+ * {@link HdDerivationTest} expects from {@code EXPORT_XPUB} are the ones whose signatures the
  * JDK verifier accepts here, closing the loop {@code seed → SLIP-10 → leaf k → A = s·B → sign}.
  */
-class PhaseFiveCTest {
+class Ed25519SigningTest {
 
     private static final byte[] APPLET_AID_BYTES = {
         (byte) 0xF0, 0x6D, 0x65, 0x6F, 0x77, 0x6C, 0x01
@@ -71,7 +72,7 @@ class PhaseFiveCTest {
     private static final byte[] DEFAULT_PIN = "123456".getBytes();
     private static final byte[] DEFAULT_PUK = "ABCDEFGH".getBytes();
 
-    /** SLIP-10 Vector 1 seed — identical to BIP-32 Vector 1, reused from {@link PhaseFourTest}. */
+    /** SLIP-10 Vector 1 seed — identical to BIP-32 Vector 1, reused from {@link HdDerivationTest}. */
     private static final byte[] SLIP10_VECTOR_1_SEED = hex("000102030405060708090a0b0c0d0e0f");
 
     /** A short, fixed sample payload used by most non-edge tests. */
@@ -394,11 +395,11 @@ class PhaseFiveCTest {
             assertNotEquals(
                     (short) 0,
                     (short) (caps & Constants.CAP_ED25519),
-                    "CAP_ED25519 must be advertised once Phase 5C is wired");
+                    "CAP_ED25519 must be advertised");
         }
     }
 
-    /*  Phase-5C helpers.  */
+    /*  Ed25519-specific helpers.  */
 
     private byte[] ed25519Pubkey(int[] path) {
         byte[] req = encodeXpubRequest(Constants.CURVE_ED25519, path);
@@ -528,8 +529,9 @@ class PhaseFiveCTest {
         throw new IllegalStateException("capabilities TLV not found");
     }
 
-    /*  Boilerplate Secure-Channel + lifecycle helpers — same as PhaseFiveBTest. Kept inline
-     *  rather than extracted to a shared base so each Phase test stays self-contained.  */
+    /*  Boilerplate Secure-Channel + lifecycle helpers — same as SchnorrK1Test. Kept inline
+     *  rather than extracted to a shared base so each end-to-end test file stays
+     *  self-contained.  */
 
     private void bringToSetupDoneAndVerifyPin() throws Exception {
         byte[] cert = new byte[64];

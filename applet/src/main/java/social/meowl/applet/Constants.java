@@ -46,74 +46,69 @@ public final class Constants {
      *    0x60–0x6F  derivation utilities
      *    0xFF       reset to factory (per ISO 7816-4 reserved range hint)
      *
-     *  Reserved INS for later phases are declared as comments rather than as constants so that
-     *  the implemented surface and the planned surface are visually distinct.
+     *  Reserved INS values left unimplemented at the current revision are declared as comments
+     *  rather than as constants so that the implemented surface and the planned surface are
+     *  visually distinct.
      */
 
-    /** {@code GET_INFO} — returns a TLV-encoded capability + identity profile. (Phase 1) */
+    /** {@code GET_INFO} — returns a TLV-encoded capability + identity profile. */
     public static final byte INS_GET_INFO = (byte) 0x01;
 
-    /** {@code GET_AUTHENTIKEY} — returns the compressed authentikey public key. (Phase 1) */
+    /** {@code GET_AUTHENTIKEY} — returns the compressed authentikey public key. */
     public static final byte INS_GET_AUTHENTIKEY = (byte) 0x02;
 
-    /** {@code RESET_TO_FACTORY} — wipes secrets after N consecutive invocations. (Phase 1) */
+    /** {@code RESET_TO_FACTORY} — wipes secrets after N consecutive invocations. */
     public static final byte INS_RESET_TO_FACTORY = (byte) 0x03;
 
-    /** {@code INIT_SECURE_CHANNEL} — ECDH handshake; establishes session keys. (Phase 2) */
+    /** {@code INIT_SECURE_CHANNEL} — ECDH handshake; establishes session keys. */
     public static final byte INS_INIT_SECURE_CHANNEL = (byte) 0x10;
 
-    /** {@code OPEN_SECURE_CHANNEL} — envelopes an inner APDU under the session keys. (Phase 2) */
+    /** {@code OPEN_SECURE_CHANNEL} — envelopes an inner APDU under the session keys. */
     public static final byte INS_OPEN_SECURE_CHANNEL = (byte) 0x11;
 
-    /** {@code SETUP} — initial PIN/PUK provisioning. (Phase 3) */
+    /** {@code SETUP} — initial PIN/PUK provisioning. */
     public static final byte INS_SETUP = (byte) 0x20;
 
-    /** {@code VERIFY_PIN} — unlock session-scoped PIN authorisation. (Phase 3) */
+    /** {@code VERIFY_PIN} — unlock session-scoped PIN authorisation. */
     public static final byte INS_VERIFY_PIN = (byte) 0x21;
 
-    /** {@code CHANGE_PIN} — rotate user PIN. (Phase 3) */
+    /** {@code CHANGE_PIN} — rotate user PIN. */
     public static final byte INS_CHANGE_PIN = (byte) 0x22;
 
-    /** {@code CHANGE_PUK} — rotate unblock PUK. (Phase 3) */
+    /** {@code CHANGE_PUK} — rotate unblock PUK. */
     public static final byte INS_CHANGE_PUK = (byte) 0x23;
 
-    /** {@code UNBLOCK_PIN} — PUK-based PIN unblock. (Phase 3) */
+    /** {@code UNBLOCK_PIN} — PUK-based PIN unblock. */
     public static final byte INS_UNBLOCK_PIN = (byte) 0x24;
 
-    /** {@code EXPORT_PKI_PUBKEY} — export authentikey pubkey for CSR construction. (Phase 3) */
+    /** {@code EXPORT_PKI_PUBKEY} — export authentikey pubkey for CSR construction. */
     public static final byte INS_EXPORT_PKI_PUBKEY = (byte) 0x30;
 
-    /** {@code SIGN_PKI_CSR} — sign a host-provided CSR digest with the authentikey. (Phase 3) */
+    /** {@code SIGN_PKI_CSR} — sign a host-provided CSR digest with the authentikey. */
     public static final byte INS_SIGN_PKI_CSR = (byte) 0x31;
 
-    /** {@code IMPORT_PKI_CERT} — chunked manufacturer certificate import. (Phase 3) */
+    /** {@code IMPORT_PKI_CERT} — chunked manufacturer certificate import. */
     public static final byte INS_IMPORT_PKI_CERT = (byte) 0x32;
 
-    /** {@code EXPORT_PKI_CERT} — paged certificate export. (Phase 3) */
+    /** {@code EXPORT_PKI_CERT} — paged certificate export. */
     public static final byte INS_EXPORT_PKI_CERT = (byte) 0x33;
 
-    /** {@code LOCK_PKI} — finalise PKI personalisation; transitions to PERSONALIZED. (Phase 3) */
+    /** {@code LOCK_PKI} — finalise PKI personalisation; transitions to PERSONALIZED. */
     public static final byte INS_LOCK_PKI = (byte) 0x34;
 
-    /**
-     * {@code IMPORT_SEED} — install a user-supplied master seed and advance to SEEDED. (Phase 4)
-     */
+    /** {@code IMPORT_SEED} — install a user-supplied master seed and advance to SEEDED. */
     public static final byte INS_IMPORT_SEED = (byte) 0x40;
 
-    /** {@code GENERATE_SEED} — card-internal CSPRNG seed; raw seed returned once. (Phase 4) */
+    /** {@code GENERATE_SEED} — card-internal CSPRNG seed; raw seed returned once. */
     public static final byte INS_GENERATE_SEED = (byte) 0x41;
 
-    /**
-     * {@code EXPORT_XPUB} — derive a BIP-32 / SLIP-10 child and return its public material. (Phase
-     * 4)
-     */
+    /** {@code EXPORT_XPUB} — derive a BIP-32 / SLIP-10 child and return its public material. */
     public static final byte INS_EXPORT_XPUB = (byte) 0x42;
 
     /**
      * {@code SIGN_ECDSA_K1} — sign a host-supplied 32-byte digest with the secp256k1 private key
      * derived at the given BIP-32 path. The response is a fixed-length {@code r(32) ‖ s(32)} pair
-     * with {@code s} normalised to the low half of {@code n} (per BIP-62 / EIP-2). See {@code
-     * docs/adr/0010-signing-api-contract.md}. (Phase 5)
+     * with {@code s} normalised to the low half of {@code n} (per BIP-62 / EIP-2).
      */
     public static final byte INS_SIGN_ECDSA_K1 = (byte) 0x50;
 
@@ -121,8 +116,7 @@ public final class Constants {
      * {@code SIGN_SCHNORR_K1} — sign a 32-byte digest with the BIP-340 Schnorr scheme on
      * secp256k1 under the BIP-32-derived leaf scalar. Inner data: {@code [depth(1), path(4*depth),
      * digest(32)]}. Returns {@code [r(32), s(32)]} per BIP-340 §3 (R is x-only, encoded as the
-     * affine x-coordinate of the nonce point with implicit even-y). See {@code
-     * docs/adr/0010-signing-api-contract.md}. (Phase 5)
+     * affine x-coordinate of the nonce point with implicit even-y).
      */
     public static final byte INS_SIGN_SCHNORR_K1 = (byte) 0x51;
 
@@ -130,10 +124,10 @@ public final class Constants {
      * {@code SIGN_ED25519} — sign an arbitrary-length host-supplied message with the Ed25519
      * private key derived at the given SLIP-10 path. Inner data: {@code [depth(1), path(4*depth),
      * msg(...)]}; the message is whatever bytes the host wants to authenticate (per RFC 8032 the
-     * card hashes them itself; ADR-0007 still applies in practice because every chain meowl
-     * supports already does host-side preimage construction). Returns {@code [R(32), S(32)]} per
-     * RFC 8032 §5.1.6 — {@code R} compressed Edwards form, {@code S} little-endian scalar. See
-     * {@code docs/adr/0010-signing-api-contract.md}. (Phase 5)
+     * card hashes them itself — the only signing primitive in the applet that does not take a
+     * pre-computed digest, since the algorithm definition itself absorbs the message into the
+     * nonce and challenge hashes). Returns {@code [R(32), S(32)]} per RFC 8032 §5.1.6 — {@code R}
+     * compressed Edwards form, {@code S} little-endian scalar.
      */
     public static final byte INS_SIGN_ED25519 = (byte) 0x52;
 
@@ -207,34 +201,34 @@ public final class Constants {
     public static final short SW_INTERNAL_ERROR = (short) 0x6FE1;
 
     /*  Capability bitmask advertised in GET_INFO under TAG_CAPABILITIES.
-     *  16-bit so we can fit feature flags through several phases without re-encoding.
+     *  16-bit so feature flags can be added incrementally without re-encoding the field.
      */
 
-    /** Bit 0 — card supports secp256k1 ECDSA signing. (Phase 5) */
+    /** Bit 0 — card supports secp256k1 ECDSA signing. */
     public static final short CAP_K1_ECDSA = (short) 0x0001;
 
-    /** Bit 1 — card supports BIP-340 Schnorr signing on secp256k1. (Phase 5) */
+    /** Bit 1 — card supports BIP-340 Schnorr signing on secp256k1. */
     public static final short CAP_K1_SCHNORR = (short) 0x0002;
 
-    /** Bit 2 — card supports Ed25519 EdDSA signing. (Phase 5) */
+    /** Bit 2 — card supports Ed25519 EdDSA signing. */
     public static final short CAP_ED25519 = (short) 0x0004;
 
-    /** Bit 3 — card exposes a Secure Channel using AES-GCM. (Phase 2) */
+    /** Bit 3 — card exposes a Secure Channel using AES-GCM. */
     public static final short CAP_SC_GCM = (short) 0x0008;
 
-    /** Bit 4 — card exposes a Secure Channel using AES-CBC + HMAC-SHA-256. (Phase 2) */
+    /** Bit 4 — card exposes a Secure Channel using AES-CBC + HMAC-SHA-256. */
     public static final short CAP_SC_CBC_HMAC = (short) 0x0010;
 
-    /** Bit 5 — card exposes the PKI personalisation flow. (Phase 3) */
+    /** Bit 5 — card exposes the PKI personalisation flow. */
     public static final short CAP_PKI = (short) 0x0020;
 
-    /** Bit 6 — card supports {@code RESET_TO_FACTORY}. (Phase 1) */
+    /** Bit 6 — card supports {@code RESET_TO_FACTORY}. */
     public static final short CAP_RESET_TO_FACTORY = (short) 0x0040;
 
-    /** Bit 7 — card supports BIP-32 secp256k1 derivation. (Phase 4) */
+    /** Bit 7 — card supports BIP-32 secp256k1 derivation. */
     public static final short CAP_BIP32 = (short) 0x0080;
 
-    /** Bit 8 — card supports SLIP-10 Ed25519 derivation. (Phase 4) */
+    /** Bit 8 — card supports SLIP-10 Ed25519 derivation. */
     public static final short CAP_SLIP10 = (short) 0x0100;
 
     /*  TLV tags used inside GET_INFO. Single-byte tags in the application-private range so they
@@ -267,7 +261,7 @@ public final class Constants {
     /** Length of a compressed EC point ({@code 0x02|0x03 || x}). */
     public static final short EC_POINT_COMPRESSED_LEN = (short) 33;
 
-    /*  Secure Channel sizes (Phase 2)  */
+    /*  Secure Channel sizes  */
 
     /** AES key length (bytes) used by the Secure Channel — AES-256. */
     public static final short SC_KEY_LEN = (short) 32;
@@ -278,7 +272,7 @@ public final class Constants {
     /** Truncated HMAC-SHA-256 tag length (bytes) used as the Secure Channel MAC. */
     public static final short SC_MAC_LEN = (short) 16;
 
-    /*  PIN / PUK policy (Phase 3) — see docs/adr/0006-pin-policy.md  */
+    /*  PIN / PUK policy  */
 
     /** Minimum PIN length in bytes. */
     public static final byte PIN_MIN_LEN = (byte) 4;
@@ -298,7 +292,7 @@ public final class Constants {
     /** Default PUK try-counter limit. */
     public static final byte PUK_RETRY_LIMIT = (byte) 5;
 
-    /*  HD derivation (Phase 4)  */
+    /*  HD derivation  */
 
     /** Minimum acceptable BIP-32 seed length in bytes (16 bytes = 128 bits). */
     public static final short SEED_MIN_LEN = (short) 16;
@@ -321,17 +315,17 @@ public final class Constants {
     /** Curve identifier selecting Ed25519 SLIP-10. */
     public static final byte CURVE_ED25519 = (byte) 0x01;
 
-    /*  Signing (Phase 5) — see docs/adr/0010-signing-api-contract.md  */
+    /*  Signing primitives  */
 
     /**
-     * Length of the digest accepted by every Phase 5 signing primitive. Always 32 bytes (per
-     * ADR-0007: the card signs hashes only).
+     * Length of the digest accepted by the {@code SIGN_ECDSA_K1} and {@code SIGN_SCHNORR_K1}
+     * primitives. Always 32 bytes — the card signs hashes only, never raw transactions.
      */
     public static final short DIGEST_LEN = (short) 32;
 
     /**
-     * Length of the ECDSA / Schnorr signature returned by the Phase 5 signing primitives: {@code
-     * r(32) ‖ s(32)}. Recovery byte computation is host-side; see ADR-0010.
+     * Length of the ECDSA / Schnorr signature returned to the host: {@code r(32) ‖ s(32)}.
+     * Recovery-byte computation, when needed (e.g. for Ethereum), is host-side.
      */
     public static final short SIG_LEN_R_S = (short) 64;
 
@@ -342,7 +336,7 @@ public final class Constants {
      */
     public static final short ECDSA_DER_MAX_LEN = (short) 72;
 
-    /*  PKI personalisation (Phase 3)  */
+    /*  PKI personalisation  */
 
     /** Maximum committed certificate size in EEPROM. Sized for a typical X.509v3 EE cert. */
     public static final short PKI_CERT_MAX_LEN = (short) 1024;

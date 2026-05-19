@@ -23,7 +23,7 @@ import javacard.security.Signature;
  *       ECDSA-SHA-256-equivalent signature produced from the digest with the authentikey private
  *       key.
  *   <li><b>IMPORT_PKI_CERT</b> — manufacturer-issued certificate is uploaded in {@link
- *       Constants#PKI_CERT_CHUNK_MAX_LEN}-byte chunks. Three-phase protocol:
+ *       Constants#PKI_CERT_CHUNK_MAX_LEN}-byte chunks. Three-step protocol:
  *       <ul>
  *         <li>{@code P1 = 0x00 (INIT)} — data = {@code totalSize (2 BE)}. Allocates EEPROM.
  *         <li>{@code P1 = 0x01 (WRITE)} — data = {@code offset (2 BE) ‖ chunk}.
@@ -109,7 +109,7 @@ public final class PkiManager {
     }
 
     /**
-     * Phase 1 of chunked import: declares the total certificate size and resets the working area.
+     * Step 1 of chunked import: declares the total certificate size and resets the working area.
      * Fails if {@code totalLen} is zero or exceeds {@link Constants#PKI_CERT_MAX_LEN}.
      */
     public void importInit(short totalLen) {
@@ -125,7 +125,7 @@ public final class PkiManager {
     }
 
     /**
-     * Phase 2 of chunked import: writes {@code chunk[0..chunkLen]} at {@code offset} of the staged
+     * Step 2 of chunked import: writes {@code chunk[0..chunkLen]} at {@code offset} of the staged
      * certificate. Bounds-checked against {@link #stagedTotalLen}.
      */
     public void importWrite(short offset, byte[] chunk, short chunkOffset, short chunkLen) {
@@ -146,7 +146,7 @@ public final class PkiManager {
     }
 
     /**
-     * Phase 3 of chunked import: finalises the staged size into the committed size. Subsequent
+     * Step 3 of chunked import: finalises the staged size into the committed size. Subsequent
      * {@link #exportCert} calls will read from offset 0 up to {@link #importedLen}.
      */
     public void importFinalize() {

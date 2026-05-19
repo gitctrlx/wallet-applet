@@ -11,7 +11,7 @@ import javacard.security.MessageDigest;
 import javacard.security.RandomData;
 
 /**
- * BIP-340 Schnorr signing primitive on secp256k1 — Phase 5B of {@code meowl-applet}.
+ * BIP-340 Schnorr signing primitive on secp256k1.
  *
  * <p>JavaCard 3.0.5 ships no native BIP-340 (Schnorr / Taproot) primitive; the only EC operation
  * exposed by the platform is the ECDH-based scalar multiplication used here for {@code d' · G}
@@ -76,7 +76,7 @@ public final class Schnorr {
     private static final short TAG_CHALLENGE_LEN = 17;
 
     /*
-     * Scratch layout. Every Phase 5B signature lives entirely in this transient buffer:
+     * Scratch layout. Every signature lives entirely in this transient buffer:
      *   D_OFF        [0,32)    d'  (later d after parity flip)
      *   T_OFF        [32,64)   t   (= d ⊕ tagged_hash(aux))
      *   P_OFF        [64,129)  P   (uncompressed: 0x04 ‖ x ‖ y)
@@ -85,8 +85,9 @@ public final class Schnorr {
      *   K_OFF        [226,258) k'  (later k after parity flip)
      *   M_OFF        [258,290) m   (digest copy — input may share buffer with output)
      *   WORK_OFF     [290,354) 64-byte workspace: e·d → k+e·d → (k+e·d) mod n
-     *                          During Phase 3 the same 32-byte slot at WORK_OFF holds aux random
-     *                          (consumed before WORK is needed for the multiply-add).
+     *                          Before the multiply-add step, the same 32-byte slot at WORK_OFF
+     *                          temporarily holds the BIP-340 aux randomness (consumed by the
+     *                          synthetic-nonce hash before WORK is needed by `(k + e·d) mod n`).
      *   HASH_TAG_OFF [354,386) SHA-256(tag) — refreshed on every taggedHashStart() call
      */
     private static final short D_OFF = 0;

@@ -7,7 +7,7 @@ package social.meowl.applet;
 import javacard.framework.Util;
 
 /**
- * Twisted-Edwards group operations for {@code edwards25519} — Phase 5C of {@code meowl-applet}.
+ * Twisted-Edwards group operations for {@code edwards25519}.
  *
  * <p>The curve is {@code -x² + y² = 1 + d·x²·y² (mod p)} with {@code d = -121665/121666 mod p}.
  * Points are stored in extended projective coordinates {@code (X, Y, Z, T)} with {@code x = X/Z},

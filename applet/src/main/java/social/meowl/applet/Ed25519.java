@@ -10,7 +10,7 @@ import javacard.framework.Util;
 import javacard.security.MessageDigest;
 
 /**
- * Software RFC 8032 Ed25519 signing primitive — Phase 5C of {@code meowl-applet}.
+ * Software RFC 8032 Ed25519 signing primitive.
  *
  * <p>JavaCard 3.0.5 ships no native Ed25519, so the entire signing pipeline lives in user code:
  * SHA-512 expansion of the SLIP-10 leaf seed (clamped per RFC 8032 §5.1.5), public-key derivation

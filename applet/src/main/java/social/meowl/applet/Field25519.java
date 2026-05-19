@@ -7,7 +7,7 @@ package social.meowl.applet;
 import javacard.framework.Util;
 
 /**
- * Field arithmetic modulo {@code p = 2²⁵⁵ − 19} — Phase 5C of {@code meowl-applet}.
+ * Field arithmetic modulo {@code p = 2²⁵⁵ − 19}, the prime base field of {@code edwards25519}.
  *
  * <p>Every field element is represented as a 32-byte big-endian unsigned integer in {@code [0, p)};
  * inputs and outputs are always in this canonical reduced form. The class is purely static and

@@ -81,12 +81,12 @@ public final class Authentikey {
         return Constants.EC_POINT_COMPRESSED_LEN;
     }
 
-    /** Package-private access for the Secure Channel handshake signer (Phase 2). */
+    /** Package-private access for the Secure Channel handshake signer. */
     ECPrivateKey privateKey() {
         return privateKey;
     }
 
-    /** Package-private access for the PKI CSR signer (Phase 3). */
+    /** Package-private access for the PKI CSR signer. */
     ECPublicKey publicKey() {
         return publicKey;
     }

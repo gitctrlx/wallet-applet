@@ -33,16 +33,16 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 /**
- * End-to-end tests for Phase 3 (PIN/PUK + PKI personalisation). All Phase 3 INS are reachable only
- * through the Secure Channel envelope, so every test opens a session first and dispatches inner
- * APDUs via {@code OPEN_SECURE_CHANNEL}.
+ * End-to-end tests for the personalisation flow — PIN/PUK setup plus PKI manufacturer-cert
+ * import and lock. All these INS are reachable only through the Secure Channel envelope, so every
+ * test opens a session first and dispatches inner APDUs via {@code OPEN_SECURE_CHANNEL}.
  *
  * <p>The {@link Session} helper is a self-contained client-side mirror of the meowl Secure Channel
  * protocol — ECDH on secp256k1, HKDF-SHA-256 KDF, AES-256-CBC, HMAC-SHA-256 — built on BouncyCastle
  * and the standard JCE. It lives inside this test file because we only need it here; once a real
  * host SDK exists in {@code tools/} it will subsume this scaffolding.
  */
-class PhaseThreeTest {
+class PersonalisationTest {
 
     private static final byte[] APPLET_AID_BYTES = {
         (byte) 0xF0, 0x6D, 0x65, 0x6F, 0x77, 0x6C, 0x01

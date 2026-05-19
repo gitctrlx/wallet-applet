@@ -32,11 +32,11 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 /**
- * End-to-end Phase 4 tests: master seed import, card-generated seed, BIP-32 secp256k1 derivation
- * verified against the official BIP-32 vectors, and SLIP-10 Ed25519 chain-code derivation verified
+ * End-to-end HD derivation tests — master seed import, card-generated seed, BIP-32 secp256k1
+ * derivation verified against the official BIP-32 vectors, and SLIP-10 Ed25519 derivation verified
  * against the official SLIP-10 vectors.
  */
-class PhaseFourTest {
+class HdDerivationTest {
 
     private static final byte[] APPLET_AID_BYTES = {
         (byte) 0xF0, 0x6D, 0x65, 0x6F, 0x77, 0x6C, 0x01
@@ -474,8 +474,8 @@ class PhaseFourTest {
     }
 
     @Nested
-    @DisplayName("Lifecycle / PIN gating — Phase 4 INS commands")
-    class Phase4Gating {
+    @DisplayName("Lifecycle / PIN gating — HD derivation INS commands")
+    class HdGating {
 
         @Test
         @DisplayName("EXPORT_XPUB before SEEDED is rejected with SW_LIFECYCLE_INVALID")

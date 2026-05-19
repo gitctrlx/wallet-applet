@@ -20,7 +20,7 @@ import javacard.framework.Util;
  * and business-logic component lives in a single-purpose companion class in this same package (a
  * JavaCard CAP file is one Java package).
  *
- * <p>Outer INS surface (Phases 1 + 2 only):
+ * <p>Outer INS surface — reachable on a freshly-installed card without a Secure Channel:
  *
  * <ul>
  *   <li>{@link Constants#INS_GET_INFO}, {@link Constants#INS_GET_AUTHENTIKEY}, {@link
@@ -30,7 +30,8 @@ import javacard.framework.Util;
  *       via {@link #dispatchInner}.
  * </ul>
  *
- * <p>Inner INS surface (Phase 3 onward) is reached only through OPEN_SECURE_CHANNEL.
+ * <p>Every other INS — PIN, PKI, seed, signing — is reached only through OPEN_SECURE_CHANNEL
+ * and is dispatched by {@link #dispatchInner}.
  */
 public final class MeowlApplet extends Applet implements WipeTrigger {
 
@@ -244,7 +245,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         return authentikey.writeCompressedPubkeyTo(buffer, (short) 0);
     }
 
-    /*  Phase 3 inner handlers — all reachable only via OPEN_SECURE_CHANNEL.  */
+    /*  PIN / PUK + PKI personalisation handlers — reachable only via OPEN_SECURE_CHANNEL.  */
 
     /** {@code SETUP} inner data layout: {@code [pinLen(1), PIN, pukLen(1), PUK]}. */
     private short handleSetup(byte[] buffer, short dataOff, short dataLen) {
@@ -363,7 +364,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     }
 
     /**
-     * {@code IMPORT_PKI_CERT}: three-phase protocol selected by {@code P1}.
+     * {@code IMPORT_PKI_CERT}: three-step protocol selected by {@code P1}.
      *
      * <ul>
      *   <li>{@code P1 = INIT}: data = {@code [totalSize (2 BE)]}.
@@ -432,7 +433,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         return 0;
     }
 
-    /*  Phase 4 inner handlers — HD wallet derivation.  */
+    /*  HD wallet handlers — seed import / generation and BIP-32 / SLIP-10 child export.  */
 
     /**
      * {@code IMPORT_SEED} inner data layout: {@code [seedLen(1), seed(seedLen)]}. Requires the
@@ -511,12 +512,11 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         }
     }
 
-    /*  Phase 5 inner handlers — signing primitives.  */
+    /*  Signing handlers — secp256k1 ECDSA, BIP-340 Schnorr and Ed25519 EdDSA.  */
 
     /**
      * {@code SIGN_ECDSA_K1} inner data layout: {@code [depth(1), path(4*depth), digest(32)]}.
      * Returns {@code [r(32), s(32)]} with {@code s} low-{@code s} normalised per BIP-62 / EIP-2.
-     * See {@code docs/adr/0010-signing-api-contract.md}.
      */
     private short handleSignEcdsaK1(byte[] buffer, short dataOff, short dataLen) {
         state.require(LifecycleState.SEEDED);
@@ -553,7 +553,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
      * {@code SIGN_SCHNORR_K1} inner data layout: {@code [depth(1), path(4*depth), digest(32)]}.
      * Returns the 64-byte BIP-340 signature {@code bytes(R) ‖ s}. The signature is software-
      * implemented on top of {@link Schnorr}; aux randomness is drawn from the on-card RNG so the
-     * resulting signature is non-deterministic. See {@code docs/adr/0010-signing-api-contract.md}.
+     * resulting signature is non-deterministic.
      */
     private short handleSignSchnorrK1(byte[] buffer, short dataOff, short dataLen) {
         state.require(LifecycleState.SEEDED);
@@ -592,7 +592,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
      * the message internally. Returns the 64-byte {@code R ‖ S} signature in RFC 8032 §5.1.2 LE
      * compressed form, computed entirely in software via {@link Ed25519#sign}. The signature is
      * deterministic by construction (the nonce {@code r} is derived from {@code SHA-512(prefix ‖
-     * M)}); no on-card RNG is consumed. See {@code docs/adr/0010-signing-api-contract.md}.
+     * M)}); no on-card RNG is consumed.
      */
     private short handleSignEd25519(byte[] buffer, short dataOff, short dataLen) {
         state.require(LifecycleState.SEEDED);

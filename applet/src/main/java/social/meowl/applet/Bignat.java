@@ -19,7 +19,8 @@ import javacard.framework.Util;
  *
  * <p>JavaCard 3.0.5 ships no native {@code BigInteger} type and the only widely-supported
  * arithmetic primitive on numbers wider than 16 bits is the RSA modular exponentiation engine.
- * Phase 5B (BIP-340 Schnorr) needs three primitive operations the JC platform does not provide:
+ * The Schnorr and Ed25519 signing paths need three primitive operations the JC platform does
+ * not provide:
  *
  * <ul>
  *   <li>schoolbook addition / subtraction with carry on arbitrary-length operands;

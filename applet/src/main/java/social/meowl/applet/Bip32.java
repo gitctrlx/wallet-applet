@@ -238,7 +238,7 @@ public final class Bip32 {
 
     /**
      * Writes the uncompressed encoding {@code 0x04 ‖ x ‖ y} of {@code scalar * G} into {@code
-     * outBuf} starting at {@code outOff}, and returns 65. Phase 5B (BIP-340 Schnorr) needs the
+     * outBuf} starting at {@code outOff}, and returns 65. The BIP-340 Schnorr signer needs the
      * {@code y}-coordinate to test the parity of the nonce point and the public key, so the
      * uncompressed form is exposed as a public helper rather than thrown away by {@link
      * #computeCompressedPubkey}.

@@ -33,7 +33,8 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 /**
- * End-to-end Phase 5B tests: BIP-340 Schnorr signing under a BIP-32-derived key.
+ * End-to-end tests for the {@code SIGN_SCHNORR_K1} primitive — BIP-340 Schnorr signing under a
+ * BIP-32-derived key.
  *
  * <p>The card draws fresh aux randomness per signature, so the resulting {@code (R, s)} is not
  * deterministic and cannot be pinned to a fixed expected pair. Instead each test verifies the
@@ -45,7 +46,7 @@ import org.junit.jupiter.api.Test;
  * for confirming the host-side verifier itself; one such vector is exercised in {@link
  * Bip340ReferenceVectors}.
  */
-class PhaseFiveBTest {
+class SchnorrK1Test {
 
     private static final byte[] APPLET_AID_BYTES = {
         (byte) 0xF0, 0x6D, 0x65, 0x6F, 0x77, 0x6C, 0x01
@@ -295,7 +296,7 @@ class PhaseFiveBTest {
             assertNotEquals(
                     (short) 0,
                     (short) (caps & Constants.CAP_K1_SCHNORR),
-                    "CAP_K1_SCHNORR must be advertised once Phase 5B is wired");
+                    "CAP_K1_SCHNORR must be advertised");
         }
     }
 
@@ -475,8 +476,9 @@ class PhaseFiveBTest {
         throw new IllegalStateException("capabilities TLV not found");
     }
 
-    /*  Generic helpers — identical in spirit to PhaseFiveTest. Kept duplicated rather than
-     *  extracted to a shared base class so each Phase test file remains self-contained.  */
+    /*  Generic helpers — identical in spirit to those in EcdsaK1Test. Kept duplicated rather
+     *  than extracted to a shared base class so each end-to-end test file remains
+     *  self-contained.  */
 
     private void bringToSetupDoneAndVerifyPin() throws Exception {
         byte[] cert = new byte[64];

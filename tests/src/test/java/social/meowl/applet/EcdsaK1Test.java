@@ -35,11 +35,12 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 /**
- * End-to-end Phase 5A tests: secp256k1 ECDSA signing under a BIP-32-derived key.
+ * End-to-end tests for the {@code SIGN_ECDSA_K1} primitive — secp256k1 ECDSA signing under a
+ * BIP-32-derived key.
  *
  * <p>The card draws a fresh random nonce per ECDSA signature (JC 3.0.5 does not expose an RFC 6979
- * hook — see {@code docs/adr/0010-signing-api-contract.md}), so the tests cannot pin {@code r,s} to
- * a fixed expected pair. Instead they assert two structural invariants per call:
+ * hook), so the tests cannot pin {@code r,s} to a fixed expected pair. Instead each test verifies
+ * the structural and cryptographic invariants: per call:
  *
  * <ol>
  *   <li>The signature verifies against the BIP-32-derived pubkey that {@code EXPORT_XPUB} would
@@ -47,7 +48,7 @@ import org.junit.jupiter.api.Test;
  *   <li>{@code s ≤ ⌊n/2⌋} (proving the on-card low-{@code s} normalisation per BIP-62 / EIP-2).
  * </ol>
  */
-class PhaseFiveTest {
+class EcdsaK1Test {
 
     private static final byte[] APPLET_AID_BYTES = {
         (byte) 0xF0, 0x6D, 0x65, 0x6F, 0x77, 0x6C, 0x01
@@ -92,7 +93,7 @@ class PhaseFiveTest {
         simulator.selectApplet(aid);
         session = openSession();
         bringToSetupDoneAndVerifyPin();
-        // Phase 5 needs a seeded card; install vector 1 seed before each test.
+        // SIGN_ECDSA_K1 needs a seeded card; install vector 1 seed before each test.
         sendInnerExpectOk(
                 Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(BIP32_VECTOR_1_SEED));
     }
@@ -290,11 +291,11 @@ class PhaseFiveTest {
             assertNotEquals(
                     (short) 0,
                     (short) (caps & Constants.CAP_K1_ECDSA),
-                    "CAP_K1_ECDSA must be advertised once Phase 5A is wired");
+                    "CAP_K1_ECDSA must be advertised");
         }
     }
 
-    /*  Phase-5-specific helpers.  */
+    /*  ECDSA-specific helpers.  */
 
     private byte[] derivePubkey(int[] path) {
         byte[] req = encodeXpubRequest(Constants.CURVE_SECP256K1, path);
@@ -407,9 +408,9 @@ class PhaseFiveTest {
         throw new IllegalStateException("capabilities TLV not found");
     }
 
-    /*  Generic helpers — identical in spirit to those in PhaseFourTest. Kept duplicated rather
-     *  than extracted to a shared base class so each Phase test file remains self-contained
-     *  (the same precedent PhaseThreeTest and PhaseFourTest already follow).  */
+    /*  Generic helpers — identical in spirit to those in HdDerivationTest. Kept duplicated
+     *  rather than extracted to a shared base class so each end-to-end test file remains
+     *  self-contained (the same precedent PersonalisationTest and HdDerivationTest follow).  */
 
     private void bringToSetupDoneAndVerifyPin() throws Exception {
         byte[] cert = new byte[64];

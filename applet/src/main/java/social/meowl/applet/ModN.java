@@ -77,7 +77,7 @@ public final class ModN {
      */
     public static boolean addMod(
             byte[] a, short aOff, byte[] b, short bOff, byte[] out, short outOff) {
-        // Phase 1: out = a + b, recording the byte-level carry.
+        // Step 1: out = a + b, recording the byte-level carry.
         short carry = 0;
         for (short i = (short) (LEN - 1); i >= 0; i--) {
             short sum =
@@ -89,7 +89,7 @@ public final class ModN {
             carry = (short) ((sum >>> 8) & 0x01);
         }
 
-        // Phase 2: if there was an overflow OR the result is >= n, subtract n once.
+        // Step 2: if there was an overflow OR the result is >= n, subtract n once.
         // Compare even when no overflow — both inputs are < n so the unreduced sum is < 2n,
         // i.e. one subtraction of n is sufficient in all cases.
         boolean ge = carry == 1 || !lessThan(out, outOff, SECP256K1_N, (short) 0);

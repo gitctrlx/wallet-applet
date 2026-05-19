@@ -12,7 +12,7 @@ import javacard.security.KeyBuilder;
 import javacard.security.Signature;
 
 /**
- * secp256k1 ECDSA signing primitive — Phase 5A of {@code meowl-applet}.
+ * secp256k1 ECDSA signing primitive.
  *
  * <p>Given a BIP-32 path and a 32-byte digest, this class derives the leaf private scalar via
  * {@link Bip32#deriveLeafScalar}, signs the digest with the JC native {@code

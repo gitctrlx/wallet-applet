@@ -31,12 +31,11 @@ import javacard.security.Signature;
  * <p>Two derivation entry points sit on top of the shared SLIP-10 walk:
  *
  * <ul>
- *   <li>{@link #deriveChainCode} returns just the leaf chain code, used by Phase 4
- *       {@code EXPORT_XPUB} when the host only needs to prepare the next derivation level on its
- *       own.
+ *   <li>{@link #deriveChainCode} returns just the leaf chain code, suitable for hosts that only
+ *       need to prepare the next derivation level on their own.
  *   <li>{@link #deriveLeafKey} returns the leaf 32-byte private key (the RFC 8032 secret-key
- *       seed for the leaf node), used by Phase 5C {@code SIGN_ED25519} and by the Ed25519 branch
- *       of {@code EXPORT_XPUB} for on-card public-key derivation.
+ *       seed for the leaf node), used by {@code SIGN_ED25519} and by the Ed25519 branch of
+ *       {@code EXPORT_XPUB} for on-card public-key derivation.
  * </ul>
  */
 public final class Slip10 {

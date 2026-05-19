@@ -22,12 +22,13 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 /**
- * JCardSim-driven integration tests covering Phase 1 of the meowl applet: GET_INFO, GET_AUTHENTIKEY
- * and the multi-step RESET_TO_FACTORY trigger.
+ * JCardSim-driven integration tests for the always-reachable outer-frame INS surface of the
+ * meowl applet: {@code GET_INFO}, {@code GET_AUTHENTIKEY} and the multi-step
+ * {@code RESET_TO_FACTORY} trigger.
  *
  * <p>Every test starts from a freshly installed applet (see {@link #setUp()}), so each scenario is
- * fully isolated. Higher-level protocol tests (Secure Channel, PIN, signing) arrive in subsequent
- * phases.
+ * fully isolated. Higher-level protocol behaviour (Secure Channel, PIN, signing) is covered by
+ * the dedicated test classes for each subsystem.
  */
 class MeowlAppletTest {
 
@@ -117,7 +118,7 @@ class MeowlAppletTest {
         }
 
         @Test
-        @DisplayName("capabilities advertise RESET_TO_FACTORY in Phase 1")
+        @DisplayName("capabilities advertise RESET_TO_FACTORY")
         void capabilitiesAdvertiseReset() {
             Map<Integer, byte[]> tlv =
                     parseTlv(send(CLA, INS_GET_INFO, 0x00, 0x00, null).getData());
