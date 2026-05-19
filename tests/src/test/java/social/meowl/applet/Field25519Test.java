@@ -254,5 +254,19 @@ class Field25519Test {
             Field25519.inv(pMinus1, (short) 0, out, (short) 0, scratch, (short) 0);
             assertArrayEquals(pMinus1, out);
         }
+
+        @Test
+        @DisplayName("Output may alias input in inv (a is staged into scratch first)")
+        void invAliasing() {
+            byte[] a;
+            do {
+                a = randomElement();
+            } while (Field25519.isZero(a, (short) 0));
+            BigInteger expected = toBig(a).modInverse(P);
+            // Run inv with out aliased to a; the implementation must copy a into scratch
+            // before clobbering the output slot.
+            Field25519.inv(a, (short) 0, a, (short) 0, scratch, (short) 0);
+            assertArrayEquals(toBytes(expected), a);
+        }
     }
 }

@@ -15,10 +15,12 @@ import com.licel.jcardsim.utils.AIDUtil;
 import java.math.BigInteger;
 import java.security.KeyFactory;
 import java.security.MessageDigest;
+import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.Security;
 import java.security.Signature;
+import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Arrays;
 import javacard.framework.AID;
@@ -80,6 +82,14 @@ class PhaseFiveCTest {
         (byte) 0x30, (byte) 0x2A, (byte) 0x30, (byte) 0x05,
         (byte) 0x06, (byte) 0x03, (byte) 0x2B, (byte) 0x65,
         (byte) 0x70, (byte) 0x03, (byte) 0x21, (byte) 0x00,
+    };
+
+    /** PKCS8 PrivateKeyInfo prefix that wraps a 32-byte Ed25519 RFC 8032 raw private key. */
+    private static final byte[] ED25519_PKCS8_PREFIX = {
+        (byte) 0x30, (byte) 0x2E, (byte) 0x02, (byte) 0x01,
+        (byte) 0x00, (byte) 0x30, (byte) 0x05, (byte) 0x06,
+        (byte) 0x03, (byte) 0x2B, (byte) 0x65, (byte) 0x70,
+        (byte) 0x04, (byte) 0x22, (byte) 0x04, (byte) 0x20,
     };
 
     private CardSimulator simulator;
@@ -327,6 +337,52 @@ class PhaseFiveCTest {
     }
 
     @Nested
+    @DisplayName("Byte-for-byte cross-check against an independent SLIP-10 + JDK Ed25519 stack")
+    class ByteForByte {
+
+        @Test
+        @DisplayName("Card sig at m equals JDK sig over the same SLIP-10 leaf key")
+        void byteEqualAtMaster() throws Exception {
+            int[] path = {};
+            byte[] cardSig = signEd25519(path, SAMPLE_MESSAGE);
+            byte[] sk = slip10DeriveLeafKey(SLIP10_VECTOR_1_SEED, path);
+            byte[] hostSig = jdkSign(sk, SAMPLE_MESSAGE);
+            assertArrayEquals(
+                    hostSig, cardSig, "Ed25519 RFC 8032 determinism must be byte-equal");
+        }
+
+        @Test
+        @DisplayName("Card sig at m/0H equals JDK sig over the same SLIP-10 leaf key")
+        void byteEqualAtHardenedChild() throws Exception {
+            int[] path = {0x80000000};
+            byte[] cardSig = signEd25519(path, SAMPLE_MESSAGE);
+            byte[] sk = slip10DeriveLeafKey(SLIP10_VECTOR_1_SEED, path);
+            byte[] hostSig = jdkSign(sk, SAMPLE_MESSAGE);
+            assertArrayEquals(hostSig, cardSig);
+        }
+
+        @Test
+        @DisplayName("Card sig over empty message equals JDK sig (RFC 8032 |M| = 0 path)")
+        void byteEqualEmptyMessage() throws Exception {
+            int[] path = {0x80000000};
+            byte[] cardSig = signEd25519(path, new byte[0]);
+            byte[] sk = slip10DeriveLeafKey(SLIP10_VECTOR_1_SEED, path);
+            byte[] hostSig = jdkSign(sk, new byte[0]);
+            assertArrayEquals(hostSig, cardSig);
+        }
+
+        @Test
+        @DisplayName("Card sig at deep hardened path equals JDK sig (5-level)")
+        void byteEqualAtDeepPath() throws Exception {
+            int[] path = {0x80000000, 0x80000001, 0x80000002, 0x80000003, 0x80000004};
+            byte[] cardSig = signEd25519(path, SAMPLE_MESSAGE);
+            byte[] sk = slip10DeriveLeafKey(SLIP10_VECTOR_1_SEED, path);
+            byte[] hostSig = jdkSign(sk, SAMPLE_MESSAGE);
+            assertArrayEquals(hostSig, cardSig);
+        }
+    }
+
+    @Nested
     @DisplayName("Capability advertisement")
     class Capabilities {
 
@@ -387,6 +443,54 @@ class PhaseFiveCTest {
             out[2 + i * 4 + 3] = (byte) idx;
         }
         return out;
+    }
+
+    /**
+     * Independent SLIP-10 Ed25519 leaf-key derivation in the test process — used by
+     * {@link ByteForByte} to compute the same 32-byte private key the card materialises
+     * internally, so that JDK-side signatures can be compared byte-for-byte against card
+     * output. Mirrors {@link Slip10} verbatim: HMAC-SHA-512 of the seed under the {@code
+     * "ed25519 seed"} key, hardened-only descent.
+     */
+    private static byte[] slip10DeriveLeafKey(byte[] seed, int[] path) throws Exception {
+        Mac hmac = Mac.getInstance("HmacSHA512");
+        hmac.init(new SecretKeySpec("ed25519 seed".getBytes(), "HmacSHA512"));
+        byte[] iLR = hmac.doFinal(seed);
+        byte[] k = Arrays.copyOfRange(iLR, 0, 32);
+        byte[] c = Arrays.copyOfRange(iLR, 32, 64);
+        for (int idx : path) {
+            byte[] data = new byte[1 + 32 + 4];
+            data[0] = 0x00;
+            System.arraycopy(k, 0, data, 1, 32);
+            data[33] = (byte) (idx >>> 24);
+            data[34] = (byte) (idx >>> 16);
+            data[35] = (byte) (idx >>> 8);
+            data[36] = (byte) idx;
+            hmac.init(new SecretKeySpec(c, "HmacSHA512"));
+            byte[] I = hmac.doFinal(data);
+            k = Arrays.copyOfRange(I, 0, 32);
+            c = Arrays.copyOfRange(I, 32, 64);
+        }
+        return k;
+    }
+
+    /**
+     * Independent JDK-side Ed25519 signer. Wraps the 32-byte RFC 8032 raw private key in a
+     * PKCS8 {@code PrivateKeyInfo} envelope, then runs the JDK's {@code
+     * Signature.getInstance("Ed25519")} signer (Java 15+, no provider required). Used to
+     * cross-check the card's deterministic signature output against an independent reference
+     * implementation.
+     */
+    private static byte[] jdkSign(byte[] sk32, byte[] msg) throws Exception {
+        byte[] pkcs8 = new byte[ED25519_PKCS8_PREFIX.length + 32];
+        System.arraycopy(ED25519_PKCS8_PREFIX, 0, pkcs8, 0, ED25519_PKCS8_PREFIX.length);
+        System.arraycopy(sk32, 0, pkcs8, ED25519_PKCS8_PREFIX.length, 32);
+        PrivateKey priv =
+                KeyFactory.getInstance("Ed25519").generatePrivate(new PKCS8EncodedKeySpec(pkcs8));
+        Signature s = Signature.getInstance("Ed25519");
+        s.initSign(priv);
+        s.update(msg);
+        return s.sign();
     }
 
     /**

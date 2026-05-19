@@ -359,6 +359,7 @@ class PhaseFourTest {
         @DisplayName("SLIP-10 Vector 2 / m — master pubkey + chain code match")
         void masterChainCode() {
             byte[] resp = exportXpub(Constants.CURVE_ED25519, new int[] {});
+            assertEquals(Ed25519.PUBLIC_KEY_LEN + Constants.CHAIN_CODE_LEN, resp.length);
             assertArrayEquals(
                     hex("8fe9693f8fa62a4305a140b9764c5ee01e455963744fe18204b4fb948249308a"),
                     Arrays.copyOfRange(resp, 0, 32));
@@ -371,6 +372,7 @@ class PhaseFourTest {
         @DisplayName("SLIP-10 Vector 2 / m/0H — first hardened pubkey + chain code match")
         void zeroHardenedChainCode() {
             byte[] resp = exportXpub(Constants.CURVE_ED25519, new int[] {0x80000000});
+            assertEquals(Ed25519.PUBLIC_KEY_LEN + Constants.CHAIN_CODE_LEN, resp.length);
             assertArrayEquals(
                     hex("86fab68dcb57aa196c77c5f264f215a112c22a912c10d123b0d03c3c28ef1037"),
                     Arrays.copyOfRange(resp, 0, 32));

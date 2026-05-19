@@ -154,9 +154,10 @@ public final class Ed25519 {
             Util.arrayCopyNonAtomic(
                     scratch, (short) (HASH_OFF + 32), scratch, R_BE_OFF, (short) 32);
 
-            //  3. R = r · B; R_enc = encode(R). Rebuild base point — it was overwritten by the
-            //     A computation in step 1.
-            Edwards25519.setBase(scratch, BASE_PT_OFF);
+            //  3. R = r · B; R_enc = encode(R). The base point at BASE_PT_OFF was set in step 1
+            //     and survives untouched: scalarMult never writes through its `in` parameter, and
+            //     the SHA-512 / Bignat workspace from step 2 is anchored at HASH_OFF, well clear
+            //     of BASE_PT_OFF. The POINT_OFF slot used to hold A is reused for R.
             Edwards25519.scalarMult(
                     scratch,
                     R_BE_OFF,

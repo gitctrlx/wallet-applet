@@ -271,6 +271,35 @@ class Edwards25519Test {
             assertTrue(onCurve(affineOf(result)));
             assertTrue(affineOf(result).equalsAffine(p1.add(p2)));
         }
+
+        @Test
+        @DisplayName("Output may alias either input (out = in1 = in2)")
+        void aliasing() {
+            // pointAdd(out, out, addend, scratch) is the canonical path inside scalarMult; this
+            // test pins the in1 ≡ out and in2-disjoint case explicitly.
+            BigInteger k1 = new BigInteger(252, RNG).mod(L);
+            BigInteger k2 = new BigInteger(252, RNG).mod(L);
+            RefPoint p1 = RefPoint.BASE.scalarMult(k1);
+            RefPoint p2 = RefPoint.BASE.scalarMult(k2);
+            byte[] acc = appletPointFromAffine(p1.x, p1.y);
+            byte[] addend = appletPointFromAffine(p2.x, p2.y);
+            Edwards25519.pointAdd(
+                    acc, (short) 0, acc, (short) 0, addend, (short) 0, scratch, (short) 0);
+            assertTrue(affineOf(acc).equalsAffine(p1.add(p2)));
+
+            // Also pin the symmetric in2 ≡ out case.
+            byte[] acc2 = appletPointFromAffine(p2.x, p2.y);
+            byte[] other = appletPointFromAffine(p1.x, p1.y);
+            Edwards25519.pointAdd(
+                    acc2, (short) 0, other, (short) 0, acc2, (short) 0, scratch, (short) 0);
+            assertTrue(affineOf(acc2).equalsAffine(p1.add(p2)));
+
+            // And in1 ≡ in2 ≡ out — the doubling-as-add corner case.
+            byte[] acc3 = appletPointFromAffine(p1.x, p1.y);
+            Edwards25519.pointAdd(
+                    acc3, (short) 0, acc3, (short) 0, acc3, (short) 0, scratch, (short) 0);
+            assertTrue(affineOf(acc3).equalsAffine(p1.add(p1)));
+        }
     }
 
     @Nested
@@ -358,6 +387,28 @@ class Edwards25519Test {
             byte[] expected = new byte[32];
             expected[0] = 0x01;
             assertArrayEquals(expected, enc);
+        }
+
+        @Test
+        @DisplayName("encode(P) sets bit 7 of byte 31 iff x(P) is odd")
+        void encodeParityBit() {
+            // Pick a small scalar k for which we know whether k·B has even or odd x. Walking
+            // a few k values gives both cases; we explicitly check both branches so the parity
+            // muxing in encodePoint cannot regress to either always-clear or always-set.
+            boolean sawOdd = false;
+            boolean sawEven = false;
+            for (long k = 1; k <= 16 && !(sawOdd && sawEven); k++) {
+                RefPoint kP = RefPoint.BASE.scalarMult(BigInteger.valueOf(k));
+                byte[] pt = appletPointFromAffine(kP.x, kP.y);
+                Edwards25519.encodePoint(pt, (short) 0, enc, (short) 0, encScratch, (short) 0);
+                boolean parityBitSet = (enc[31] & (byte) 0x80) != 0;
+                boolean xIsOdd = kP.x.testBit(0);
+                assertEquals(xIsOdd, parityBitSet, "k=" + k);
+                if (xIsOdd) sawOdd = true;
+                else sawEven = true;
+            }
+            assertTrue(sawOdd, "expected at least one odd-x point in k=1..16");
+            assertTrue(sawEven, "expected at least one even-x point in k=1..16");
         }
 
         @Test
