@@ -9,7 +9,7 @@ import javacard.framework.JCSystem;
 import javacard.framework.OwnerPIN;
 
 /**
- * User PIN + PUK manager per {@code docs/adr/0006-pin-policy.md}.
+ * User PIN + PUK manager per {@code docs/specs/meap-3.md}.
  *
  * <p>The card holds exactly one user PIN and one unblock PUK, each backed by {@link OwnerPIN} which
  * provides JC-native bounded retry counters and built-in storage protection.

@@ -10,7 +10,7 @@ import javacard.framework.Util;
 import javacard.security.Signature;
 
 /**
- * PKI personalisation manager per {@code docs/adr/0007-card-only-signs-hashes.md}.
+ * PKI personalisation manager per {@code docs/specs/meap-4.md}.
  *
  * <h2>Flow</h2>
  *
@@ -188,9 +188,9 @@ public final class PkiManager {
     }
 
     /**
-     * Reset-to-factory hook. Per {@code docs/adr/0005-authentikey-lifecycle.md} the authentikey
-     * itself is preserved; the manufacturer-issued certificate, by contrast, is user-visible
-     * factory data and is wiped here so a re-personalised card can install a fresh cert.
+     * Reset-to-factory hook. Per {@code docs/specs/meap-4.md} the authentikey itself is preserved;
+     * the manufacturer-issued certificate, by contrast, is user-visible factory data and is wiped
+     * here so a re-personalised card can install a fresh cert.
      */
     public void wipe() {
         JCSystem.beginTransaction();

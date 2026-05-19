@@ -19,8 +19,7 @@ import javacard.security.Signature;
 import javacardx.crypto.Cipher;
 
 /**
- * Implements the meowl Secure Channel as specified in {@code
- * docs/adr/0004-secure-channel-cipher-suite.md}.
+ * Implements the meowl Secure Channel as specified in {@code docs/specs/meap-2.md}.
  *
  * <h2>Handshake (INS 0x10)</h2>
  *

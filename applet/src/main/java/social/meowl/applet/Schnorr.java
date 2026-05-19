@@ -21,8 +21,8 @@ import javacard.security.RandomData;
  *
  * <p>Algorithm — verbatim from <a href="https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki#default-signing">BIP-340 §3</a>
  * with the {@code aux_rand} input drawn from the JC platform RNG so the resulting signature is
- * randomised (matching the random-nonce behaviour of {@link EcdsaK1} on real silicon and
- * documented in {@link docs/adr/0010-signing-api-contract.md}):
+ * randomised (matching the random-nonce behaviour of {@link EcdsaK1} on real silicon; the wire
+ * contract is specified in {@code docs/specs/meap-6.md}):
  *
  * <ol>
  *   <li>{@code d' = bip32.deriveLeafScalar(path)}; BIP-32 already enforces {@code 0 < d' < n}.

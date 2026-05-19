@@ -177,7 +177,7 @@ class EcdsaK1Test {
             // Whether the bytes are identical or differ depends on the underlying ECDSA
             // implementation: real JCOP silicon draws a random k per signature (so sig1 ≠ sig2
             // with overwhelming probability), whereas JCardSim's BouncyCastle backend uses RFC
-            // 6979 deterministic nonces (so sig1 == sig2). ADR-0010 documents both as acceptable
+            // 6979 deterministic nonces (so sig1 == sig2). MEAP-6 documents both as acceptable
             // for v1.0; this test asserts only the property we actually rely on — that both
             // signatures verify under the derived pubkey.
             int[] path = {0};
@@ -360,7 +360,7 @@ class EcdsaK1Test {
     /**
      * Recovers the public-key recovery byte {@code v ∈ {0, 1}} from a low-{@code s} signature by
      * trying both candidates and comparing against the expected pubkey. This mirrors the host-side
-     * recovery work that {@code docs/adr/0010-signing-api-contract.md} delegates off-card.
+     * recovery work that {@code docs/specs/meap-6.md} delegates off-card.
      */
     private static int recoverV(byte[] expectedCompressedPub, byte[] digest, byte[] sig64) {
         BigInteger r = new BigInteger(1, Arrays.copyOfRange(sig64, 0, 32));

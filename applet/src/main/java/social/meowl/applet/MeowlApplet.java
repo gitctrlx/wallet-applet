@@ -137,7 +137,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
      * if it throws) and the PIN-verified flag. Without the latter, an attacker who obtained access
      * to an already-authenticated card could open a fresh Secure Channel session and inherit the
      * {@code OwnerPIN.isValidated()} flag from the previous session, defeating the "PIN binds to
-     * the Secure Channel session" property advertised in ADR-0006.
+     * the Secure Channel session" property advertised in {@code docs/specs/meap-3.md}.
      */
     private short handleInitSecureChannel(APDU apdu, byte[] buffer) {
         short lc = apdu.setIncomingAndReceive();
@@ -665,9 +665,8 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     }
 
     /**
-     * Reset-to-factory wipe. Per {@code docs/adr/0005-authentikey-lifecycle.md} the authentikey
-     * itself is preserved. Everything else — Secure Channel session, PIN/PUK, PKI cert, lifecycle
-     * state — is destroyed.
+     * Reset-to-factory wipe. Per {@code docs/specs/meap-4.md} the authentikey itself is preserved;
+     * everything else — Secure Channel session, PIN/PUK, PKI cert, lifecycle state — is destroyed.
      */
     @Override
     public void wipe() {

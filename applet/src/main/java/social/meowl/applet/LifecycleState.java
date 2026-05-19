@@ -23,7 +23,7 @@ import javacard.framework.JCSystem;
  * <p>The current state is held in a single persistent {@code byte} field. Writes go through a
  * {@link JCSystem#beginTransaction() JavaCard transaction} so a torn power-off cannot leave the
  * card in a half-transitioned state. The {@code authentikey} keypair, however, survives every
- * transition — see {@code docs/adr/0005-authentikey-lifecycle.md}.
+ * transition — see {@code docs/specs/meap-4.md}.
  */
 public final class LifecycleState {
 

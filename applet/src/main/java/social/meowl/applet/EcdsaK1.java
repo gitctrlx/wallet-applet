@@ -17,24 +17,24 @@ import javacard.security.Signature;
  * <p>Given a BIP-32 path and a 32-byte digest, this class derives the leaf private scalar via
  * {@link Bip32#deriveLeafScalar}, signs the digest with the JC native {@code
  * Signature.ALG_ECDSA_SHA_256} algorithm (using {@link Signature#signPreComputedHash} so the applet
- * treats the host-supplied bytes as a pre-computed hash and does not re-hash them per <a
- * href="https://github.com/qntx/meowl-applet/blob/main/docs/adr/0007-card-only-signs-hashes.md">ADR-0007</a>),
- * parses the DER-encoded result, normalises {@code s} into the low half of {@code n} per <a
+ * treats the host-supplied bytes as a pre-computed hash and does not re-hash them — the hash-only
+ * invariant of {@code docs/specs/meap-6.md}), parses the DER-encoded result, normalises {@code s}
+ * into the low half of {@code n} per <a
  * href="https://github.com/bitcoin/bips/blob/master/bip-0062.mediawiki">BIP-62</a> / <a
  * href="https://eips.ethereum.org/EIPS/eip-2">EIP-2</a>, and writes a fixed-length {@code r(32) ‖
  * s(32)} response.
  *
  * <p>The host is responsible for recovering the public-key recovery byte {@code v} from {@code (r,
- * s, digest, expected_pubkey)}; see {@code docs/adr/0010-signing-api-contract.md} for the rationale
- * (computing {@code v} on-card requires a modular square root that JavaCard 3.0.5 does not expose,
- * and an off-card recovery is both trivial and cheap given that the host already has the pubkey
- * from a prior {@code EXPORT_XPUB}).
+ * s, digest, expected_pubkey)}; the rationale lives in {@code docs/specs/meap-6.md} (computing
+ * {@code v} on-card requires a modular square root that JavaCard 3.0.5 does not expose, and an
+ * off-card recovery is both trivial and cheap given that the host already has the pubkey from a
+ * prior {@code EXPORT_XPUB}).
  *
  * <p>Nonce: JavaCard 3.0.5 does not provide an interface for installing an RFC 6979 deterministic
- * nonce, so the JC ECDSA implementation generates a fresh random nonce per signature. ADR-0010
- * accepts this as the v1.0 reality: random-nonce ECDSA is fully spec-compliant on every chain meowl
- * signs for, and deterministic-nonce reproducibility is a host-side concern that the host SDK can
- * implement independently if it wants to.
+ * nonce, so the JC ECDSA implementation generates a fresh random nonce per signature. {@code
+ * docs/specs/meap-6.md} accepts this as the v1.0 reality: random-nonce ECDSA is fully
+ * spec-compliant on every chain meowl signs for, and deterministic-nonce reproducibility is a
+ * host-side concern that the host SDK can implement independently if it wants to.
  */
 public final class EcdsaK1 {
 

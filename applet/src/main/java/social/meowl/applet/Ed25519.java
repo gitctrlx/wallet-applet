@@ -24,7 +24,8 @@ import javacard.security.MessageDigest;
  * specifies that the message is hashed inside the algorithm, so the host supplies the raw
  * payload (this is the only path that produces a verifier-compatible signature for chains like
  * Solana / Sui / TON / Aptos that wrap the message in chain-specific framing the host already
- * applied; per ADR-0007 the card never parses the message).
+ * applied; per the hash-only invariant of {@code docs/specs/meap-6.md} the card never parses
+ * the message).
  *
  * <p>Wire output: 64 bytes laid out as {@code R(32) ‖ S(32)}, both in RFC 8032 little-endian
  * compressed form.

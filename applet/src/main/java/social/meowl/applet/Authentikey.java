@@ -17,11 +17,11 @@ import javacard.security.KeyPair;
  * <p>Generated exactly once during applet {@code install} and immutable for the lifetime of the
  * applet instance. The private half never leaves the secure element. The public half is exposed via
  * {@code GET_AUTHENTIKEY} and is used as the in-band card-identity anchor for the Secure Channel
- * handshake (see {@code docs/adr/0004-secure-channel-cipher-suite.md}) and as the CSR subject
- * during PKI personalisation.
+ * handshake (see {@code docs/specs/meap-2.md}) and as the CSR subject during PKI personalisation
+ * (see {@code docs/specs/meap-4.md}).
  *
- * <p>{@code reset-to-factory} does <em>not</em> regenerate this keypair — see {@code
- * docs/adr/0005-authentikey-lifecycle.md}.
+ * <p>{@code reset-to-factory} does <em>not</em> regenerate this keypair — the keypair is the card's
+ * stable identity and is preserved across factory resets per {@code docs/specs/meap-4.md}.
  */
 public final class Authentikey {
 

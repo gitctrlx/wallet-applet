@@ -8,8 +8,8 @@ import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
 
 /**
- * Coordinates the {@code RESET_TO_FACTORY} multi-step trigger described in {@code
- * docs/adr/0008-reset-to-factory-multi-step.md}.
+ * Coordinates the {@code RESET_TO_FACTORY} multi-step trigger specified in {@code
+ * docs/specs/meap-3.md}.
  *
  * <p>Semantics:
  *
