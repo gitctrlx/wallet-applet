@@ -12,6 +12,13 @@
     "MD024": {
         "siblings_only": true
     },
+    // Single H1: MEAPs (and the projects we mirror — BIP, EIP, SLIP) carry a
+    // YAML preamble whose `title:` field markdownlint treats as a virtual H1,
+    // making the body's `# MEAP-N: ...` line look like a second H1. The body
+    // heading is the canonical title; there is never an actual second H1.
+    "MD025": {
+        "front_matter_title": ""
+    },
     // Inline HTML: permitted. README uses <p align="center">, <img>, <a> and
     // similar elements for badges, centered headers and tables.
     "MD033": false,
