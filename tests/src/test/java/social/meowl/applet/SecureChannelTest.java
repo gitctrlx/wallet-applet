@@ -160,6 +160,53 @@ class SecureChannelTest {
     }
 
     @Test
+    @DisplayName("handshake with non-0x04 prefix byte is rejected with 6FB2 (audit H-2.01)")
+    void handshakeNonZeroFourPrefixIsCryptoFailure() {
+        // 65-byte body of the right length but with a corrupted prefix: MEAP-2 §57 says this
+        // must be reported as a cryptographic check failure (6FB2), not as a length error
+        // (6700). Before the fix the applet returned 6700, which a strict spec-compliance
+        // checker would flag.
+        byte[] body = new byte[Constants.EC_POINT_UNCOMPRESSED_LEN];
+        body[0] = (byte) 0x02; // wrong prefix
+        ResponseAPDU resp = transmit(INS_INIT_SC, 0x00, 0x00, body);
+        assertEquals(Constants.SW_SECURE_CHANNEL_FAILED & 0xFFFF, resp.getSW());
+    }
+
+    @Test
+    @DisplayName("handshake with wrong-length body is rejected with 6700 (length, not crypto)")
+    void handshakeWrongLengthIsWrongLength() {
+        // 60-byte body — too short for an uncompressed secp256k1 point: this remains a 6700.
+        byte[] body = new byte[60];
+        ResponseAPDU resp = transmit(INS_INIT_SC, 0x00, 0x00, body);
+        assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, resp.getSW());
+    }
+
+    @Test
+    @DisplayName(
+            "envelope with stale IV and garbage MAC is rejected with 6FB2 without "
+                    + "MAC computation (audit H-1.03)")
+    void replayBeforeMacCheck() throws Exception {
+        Session session = openSession();
+        byte[] innerApdu =
+                bytes(
+                        Constants.CLA_MEOWL & 0xFF,
+                        Constants.INS_EXPORT_PKI_PUBKEY & 0xFF,
+                        0x00,
+                        0x00,
+                        0x00);
+        byte[] envelope = session.encryptForCard(innerApdu);
+        // First envelope must succeed.
+        assertEquals(0x9000, transmit(INS_OPEN_SC, 0x00, 0x00, envelope).getSW());
+
+        // Reuse the IV (= replay), but corrupt the MAC entirely. Per audit H-1.03 the card
+        // must reject on the IV check before it ever touches HMAC, so the bogus MAC is
+        // irrelevant — the SW must still be 6FB2.
+        envelope[envelope.length - 1] ^= (byte) 0xAA;
+        ResponseAPDU resp = transmit(INS_OPEN_SC, 0x00, 0x00, envelope);
+        assertEquals(Constants.SW_SECURE_CHANNEL_FAILED & 0xFFFF, resp.getSW());
+    }
+
+    @Test
     @DisplayName("two consecutive envelopes succeed with monotonically increasing IVs")
     void twoEnvelopesMonotonicIv() throws Exception {
         Session session = openSession();

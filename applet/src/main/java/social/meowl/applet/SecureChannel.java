@@ -195,8 +195,14 @@ public final class SecureChannel {
      * @return the number of bytes written into {@code apduBuffer} starting at offset 0
      */
     public short initHandshake(byte[] apduBuffer, short inDataOffset, short inDataLen) {
-        if (inDataLen != CLIENT_EPH_PUB_LEN || apduBuffer[inDataOffset] != (byte) 0x04) {
+        if (inDataLen != CLIENT_EPH_PUB_LEN) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        // MEAP-2 §handshake §57: a body whose first byte is not 0x04 MUST be rejected with
+        // 6FB2, not 6700 — the wrong prefix is a cryptographic check failure, not a length
+        // mismatch. (Audit H-2.01.)
+        if (apduBuffer[inDataOffset] != (byte) 0x04) {
+            ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
         }
 
         // Stage the inbound client pubkey, the card pubkey, the shared secret and the HKDF salt
@@ -302,6 +308,16 @@ public final class SecureChannel {
         short ctOffset = (short) (ivOffset + Constants.SC_BLOCK_LEN);
         short macOffset = (short) (ctOffset + ctLen);
 
+        // Replay defense (MEAP-2 §record-layer step 2; audit H-1.03):
+        // The replay check MUST happen BEFORE MAC verification so a wire attacker with no
+        // K_mac knowledge still gets a hard reject without the card burning an HMAC
+        // computation. Iterating the comparison left-to-right is fine here because the IV is
+        // public.
+        if (compare16(apduBuffer, ivOffset, lastInboundIv, (short) 0) <= 0) {
+            reset();
+            ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
+        }
+
         // MAC = HMAC-SHA-256(K_mac, outer_header ‖ IV ‖ ciphertext)[0..16].
         // Verification uses ConstantTime.equals — Util.arrayCompare is documented as a left-to-
         // right ternary compare and is NOT guaranteed constant-time, which would leak the
@@ -316,13 +332,6 @@ public final class SecureChannel {
                 (short) 0);
         if (!ConstantTime.equals(
                 macScratch, (short) 0, apduBuffer, macOffset, Constants.SC_MAC_LEN)) {
-            reset();
-            ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
-        }
-
-        // Replay defense: the inbound IV must strictly exceed the last accepted one. Iterating
-        // the comparison left-to-right is fine here because the IV is public.
-        if (compare16(apduBuffer, ivOffset, lastInboundIv, (short) 0) <= 0) {
             reset();
             ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
         }
