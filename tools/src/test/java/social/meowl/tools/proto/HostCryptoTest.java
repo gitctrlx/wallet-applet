@@ -128,9 +128,14 @@ class HostCryptoTest {
             // Tamper with the last block to break the pad.
             byte[] tampered = ciphertext.clone();
             tampered[tampered.length - 1] ^= (byte) 0xFF;
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> HostCrypto.aesCbcDecrypt(key, iv, tampered));
+            // Audit S4-01: padding errors now surface as SecureChannelException, the same family
+            // already produced by every other host-side cryptographic check, instead of the
+            // generic IllegalArgumentException raised by the previous implementation.
+            SecureChannelException ex =
+                    assertThrows(
+                            SecureChannelException.class,
+                            () -> HostCrypto.aesCbcDecrypt(key, iv, tampered));
+            assertEquals(0, ex.sw());
         }
     }
 

@@ -309,18 +309,27 @@ public final class HostCrypto {
         return out;
     }
 
+    /**
+     * Strips PKCS#5 padding from a decrypted ciphertext block.
+     *
+     * <p>Per audit S4-01 every padding-related failure raises {@link SecureChannelException} so the
+     * Secure Channel stack speaks one exception family on the host side, matching the {@link
+     * SecureChannelClient} call sites that already convert wire-level errors into the same type.
+     * The {@code sw} field is {@code 0} because the failure is detected entirely in host code after
+     * a successful AES decrypt.
+     */
     private static byte[] pkcs5Unpad(byte[] padded) {
         if (padded.length == 0 || padded.length % AES_BLOCK_LEN != 0) {
-            throw new IllegalArgumentException(
-                    "PKCS#5 input must be a non-empty multiple of the block size");
+            throw new SecureChannelException(
+                    0, "PKCS#5 input must be a non-empty multiple of the block size");
         }
         int padLen = padded[padded.length - 1] & 0xFF;
         if (padLen == 0 || padLen > AES_BLOCK_LEN) {
-            throw new IllegalArgumentException("Invalid PKCS#5 pad length: " + padLen);
+            throw new SecureChannelException(0, "Invalid PKCS#5 pad length: " + padLen);
         }
         for (int i = padded.length - padLen; i < padded.length; i++) {
             if ((padded[i] & 0xFF) != padLen) {
-                throw new IllegalArgumentException("PKCS#5 padding bytes are inconsistent");
+                throw new SecureChannelException(0, "PKCS#5 padding bytes are inconsistent");
             }
         }
         return Arrays.copyOf(padded, padded.length - padLen);

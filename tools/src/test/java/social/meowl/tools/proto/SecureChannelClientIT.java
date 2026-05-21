@@ -103,8 +103,7 @@ class SecureChannelClientIT {
         System.arraycopy(x, 0, wrongCompressed, 1, x.length);
 
         SecureChannelClient sc = new SecureChannelClient(bibo, wrongCompressed);
-        SecureChannelClient.SecureChannelException ex =
-                assertThrows(SecureChannelClient.SecureChannelException.class, sc::handshake);
+        SecureChannelException ex = assertThrows(SecureChannelException.class, sc::handshake);
         assertTrue(
                 ex.getMessage().toLowerCase().contains("verification")
                         || ex.getMessage().toLowerCase().contains("signature"));
@@ -123,9 +122,8 @@ class SecureChannelClientIT {
         huge[1] = 0x30;
         huge[4] = (byte) 230;
 
-        SecureChannelClient.SecureChannelException ex =
-                assertThrows(
-                        SecureChannelClient.SecureChannelException.class, () -> sc.sendInner(huge));
+        SecureChannelException ex =
+                assertThrows(SecureChannelException.class, () -> sc.sendInner(huge));
         assertTrue(
                 ex.getMessage().toLowerCase().contains("short-form"),
                 "expected short-form-cap error, got: " + ex.getMessage());
@@ -143,7 +141,7 @@ class SecureChannelClientIT {
         // The applet's dispatchInner switch returns SW_INS_NOT_SUPPORTED, which OPEN_SC wraps
         // and re-emits with an outer non-9000 SW — exercising the host invalidate() path.
         byte[] inner = new byte[] {(byte) 0x80, 0x7F, 0x00, 0x00, 0x00};
-        assertThrows(SecureChannelClient.SecureChannelException.class, () -> sc.sendInner(inner));
+        assertThrows(SecureChannelException.class, () -> sc.sendInner(inner));
 
         // Second call: must fail fast with IllegalStateException rather than encrypting under
         // stale keys and producing a confusing chain of MAC mismatches.

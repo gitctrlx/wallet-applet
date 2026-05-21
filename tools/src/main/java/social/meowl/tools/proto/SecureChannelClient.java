@@ -241,24 +241,6 @@ public final class SecureChannelClient {
         }
     }
 
-    /**
-     * Raised when any wire- or cryptographic-check fails during the Secure Channel protocol. The
-     * {@code sw} field carries the relevant 16-bit status word, or {@code 0} when the failure
-     * happened in pure host code (signature mismatch, malformed body, …).
-     */
-    public static final class SecureChannelException extends RuntimeException {
-        private final int sw;
-
-        public SecureChannelException(int sw, String message) {
-            super(message);
-            this.sw = sw;
-        }
-
-        public int sw() {
-            return sw;
-        }
-    }
-
     private void requireSession() {
         if (invalidated) {
             throw new IllegalStateException(
