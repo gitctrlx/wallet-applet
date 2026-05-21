@@ -20,6 +20,11 @@ jcardsim = "3.0.6.0"
 bouncycastle = "1.84"
 slf4j        = "2.0.18"
 
+# Host CLI stack (tools/ module).
+picocli      = "4.7.7"
+jline        = "3.30.4"
+jackson-jr   = "2.19.1"
+
 # Testing.
 junit = "6.0.3"
 
@@ -39,6 +44,12 @@ gppro             = { module = "com.github.martinpaljak:gppro",            versi
 bouncycastle-prov = { module = "org.bouncycastle:bcprov-jdk18on",          version.ref = "bouncycastle" }
 slf4j-api         = { module = "org.slf4j:slf4j-api",                      version.ref = "slf4j" }
 slf4j-simple      = { module = "org.slf4j:slf4j-simple",                   version.ref = "slf4j" }
+
+picocli         = { module = "info.picocli:picocli",                       version.ref = "picocli" }
+picocli-codegen = { module = "info.picocli:picocli-codegen",               version.ref = "picocli" }
+jline           = { module = "org.jline:jline",                            version.ref = "jline" }
+jackson-jr      = { module = "com.fasterxml.jackson.jr:jackson-jr-objects", version.ref = "jackson-jr" }
+
 junit-bom               = { module = "org.junit:junit-bom",                version.ref = "junit" }
 junit-jupiter           = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }

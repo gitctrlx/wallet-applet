@@ -1,16 +1,29 @@
 // SPDX-FileCopyrightText: 2026 meowl.social contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Host-side companion tools:
-//   * `gp`         — runs GlobalPlatformPro (list / install / delete applets).
-//   * `installCap` — builds the CAP then installs it via GP with default keys.
-//   * `meowl` (run)— APDU CLI talking to a real PC/SC card via apdu4j.
+// `meowl` — host-side CLI for the meowl-applet.
+//
+// A modern picocli command tree on top of:
+//   * apdu4j 26.x          — BIBO transport, decorators, MockBIBO replay
+//   * GlobalPlatformPro    — library-level GP install / uninstall / list
+//   * BouncyCastle         — host-side secp256k1 / AES / HMAC for the MEAP-2
+//                            Secure Channel client
+//   * JLine 3              — interactive shell (`meowl shell`)
+//   * jackson-jr           — JSON output mode (`--json`)
+//
+// Run with `./gradlew :tools:run --args="..."`, install a launcher with
+// `./gradlew :tools:installDist`, or (later) compile to a native binary with
+// `./gradlew :tools:nativeCompile` once the GraalVM Buildtools plugin is wired
+// up. The picocli annotation processor already emits reflection / resource
+// descriptors under `META-INF/native-image/social.meowl/meowl/` so a native
+// build is a one-line addition rather than a refactor.
 
 plugins {
     application
+    `java-library`
 }
 
-description = "meowl-applet — host-side tooling (gp wrapper + APDU CLI)"
+description = "meowl-applet — host-side CLI (`meowl`)"
 
 java {
     toolchain.languageVersion =
@@ -21,55 +34,63 @@ java {
         )
 }
 
-// Isolated classpath: keeps GlobalPlatformPro out of the application's runtime.
-val gpCli: Configuration by configurations.creating
-
 dependencies {
+    // CLI framework + GraalVM-friendly annotation processor.
+    implementation(libs.picocli)
+    annotationProcessor(libs.picocli.codegen)
+
+    // Smart-card transport.
     implementation(libs.apdu4j.pcsc)
     implementation(libs.apdu4j.core)
+
+    // GlobalPlatformPro — library use, not a forked process.
+    implementation(libs.gppro)
+
+    // Host-side crypto for the MEAP-2 Secure Channel client.
+    implementation(libs.bouncycastle.prov)
+
+    // Interactive shell.
+    implementation(libs.jline)
+
+    // JSON output (`--json`); a tiny binding-only Jackson without ObjectMapper.
+    implementation(libs.jackson.jr)
+
+    // Logging façade + concrete backend.
     implementation(libs.slf4j.api)
     runtimeOnly(libs.slf4j.simple)
 
-    gpCli(libs.gppro) { isTransitive = true }
+    // Tests.
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.junit.platform.launcher)
+    testImplementation(libs.apdu4j.core) // MockBIBO for replay tests
+    testImplementation(libs.bouncycastle.prov)
 }
 
 application {
-    mainClass = "social.meowl.tools.Cli"
+    mainClass = "social.meowl.tools.Main"
     applicationName = "meowl"
 }
 
-private val gpToolMain = "pro.javacard.gp.GPTool"
-
-tasks.register<JavaExec>("gp") {
-    group = "javacard"
-    description = "Runs GlobalPlatformPro (pass GP args via `-Pargs=\"...\"`)."
-    classpath = gpCli
-    mainClass = gpToolMain
-    standardInput = System.`in`
-
-    val gpArgs = providers.gradleProperty("args").getOrElse("--help")
-    argumentProviders.add { gpArgs.split(' ').filter { it.isNotBlank() } }
+// Picocli annotation processor: namespace the generated GraalVM resources by
+// `<group>/<name>` so multiple picocli apps can coexist on a single classpath.
+tasks.withType<JavaCompile>().configureEach {
+    options.encoding = "UTF-8"
+    options.compilerArgs.add("-Aproject=${project.group}/${project.name}")
 }
 
-tasks.register<JavaExec>("installCap") {
-    group = "javacard"
-    description = "Installs the freshly built CAP onto a connected card via GP (default keys)."
-    dependsOn(":applet:buildCap")
-
-    val capProvider =
-        rootProject.layout.projectDirectory
-            .dir("applet/build/cap")
-            .file("meowl-applet.cap")
-
-    inputs.file(capProvider)
-
-    classpath = gpCli
-    mainClass = gpToolMain
-    standardInput = System.`in`
-
-    argumentProviders.add {
-        val cap = capProvider.asFile
-        check(cap.isFile) { "CAP file not found at $cap. Run :applet:buildCap first." }
-        listOf("--install", cap.absolutePath, "--default")
+tasks.test {
+    useJUnitPlatform()
+    testLogging {
+        events("passed", "failed", "skipped")
+        showStandardStreams = true
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
 }
+
+// `installCap` is reintroduced once the picocli `meowl gp install` subcommand
+// lands (see Phase 2 of the tools redesign). The previous JavaExec-based
+// implementation has been removed: it called the now-superseded
+// `pro.javacard.gp.GPTool` entry-point through process boundaries, which
+// swallowed structured errors. The replacement will reuse the in-process
+// GpFacade that backs the `meowl gp install` command.
