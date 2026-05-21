@@ -45,11 +45,12 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     /**
      * Size of the per-applet shared transient scratch buffer, sized to the largest of the four
      * mutually-exclusive consumers (single-threaded APDU dispatch keeps them from overlapping):
-     * Ed25519 1024, Schnorr 386, SecureChannel handshake 259, EcdsaK1 168. Sharing one buffer
+     * Ed25519 1056, Schnorr 386, SecureChannel handshake 259, EcdsaK1 168. Sharing one buffer
      * versus four cuts ~813 bytes of transient RAM — the difference between fitting and not fitting
-     * on cards with a ~3 KB user-RAM budget (notably J3R180).
+     * on cards with a ~3 KB user-RAM budget (notably J3R180). Ed25519's 1056-byte budget includes a
+     * 32-byte projective-blinding scratch slot added in audit S2-01.
      */
-    private static final short SHARED_SCRATCH_LEN = (short) 1024;
+    private static final short SHARED_SCRATCH_LEN = (short) 1056;
 
     private MeowlApplet() {
         HmacSha sharedHmac256 = new HmacSha(HmacSha.ALG_SHA_256);
@@ -649,15 +650,24 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
 
     /**
      * Reset-to-factory wipe. Per {@code docs/specs/meap-4.md} the authentikey itself is preserved;
-     * everything else — Secure Channel session, PIN/PUK, PKI cert, lifecycle state — is destroyed.
+     * everything else — Secure Channel session, PIN/PUK, PKI cert, master seed, lifecycle state —
+     * is destroyed.
+     *
+     * <p>Per audit S3-11 the four persistent wipes execute inside a single {@link
+     * JCSystem#beginTransaction()} block so a torn power-off cannot land on a half-wiped card with
+     * cleared PIN/PUK/cert but lifecycle still set to {@code SEEDED}. The Secure Channel reset is
+     * intentionally outside the transaction because {@link SecureChannel#reset()} only touches
+     * transient (CLEAR_ON_DESELECT) state.
      */
     @Override
     public void wipe() {
         secureChannel.reset();
-        pinManager.wipe();
-        pkiManager.wipe();
-        masterSeed.wipe();
-        state.reset();
+        JCSystem.beginTransaction();
+        pinManager.wipeInTx();
+        pkiManager.wipeInTx();
+        masterSeed.wipeInTx();
+        state.resetInTx();
+        JCSystem.commitTransaction();
     }
 
     private static short advertisedCapabilities() {

@@ -238,10 +238,20 @@ public final class MasterSeed {
     /** Reset-to-factory hook: wipe both master fields and the seeded flag. */
     public void wipe() {
         JCSystem.beginTransaction();
+        wipeInTx();
+        JCSystem.commitTransaction();
+    }
+
+    /**
+     * Transaction-less wipe variant. Caller MUST hold a {@link JCSystem#beginTransaction()} block;
+     * used by {@link MeowlApplet#wipe()} to bundle the master-seed wipe into the single
+     * reset-to-factory transaction so the BIP-32 and SLIP-10 master fields, the seeded flag, the
+     * PIN/PUK and the lifecycle state all flip atomically (audit S3-11).
+     */
+    public void wipeInTx() {
         Util.arrayFillNonAtomic(bip32Master, (short) 0, MASTER_LEN, (byte) 0);
         Util.arrayFillNonAtomic(slip10Master, (short) 0, MASTER_LEN, (byte) 0);
         seededFlag[0] = 0;
-        JCSystem.commitTransaction();
     }
 
     private void hmacInto(

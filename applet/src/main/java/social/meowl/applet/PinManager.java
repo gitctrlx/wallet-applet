@@ -224,6 +224,17 @@ public final class PinManager {
      */
     public void wipe() {
         JCSystem.beginTransaction();
+        wipeInTx();
+        JCSystem.commitTransaction();
+    }
+
+    /**
+     * Transaction-less wipe variant. Caller MUST hold a {@link JCSystem#beginTransaction()} block
+     * around this call; used by {@link MeowlApplet#wipe()} to bundle the PIN/PUK invalidation with
+     * the PKI, master-seed and lifecycle wipes into one atomic commit so a torn power-off during
+     * the reset-to-factory flow cannot leave the card in a partially-wiped state (audit S3-11).
+     */
+    public void wipeInTx() {
         // Best-effort EEPROM scrub: overwrite the existing PIN/PUK with a known-garbage value
         // before discarding the OwnerPIN references. The new bytes are not a credential the user
         // can verify against (we set provisioned[0] = 0 below, so any verify call short-circuits
@@ -246,7 +257,6 @@ public final class PinManager {
         this.pin = new OwnerPIN(Constants.PIN_RETRY_LIMIT, Constants.PIN_MAX_LEN);
         this.puk = new OwnerPIN(Constants.PUK_RETRY_LIMIT, Constants.PUK_MAX_LEN);
         this.provisioned[0] = 0;
-        JCSystem.commitTransaction();
     }
 
     /** Returns the current PIN try counter; useful for inclusion in {@code GET_INFO}. */
