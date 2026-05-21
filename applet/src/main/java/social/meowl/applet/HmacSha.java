@@ -29,8 +29,8 @@ import javacard.security.Signature;
  *
  * <pre>
  *   K' = (|K| > B) ? H(K) : K, zero-padded to B bytes
- *   inner = H((K' XOR ipad) �?message)
- *   HMAC = H((K' XOR opad) �?inner)
+ *   inner = H((K' XOR ipad) || message)
+ *   HMAC = H((K' XOR opad) || inner)
  * </pre>
  *
  * with {@code B = 64} for SHA-256 and {@code B = 128} for SHA-512, {@code ipad = 0x36}, {@code opad
@@ -51,8 +51,8 @@ import javacard.security.Signature;
  *       distinguisher.
  * </ul>
  *
- * <p><b>API contract.</b> The class mirrors {@link Signature}'s {@code init(SIGN)} �?{@code
- * update*} �?{@code sign} cycle. Each {@link #init(byte[], short, short)} call resets all internal
+ * <p><b>API contract.</b> The class mirrors {@link Signature}'s {@code init(SIGN)} -> {@code
+ * update*} -> {@code sign} cycle. Each {@link #init(byte[], short, short)} call resets all internal
  * state, so engines can be reused across distinct keys without leaking residue from earlier calls.
  *
  * <p><b>Reference implementation.</b> The software fallback follows the canonical pattern used by
@@ -88,7 +88,7 @@ public final class HmacSha {
      */
     private final byte[] softKey;
 
-    /** Software-path scratch holding the inner hash {@code H((K' XOR ipad) �?message)}. */
+    /** Software-path scratch holding the inner hash {@code H((K' XOR ipad) || message)}. */
     private final byte[] softInner;
 
     /**
@@ -106,12 +106,10 @@ public final class HmacSha {
     /**
      * Package-private factory used by the test harness to exercise the software fallback path on a
      * platform that <em>does</em> support native HMAC (e.g. jcardsim). Production code never calls
-     * this directly �?the public single-argument constructor lets the platform pick the fastest
+     * this directly -- the public single-argument constructor lets the platform pick the fastest
      * available implementation.
      *
      * @param algorithm one of {@link #ALG_SHA_256} or {@link #ALG_SHA_512}
-     * @param forceSoft if {@code true}, skip the native HMAC probe and force the RFC 2104 software
-     *     path; if {@code false}, behave like the public constructor
      */
     static HmacSha forceSoftware(byte algorithm) {
         return new HmacSha(algorithm, true);
@@ -203,8 +201,8 @@ public final class HmacSha {
         if (keyLen > blockSize) {
             digest.reset();
             digest.doFinal(keyBuf, keyOff, keyLen, softKey, (short) 0);
-            // K' = H(K) �?0x00 * (blockSize - hashSize). For SHA-256 hashSize=32, blockSize=64;
-            // for SHA-512 hashSize=64, blockSize=128 �?the difference is always > 0 so no guard.
+            // K' = H(K) || 0x00 * (blockSize - hashSize). For SHA-256 hashSize=32, blockSize=64;
+            // for SHA-512 hashSize=64, blockSize=128 -- the difference is always > 0 so no guard.
             Util.arrayFillNonAtomic(softKey, hashSize, (short) (blockSize - hashSize), (byte) 0);
         } else {
             Util.arrayCopyNonAtomic(keyBuf, keyOff, softKey, (short) 0, keyLen);
@@ -240,7 +238,7 @@ public final class HmacSha {
      * outer hash, and writes the full {@link #getLength()} HMAC into {@code outBuf} at {@code
      * outOff}.
      *
-     * @return {@link #getLength()} (always �?included so call sites can chain output offsets the
+     * @return {@link #getLength()} (always -- included so call sites can chain output offsets the
      *     same way they do for {@link Signature#sign})
      */
     public short doFinal(byte[] inBuf, short inOff, short inLen, byte[] outBuf, short outOff) {
@@ -248,10 +246,10 @@ public final class HmacSha {
             return nativeSig.sign(inBuf, inOff, inLen, outBuf, outOff);
         }
 
-        // 1. inner = H((K' XOR ipad) �?all_updates �?inBuf[inOff..inOff+inLen])
+        // 1. inner = H((K' XOR ipad) || all_updates || inBuf[inOff..inOff+inLen])
         digest.doFinal(inBuf, inOff, inLen, softInner, (short) 0);
 
-        // 2. outer = H((K' XOR opad) �?inner)
+        // 2. outer = H((K' XOR opad) || inner)
         xorBlock(softKey, OPAD);
         digest.reset();
         digest.update(softKey, (short) 0, blockSize);

@@ -177,22 +177,27 @@ public final class Bip32 {
     }
 
     /**
-     * Wipes every transient slot that touched a secret scalar:
+     * Wipes every transient slot the BIP-32 walk touched, including the chain code and the
+     * uncompressed public-key scratch.
      *
      * <ul>
-     *   <li>{@code state[K_OFF..K_OFF+32]} — the leaf private scalar
-     *   <li>{@code state[I_OFF..I_OFF+64]} — the last HMAC output (its left half is also a scalar)
-     *   <li>{@code scalarKey} — the EEPROM-backed {@link ECPrivateKey} holding the leaf scalar used
-     *       by the non-hardened branch
+     *   <li>{@code state[K_OFF..]} — the leaf private scalar.
+     *   <li>{@code state[C_OFF..]} — the leaf chain code. Chain codes are usually treated as
+     *       semi-public, but the BIP-32 derivation rule ({@code chain code + parent pubkey} → all
+     *       sibling pubkeys; {@code chain code + one secret} → all sibling secrets) means a stale
+     *       chain code lingering in transient memory across an APDU is a defense-in-depth gap.
+     *       Trezor's {@code hdnode_clear} wipes everything; we mirror that, and align with {@link
+     *       Slip10}'s wipe path which already does so (audit S3-03).
+     *   <li>{@code state[I_OFF..]} — the last HMAC-SHA-512 output (its left half is a secret scalar
+     *       candidate).
+     *   <li>{@code state[PUB_OFF..]} — the uncompressed public-key scratch used by the non-hardened
+     *       branch. Public material, but wiped for the same defense-in-depth rationale.
+     *   <li>{@code scalarKey} — the {@link ECPrivateKey} holding the (transient or persistent) leaf
+     *       scalar used by the non-hardened branch.
      * </ul>
-     *
-     * The chain code at {@code state[C_OFF]} and the public key at {@code state[PUB_OFF]} are
-     * intentionally left in place — they are public outputs and the buffer is {@code
-     * CLEAR_ON_DESELECT} regardless.
      */
     private void wipeTransientSecrets() {
-        Util.arrayFillNonAtomic(state, STATE_K_OFF, ModN.LEN, (byte) 0);
-        Util.arrayFillNonAtomic(state, STATE_I_OFF, HASH_LEN, (byte) 0);
+        Util.arrayFillNonAtomic(state, (short) 0, STATE_LEN, (byte) 0);
         scalarKey.clearKey();
     }
 

@@ -110,7 +110,7 @@ The compressed public key follows SEC1 §2.3.3 (`0x02 ‖ x` if `y` is even, els
 
 #### Ed25519 (`curve = 0x01`)
 
-The applet MUST walk the SLIP-10 hardened-only tree per [SLIP-10 §"Master key generation"](https://github.com/satoshilabs/slips/blob/master/slip-0010.md). Each path element MUST have the hardened bit set; any non-hardened index MUST be rejected with `6A86`.
+The applet MUST walk the SLIP-10 hardened-only tree per [SLIP-10 §"Master key generation"](https://github.com/satoshilabs/slips/blob/master/slip-0010.md). Each path element MUST have the hardened bit set; any non-hardened index MUST be rejected with `6985` (conditions of use not satisfied). Earlier draft revisions used `6A86` here; that class is reserved by ISO 7816-4 for malformed APDU header bytes, whereas the offending bit lives inside the inner data field, so `6985` is the conformant choice.
 
 The applet MUST emit the leaf public key in RFC 8032 §5.1.2 little-endian compressed form alongside the chain code:
 
@@ -156,7 +156,7 @@ The `ECPrivateKey` slot used for non-hardened EC scalar multiplication is EEPROM
 | `depth > 8` | `6700` |
 | Inner-data length mismatch (`!= 2 + 4 × depth`) | `6700` |
 | Unknown `curve` byte | `6A86` |
-| SLIP-10 path contains a non-hardened index | `6A86` |
+| SLIP-10 path contains a non-hardened index | `6985` |
 | Per-child validity check fails (`k_i = 0` or `I_L ≥ n`) | `6985` |
 | Lifecycle gate violation (e.g. `EXPORT_XPUB` before `SEEDED`) | `6FB0` |
 | `pin_verified` not set | `6982` |
@@ -220,7 +220,7 @@ For each vector the response from `EXPORT_XPUB` must match the reference `(pubke
 - Truncated path (fewer bytes than `4 × depth`) → `6700`.
 - Missing PIN session → `6982`.
 - Missing seed (lifecycle ≠ `SEEDED`) → `6FB0`.
-- SLIP-10 non-hardened index → `6A86`.
+- SLIP-10 non-hardened index → `6985`.
 
 ## Reference Implementation
 

@@ -22,8 +22,10 @@ import javacard.framework.Util;
  * </pre>
  *
  * <p>If the caller passes a non-hardened index (top bit clear) the handler raises {@link
- * Constants#SW_INCORRECT_P1P2}; this is the safe interpretation of the spec's "non-hardened
- * derivation is not defined" rule.
+ * Constants#SW_CONDITIONS_NOT_SATISFIED}; this is the safe interpretation of the spec's
+ * "non-hardened derivation is not defined" rule. Earlier revisions returned {@code
+ * SW_INCORRECT_P1P2} but ISO 7816-4 reserves the {@code 6A86} class for malformed APDU headers, not
+ * for inner-data policy violations — see audit S3-10.
  *
  * <p>Two derivation entry points sit on top of the shared SLIP-10 walk:
  *
@@ -42,6 +44,13 @@ public final class Slip10 {
 
     /** Constant prefix byte {@code 0x00} in the SLIP-10 HMAC data. */
     private static final byte[] ZERO_BYTE = {(byte) 0x00};
+
+    /**
+     * Length in bytes of the SLIP-10 leaf private key (≡ the RFC 8032 secret-key seed length).
+     * Pinned here so the byte literals in {@link #deriveLeafKey}, {@link #walkPath} and {@link
+     * #ckdPriv} all reference the same authoritative constant.
+     */
+    public static final short SECRET_KEY_LEN = (short) 32;
 
     private static final short HASH_LEN = (short) 64;
 
@@ -90,9 +99,9 @@ public final class Slip10 {
     public short deriveLeafKey(
             byte[] pathBuf, short pathOff, short depth, byte[] outBuf, short outOff) {
         walkPath(pathBuf, pathOff, depth);
-        Util.arrayCopyNonAtomic(state, STATE_K_OFF, outBuf, outOff, (short) 32);
+        Util.arrayCopyNonAtomic(state, STATE_K_OFF, outBuf, outOff, SECRET_KEY_LEN);
         wipeWalkState();
-        return (short) 32;
+        return SECRET_KEY_LEN;
     }
 
     private void walkPath(byte[] pathBuf, short pathOff, short depth) {
@@ -100,19 +109,24 @@ public final class Slip10 {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         byte[] master = masterSeed.slip10Master();
-        Util.arrayCopyNonAtomic(master, (short) 0, state, STATE_K_OFF, (short) 32);
-        Util.arrayCopyNonAtomic(master, (short) 32, state, STATE_C_OFF, Constants.CHAIN_CODE_LEN);
+        Util.arrayCopyNonAtomic(master, (short) 0, state, STATE_K_OFF, SECRET_KEY_LEN);
+        Util.arrayCopyNonAtomic(
+                master, SECRET_KEY_LEN, state, STATE_C_OFF, Constants.CHAIN_CODE_LEN);
         for (short level = 0; level < depth; level++) {
             short idxOff = (short) (pathOff + level * Bip32.INDEX_LEN);
             if ((pathBuf[idxOff] & HARDENED_MASK) == 0) {
-                ISOException.throwIt(Constants.SW_INCORRECT_P1P2);
+                // SLIP-10 Ed25519 forbids non-hardened derivation. Reject with
+                // SW_CONDITIONS_NOT_SATISFIED — ISO 7816-4 6A86 is reserved for malformed APDU
+                // headers, but the offending bit lives inside the data field, so 6985 is the
+                // semantically correct status word (audit S3-10).
+                ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
             }
             ckdPriv(pathBuf, idxOff);
         }
     }
 
     private void wipeWalkState() {
-        Util.arrayFillNonAtomic(state, STATE_K_OFF, (short) 32, (byte) 0);
+        Util.arrayFillNonAtomic(state, STATE_K_OFF, SECRET_KEY_LEN, (byte) 0);
         Util.arrayFillNonAtomic(state, STATE_C_OFF, Constants.CHAIN_CODE_LEN, (byte) 0);
         Util.arrayFillNonAtomic(state, STATE_I_OFF, HASH_LEN, (byte) 0);
     }
@@ -120,11 +134,15 @@ public final class Slip10 {
     private void ckdPriv(byte[] pathBuf, short idxOff) {
         hmac.init(state, STATE_C_OFF, Constants.CHAIN_CODE_LEN);
         hmac.update(ZERO_BYTE, (short) 0, (short) 1);
-        hmac.update(state, STATE_K_OFF, (short) 32);
+        hmac.update(state, STATE_K_OFF, SECRET_KEY_LEN);
         hmac.doFinal(pathBuf, idxOff, Bip32.INDEX_LEN, state, STATE_I_OFF);
 
-        Util.arrayCopyNonAtomic(state, STATE_I_OFF, state, STATE_K_OFF, (short) 32);
+        Util.arrayCopyNonAtomic(state, STATE_I_OFF, state, STATE_K_OFF, SECRET_KEY_LEN);
         Util.arrayCopyNonAtomic(
-                state, (short) (STATE_I_OFF + 32), state, STATE_C_OFF, Constants.CHAIN_CODE_LEN);
+                state,
+                (short) (STATE_I_OFF + SECRET_KEY_LEN),
+                state,
+                STATE_C_OFF,
+                Constants.CHAIN_CODE_LEN);
     }
 }

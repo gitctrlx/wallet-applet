@@ -199,7 +199,7 @@ The Ed25519 sign APDU's `message` field is variable-length, capped by the surrou
 | `6700` | wrong length (data field shorter or longer than the layout requires) |
 | `6982` | security status not satisfied (`pin_verified` false) |
 | `6985` | conditions of use not satisfied (lifecycle ≠ `SEEDED`, or per-child validity check failed during inline derivation) |
-| `6A86` | incorrect P1/P2 (also: SLIP-10 non-hardened index in the path) |
+| `6A86` | incorrect P1/P2 (e.g. unknown `EXPORT_XPUB` curve byte) |
 | `6FB0` | lifecycle invalid (state ≠ `SEEDED`) |
 | `6FE0` | unsupported feature — the JC platform produced a non-conformant DER signature |
 | `6FE1` | internal error — a should-never-happen sentinel (Schnorr challenge reduced to zero mod `n`) |
@@ -278,7 +278,7 @@ Each test class additionally exercises:
 - Missing PIN session → `6982`.
 - Truncated path / wrong inner-data length → `6700`.
 - `depth > 8` → `6700`.
-- For `SIGN_ED25519`, SLIP-10 non-hardened index → `6A86`.
+- For `SIGN_ED25519`, SLIP-10 non-hardened index → `6985`.
 - Tampered signature → host-side verifier rejects.
 
 ## Reference Implementation

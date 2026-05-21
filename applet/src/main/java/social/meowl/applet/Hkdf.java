@@ -107,13 +107,18 @@ public final class Hkdf {
      * HKDF-Expand — derives {@code length} bytes of output keying material from the PRK previously
      * computed via {@link #extract}.
      *
-     * @param info context / application-specific info string; may be {@code null} and {@code
-     *     infoLen == 0}
+     * @param info context / application-specific info buffer; may be {@code null} when {@code
+     *     infoLen == 0} and is otherwise read for {@code infoLen} bytes starting at {@code
+     *     infoOffset}
      * @param infoOffset offset of the info string
-     * @param info_or_null possibly-null buffer (we accept a null buffer when {@code infoLen == 0})
+     * @param infoLen length of the info string in bytes; {@code 0} signals an empty info per RFC
+     *     5869 §2.3
+     * @param out destination buffer for the OKM
+     * @param outOffset offset within {@code out} where the OKM is written
+     * @param length requested OKM length in bytes; {@code 0 ≤ length ≤ 255 × HashLen}
      */
     public void expand(
-            byte[] info_or_null,
+            byte[] info,
             short infoOffset,
             short infoLen,
             byte[] out,
@@ -122,7 +127,7 @@ public final class Hkdf {
         if (length < 0 || length > MAX_EXPAND_LEN) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        if (info_or_null == null && infoLen != 0) {
+        if (info == null && infoLen != 0) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         if (out == null || outOffset < 0 || (short) (outOffset + length) > (short) out.length) {
@@ -141,7 +146,7 @@ public final class Hkdf {
                 hmac.update(scratch, (short) 0, HASH_LEN);
             }
             if (infoLen > 0) {
-                hmac.update(info_or_null, infoOffset, infoLen);
+                hmac.update(info, infoOffset, infoLen);
             }
             counterBuf[0] = counter;
             // T(i) lands in scratch so the next iteration can prefix the new input with it.

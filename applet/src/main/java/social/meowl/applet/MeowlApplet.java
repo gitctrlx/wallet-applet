@@ -45,8 +45,8 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     /**
      * Size of the per-applet shared transient scratch buffer, sized to the largest of the four
      * mutually-exclusive consumers (single-threaded APDU dispatch keeps them from overlapping):
-     * Ed25519 1024, Schnorr 386, SecureChannel handshake 323, EcdsaK1 168. Sharing one buffer
-     * versus four cuts ~877 bytes of transient RAM — the difference between fitting and not fitting
+     * Ed25519 1024, Schnorr 386, SecureChannel handshake 259, EcdsaK1 168. Sharing one buffer
+     * versus four cuts ~813 bytes of transient RAM — the difference between fitting and not fitting
      * on cards with a ~3 KB user-RAM budget (notably J3R180).
      */
     private static final short SHARED_SCRATCH_LEN = (short) 1024;
@@ -604,22 +604,21 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         // anchored at OFFSET_CDATA) cannot trample the SLIP-10 inputs mid-derivation. The leaf
         // private key is materialised into innerScratch[0..32]; the staged path occupies the
         // next pathLen bytes.
+        //
+        // Audit S2-02: wrap the secret-touching block in try-finally so an ISOException out of
+        // slip10.deriveLeafKey or ed25519.sign cannot leave the leaf scalar parked in
+        // innerScratch[0..32] until the next deselect.
         Util.arrayCopyNonAtomic(buffer, pathOff, innerScratch, (short) 32, pathLen);
-        slip10.deriveLeafKey(innerScratch, (short) 32, depth, innerScratch, (short) 0);
-        // Ed25519.sign reads `msg` twice (r-hash and k-hash); both reads complete before the
-        // signature is materialised into the output, so the in-buffer message slice survives
-        // until the final write to OFFSET_CDATA overwrites it.
-        short sigLen =
-                ed25519.sign(
-                        innerScratch,
-                        (short) 0,
-                        buffer,
-                        msgOff,
-                        msgLen,
-                        buffer,
-                        ISO7816.OFFSET_CDATA);
-        Util.arrayFillNonAtomic(innerScratch, (short) 0, (short) (32 + pathLen), (byte) 0);
-        return sigLen;
+        try {
+            slip10.deriveLeafKey(innerScratch, (short) 32, depth, innerScratch, (short) 0);
+            // Ed25519.sign reads `msg` twice (r-hash and k-hash); both reads complete before the
+            // signature is materialised into the output, so the in-buffer message slice survives
+            // until the final write to OFFSET_CDATA overwrites it.
+            return ed25519.sign(
+                    innerScratch, (short) 0, buffer, msgOff, msgLen, buffer, ISO7816.OFFSET_CDATA);
+        } finally {
+            Util.arrayFillNonAtomic(innerScratch, (short) 0, (short) (32 + pathLen), (byte) 0);
+        }
     }
 
     /**

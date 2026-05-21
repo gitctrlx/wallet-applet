@@ -82,7 +82,9 @@ public final class ApduTlv {
         if (length < 0 || length > MAX_VALUE_LEN) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        if (src == null || srcOffset < 0 || (short) (srcOffset + length) > (short) src.length) {
+        // Source-side bounds: rearranged as `length > (src.length - srcOffset)` so an attacker
+        // cannot wrap the comparison via short overflow when `srcOffset + length` exceeds 2^15.
+        if (src == null || srcOffset < 0 || length > (short) (src.length - srcOffset)) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         ensureCapacity(dst, offset, (short) (2 + length));
@@ -128,7 +130,8 @@ public final class ApduTlv {
         if (dst == null
                 || offset < 0
                 || needed < 0
-                || (short) (offset + needed) > (short) dst.length) {
+                || offset > (short) dst.length
+                || needed > (short) (dst.length - offset)) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
     }

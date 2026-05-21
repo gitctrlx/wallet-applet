@@ -109,6 +109,17 @@ public final class SecureChannelClient {
         }
 
         cardEphPub = Arrays.copyOfRange(body, 0, HostCrypto.EC_POINT_UNCOMPRESSED_LEN);
+        // Audit S3-15: validate the SEC1 0x04 prefix immediately after parsing the handshake
+        // body. ECDH (HostCrypto.ecdhSharedX) would also catch this, but failing here lets the
+        // host log the precise wire-format mismatch instead of an ECDH-side
+        // IllegalArgumentException
+        // that could be confused with an off-curve peer key.
+        if ((cardEphPub[0] & 0xFF) != 0x04) {
+            throw new SecureChannelException(
+                    0,
+                    "card ephemeral pubkey lacks the SEC1-uncompressed 0x04 prefix (got 0x%02X)"
+                            .formatted(cardEphPub[0] & 0xFF));
+        }
         int sigLen =
                 ((body[HostCrypto.EC_POINT_UNCOMPRESSED_LEN] & 0xFF) << 8)
                         | (body[HostCrypto.EC_POINT_UNCOMPRESSED_LEN + 1] & 0xFF);
