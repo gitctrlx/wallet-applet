@@ -12,34 +12,19 @@ import javacard.framework.JCSystem;
 import javacard.framework.Util;
 
 /**
- * Entry point of the meowl multi-chain hardware-wallet applet.
+ * Entry point of the meowl multi-chain hardware-wallet applet — a thin router that delegates every
+ * cryptographic and business primitive to a single-purpose companion class in this package.
  *
- * <p>The class is a thin router. Outer-frame APDUs are dispatched by {@link #process}; if the outer
- * INS is {@link Constants#INS_OPEN_SECURE_CHANNEL} the encrypted payload is decrypted by the {@link
- * SecureChannel} and the inner APDU is dispatched by {@link #dispatchInner}. Every cryptographic
- * and business-logic component lives in a single-purpose companion class in this same package (a
- * JavaCard CAP file is one Java package).
- *
- * <p>Outer INS surface — reachable on a freshly-installed card without a Secure Channel:
- *
- * <ul>
- *   <li>{@link Constants#INS_GET_INFO}, {@link Constants#INS_GET_AUTHENTIKEY}, {@link
- *       Constants#INS_RESET_TO_FACTORY}, {@link Constants#INS_INIT_SECURE_CHANNEL} run outside any
- *       Secure Channel and are reachable on a freshly-installed card.
- *   <li>{@link Constants#INS_OPEN_SECURE_CHANNEL} unwraps an encrypted inner APDU and dispatches it
- *       via {@link #dispatchInner}.
- * </ul>
- *
- * <p>Every other INS — PIN, PKI, seed, signing — is reached only through OPEN_SECURE_CHANNEL and is
- * dispatched by {@link #dispatchInner}.
+ * <p>Outer INS surface (reachable on a freshly-installed card, no Secure Channel required):
+ * {@code GET_INFO}, {@code GET_AUTHENTIKEY}, {@code RESET_TO_FACTORY}, {@code INIT_SECURE_CHANNEL},
+ * {@code OPEN_SECURE_CHANNEL}. Every other INS — PIN, PKI, seed, signing — is reachable only
+ * through {@code OPEN_SECURE_CHANNEL} and is dispatched by {@link #dispatchInner}.
  */
 public final class MeowlApplet extends Applet implements WipeTrigger {
 
     /**
      * Per-session scratch used by inner handlers that need to stage their input before producing a
-     * response that would otherwise overlap with the input region. Lives in {@link
-     * JCSystem#CLEAR_ON_DESELECT} transient memory because nothing it ever holds needs to survive a
-     * session teardown.
+     * response that would overlap with the input region in the APDU buffer.
      */
     private static final short INNER_SCRATCH_LEN = (short) 128;
 
@@ -58,30 +43,20 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     private final byte[] innerScratch;
 
     /**
-     * Size of the per-applet shared transient scratch buffer. Sized to fit the largest of the four
-     * mutually-exclusive consumers:
-     *
-     * <ul>
-     *   <li>{@code Ed25519.SCRATCH_LEN} = 1024 bytes (the dominant consumer)
-     *   <li>{@code Schnorr.SCRATCH_LEN} = 386 bytes
-     *   <li>{@code SecureChannel.HS_SCRATCH_LEN} = 323 bytes
-     *   <li>{@code EcdsaK1.SCRATCH_LEN} = 168 bytes
-     * </ul>
-     *
-     * Sharing one {@link JCSystem#CLEAR_ON_DESELECT} buffer across all four consumers (which the
-     * single-threaded APDU dispatch keeps mutually exclusive) cuts ~877 bytes of transient RAM
-     * versus letting each component allocate its own scratch — the difference between fitting and
-     * not fitting on cards whose user-RAM budget is on the order of 3 KB (notably J3R180).
+     * Size of the per-applet shared transient scratch buffer, sized to the largest of the four
+     * mutually-exclusive consumers (single-threaded APDU dispatch keeps them from overlapping):
+     * Ed25519 1024, Schnorr 386, SecureChannel handshake 323, EcdsaK1 168. Sharing one buffer
+     * versus four cuts ~877 bytes of transient RAM — the difference between fitting and not
+     * fitting on cards with a ~3 KB user-RAM budget (notably J3R180).
      */
     private static final short SHARED_SCRATCH_LEN = (short) 1024;
 
     private MeowlApplet() {
         HmacSha sharedHmac256 = new HmacSha(HmacSha.ALG_SHA_256);
         HmacSha sharedHmac512 = new HmacSha(HmacSha.ALG_SHA_512);
-        // The shared scratch and the inner-handler scratch live in CLEAR_ON_DESELECT memory: nothing
-        // they ever hold needs to outlive a session, and on resource-constrained NFC SECID
-        // configurations such as J3R180 the install-time CLEAR_ON_RESET pool is too small to
-        // accommodate a 1 KB allocation alongside the platform's own session state.
+        // Both transient scratches live in CLEAR_ON_DESELECT memory: nothing they hold outlives a
+        // session, and the install-time CLEAR_ON_RESET pool on resource-constrained NFC SECID
+        // configurations (J3R180) is too small for a 1 KB allocation.
         byte[] sharedScratch =
                 JCSystem.makeTransientByteArray(SHARED_SCRATCH_LEN, JCSystem.CLEAR_ON_DESELECT);
         this.state = new LifecycleState();
@@ -108,7 +83,6 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
 
     @Override
     public boolean select() {
-        // Tear down per-session state so it never bleeds across selects.
         resetTrigger.rearm();
         secureChannel.reset();
         pinManager.clearSession();
@@ -158,14 +132,9 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     }
 
     /**
-     * Opens a fresh Secure Channel session.
-     *
-     * <p>Before the handshake we explicitly tear down <em>both</em> the prior Secure Channel
-     * session keys (so the new handshake cannot accidentally leave the old key material "borrowed"
-     * if it throws) and the PIN-verified flag. Without the latter, an attacker who obtained access
-     * to an already-authenticated card could open a fresh Secure Channel session and inherit the
-     * {@code OwnerPIN.isValidated()} flag from the previous session, defeating the "PIN binds to
-     * the Secure Channel session" property advertised in {@code docs/specs/meap-3.md}.
+     * Opens a fresh Secure Channel session. Tearing down the previous SC keys and the PIN-verified
+     * flag first preserves the "PIN binds to the SC session" property of MEAP-3 — a re-handshake
+     * MUST NOT inherit the prior session's authentication state.
      */
     private short handleInitSecureChannel(APDU apdu, byte[] buffer) {
         short lc = apdu.setIncomingAndReceive();
@@ -176,14 +145,12 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
 
     /**
      * Unwraps an encrypted inner APDU, dispatches it via {@link #dispatchInner}, and re-wraps the
-     * inner response. The inner APDU layout is {@code [CLA INS P1 P2 LC data]}, identical to the
-     * outer frame.
+     * inner response. Inner-APDU layout matches the outer frame: {@code [CLA INS P1 P2 LC data]}.
+     * Handlers whose response overlaps the input must stage the input via {@link #innerScratch}.
      */
     private short handleOpenSecureChannel(APDU apdu, byte[] buffer) {
         short lc = apdu.setIncomingAndReceive();
         short plainLen = secureChannel.unwrap(buffer, ISO7816.OFFSET_CDATA, lc);
-        // After unwrap, plaintext sits at buffer[OFFSET_CDATA .. +plainLen]. We parse it as a
-        // standard short APDU.
         if (plainLen < 5) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
@@ -200,10 +167,6 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
             ISOException.throwIt(Constants.SW_CLA_NOT_SUPPORTED);
         }
         short innerDataOff = (short) (innerOff + 5);
-
-        // The inner handler writes its response into buffer[OFFSET_CDATA .. +respLen]. Handlers
-        // that need their input bytes past the point where the response overwrites them are
-        // expected to stage the input via {@link #innerScratch} first.
         short respLen = dispatchInner(buffer, innerIns, innerP1, innerP2, innerDataOff, innerLc);
         return secureChannel.wrap(buffer, ISO7816.OFFSET_CDATA, respLen);
     }
@@ -273,6 +236,16 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         return authentikey.writeCompressedPubkeyTo(buffer, (short) 0);
     }
 
+    /**
+     * Common gate for any handler that requires the user PIN to be verified in this Secure Channel
+     * session. Throws {@link Constants#SW_SECURITY_STATUS_NOT_SATISFIED} otherwise.
+     */
+    private void requirePinVerified() {
+        if (!pinManager.isPinVerified()) {
+            ISOException.throwIt(Constants.SW_SECURITY_STATUS_NOT_SATISFIED);
+        }
+    }
+
     /*  PIN / PUK + PKI personalisation handlers — reachable only via OPEN_SECURE_CHANNEL.  */
 
     /** {@code SETUP} inner data layout: {@code [pinLen(1), PIN, pukLen(1), PUK]}. */
@@ -293,10 +266,9 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         if ((short) (cursor + pukLen) != (short) (dataOff + dataLen)) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        // PIN install, PUK install, provisioned flag and lifecycle advance must commit as one
-        // unit: a power loss between them would leave the card in an unrecoverable state where
-        // VERIFY_PIN is gated out by the lifecycle FSM and SETUP is rejected by the
-        // already-provisioned guard.
+        // PIN, PUK, provisioned flag and lifecycle advance commit atomically: a power loss between
+        // them would brick the card (VERIFY_PIN gated out by the FSM, SETUP rejected by the
+        // already-provisioned guard).
         JCSystem.beginTransaction();
         pinManager.setupInTx(buffer, pinDataOff, pinLen, buffer, pukDataOff, pukLen);
         state.transitionToInTx(LifecycleState.SETUP_DONE);
@@ -329,14 +301,14 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         return 0;
     }
 
-    /** {@code CHANGE_PUK} inner data layout: {@code [oldLen(1), oldPUK, newLen(1), newPUK]}. */
+    /**
+     * {@code CHANGE_PUK} inner data layout: {@code [oldLen(1), oldPUK, newLen(1), newPUK]}.
+     * Requires PIN to be currently verified so a stolen card whose PIN is unknown cannot be
+     * hijacked by rotating its PUK.
+     */
     private short handleChangePuk(byte[] buffer, short dataOff, short dataLen) {
         state.requireAtLeast(LifecycleState.SETUP_DONE);
-        // PUK change requires PIN to be currently verified, so a stolen card whose PIN is
-        // unknown cannot be hijacked by rotating its PUK.
-        if (!pinManager.isPinVerified()) {
-            ISOException.throwIt(Constants.SW_SECURITY_STATUS_NOT_SATISFIED);
-        }
+        requirePinVerified();
         short cursor = dataOff;
         short oldLen = (short) (buffer[cursor++] & 0xFF);
         short oldOff = cursor;
@@ -383,8 +355,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         if (dataLen != Constants.EC_SCALAR_LEN) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        // Stage the digest in innerScratch so the signature output, which exceeds 32 bytes, does
-        // not overlap the input.
+        // Stage the digest in innerScratch: the signature output overlaps the input region.
         Util.arrayCopyNonAtomic(buffer, dataOff, innerScratch, (short) 0, Constants.EC_SCALAR_LEN);
         short sigLen = pkiManager.signCsr(innerScratch, (short) 0, buffer, ISO7816.OFFSET_CDATA);
         Util.arrayFillNonAtomic(innerScratch, (short) 0, Constants.EC_SCALAR_LEN, (byte) 0);
@@ -469,9 +440,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
      */
     private short handleImportSeed(byte[] buffer, short dataOff, short dataLen) {
         state.require(LifecycleState.SETUP_DONE);
-        if (!pinManager.isPinVerified()) {
-            ISOException.throwIt(Constants.SW_SECURITY_STATUS_NOT_SATISFIED);
-        }
+        requirePinVerified();
         if (dataLen < 1) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
@@ -495,9 +464,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
      */
     private short handleGenerateSeed(byte[] buffer, short dataLen) {
         state.require(LifecycleState.SETUP_DONE);
-        if (!pinManager.isPinVerified()) {
-            ISOException.throwIt(Constants.SW_SECURITY_STATUS_NOT_SATISFIED);
-        }
+        requirePinVerified();
         if (dataLen != 0) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
@@ -517,9 +484,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
      */
     private short handleExportXpub(byte[] buffer, short dataOff, short dataLen) {
         state.require(LifecycleState.SEEDED);
-        if (!pinManager.isPinVerified()) {
-            ISOException.throwIt(Constants.SW_SECURITY_STATUS_NOT_SATISFIED);
-        }
+        requirePinVerified();
         if (dataLen < 2) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
@@ -548,9 +513,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
      */
     private short handleSignEcdsaK1(byte[] buffer, short dataOff, short dataLen) {
         state.require(LifecycleState.SEEDED);
-        if (!pinManager.isPinVerified()) {
-            ISOException.throwIt(Constants.SW_SECURITY_STATUS_NOT_SATISFIED);
-        }
+        requirePinVerified();
         if (dataLen < (short) (1 + Constants.DIGEST_LEN)) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
@@ -585,9 +548,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
      */
     private short handleSignSchnorrK1(byte[] buffer, short dataOff, short dataLen) {
         state.require(LifecycleState.SEEDED);
-        if (!pinManager.isPinVerified()) {
-            ISOException.throwIt(Constants.SW_SECURITY_STATUS_NOT_SATISFIED);
-        }
+        requirePinVerified();
         if (dataLen < (short) (1 + Constants.DIGEST_LEN)) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
@@ -624,9 +585,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
      */
     private short handleSignEd25519(byte[] buffer, short dataOff, short dataLen) {
         state.require(LifecycleState.SEEDED);
-        if (!pinManager.isPinVerified()) {
-            ISOException.throwIt(Constants.SW_SECURITY_STATUS_NOT_SATISFIED);
-        }
+        requirePinVerified();
         if (dataLen < (short) 1) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }

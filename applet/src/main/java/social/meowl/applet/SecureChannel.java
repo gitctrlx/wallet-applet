@@ -139,17 +139,12 @@ public final class SecureChannel {
     private final byte[] openFlag;
 
     /**
-     * @param sharedHmac256 the shared HMAC-SHA-256 engine the surrounding applet uses for both HKDF
-     *     and envelope MAC. Sharing is safe because all consumers run on the single APDU dispatch
-     *     thread, and on the software fallback path it cuts ~96 bytes of transient RAM.
-     * @param sharedScratch a singleton transient buffer (allocated once in {@link MeowlApplet}) of
-     *     at least {@link #HS_SCRATCH_LEN} bytes, repurposed as the handshake scratch. The same
-     *     buffer is repurposed by {@link EcdsaK1}, {@link Schnorr} and {@link Ed25519} during their
-     *     respective signing INS handlers; since APDU dispatch is single-threaded the handshake
-     *     (which writes to the buffer here) and the signing flows (which read/write it after the
-     *     handshake has finished) never overlap. Sharing one buffer across the four consumers cuts
-     *     ~877 bytes of transient RAM, which matters on cards (e.g. J3R180) whose transient pool is
-     *     too small to host four independent buffers of this size.
+     * @param sharedHmac256 shared HMAC-SHA-256 engine reused by HKDF and the envelope MAC; safe to
+     *     share because APDU dispatch is single-threaded.
+     * @param sharedScratch singleton transient buffer (allocated by {@link MeowlApplet}) of at
+     *     least {@link #HS_SCRATCH_LEN} bytes, repurposed as handshake scratch and — since the
+     *     consumers never overlap on a single-threaded dispatcher — reused by {@link EcdsaK1},
+     *     {@link Schnorr} and {@link Ed25519}.
      */
     public SecureChannel(Authentikey authentikey, HmacSha sharedHmac256, byte[] sharedScratch) {
         if ((short) sharedScratch.length < HS_SCRATCH_LEN) {
@@ -167,13 +162,9 @@ public final class SecureChannel {
         this.aesCbc = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
         this.ecdsa = Signature.getInstance(Signature.ALG_ECDSA_SHA_256, false);
 
-        // Every session-scoped buffer (encKey, macKey, okm, IVs, macScratch, openFlag) lives in
-        // CLEAR_ON_DESELECT transient memory. That is both the canonical lifecycle for SCP-style
-        // session state — deselect implies the host has lost the session anyway — and a hard
-        // requirement on resource-constrained NFC SECID configurations (notably J3R180), where the
-        // install-time CLEAR_ON_RESET pool is on the order of 250 B and cannot host this many
-        // simultaneous allocations. SecureChannel.reset() also wipes everything explicitly to
-        // protect against a same-session leak across two consecutive handshakes.
+        // Every session-scoped buffer lives in CLEAR_ON_DESELECT memory — the canonical lifecycle
+        // for SCP-style session state, and a hard requirement on cards whose install-time
+        // CLEAR_ON_RESET pool is too small to host this many parallel allocations (J3R180).
         this.encKey =
                 (AESKey)
                         KeyBuilder.buildKey(
@@ -225,16 +216,12 @@ public final class SecureChannel {
         if (inDataLen != CLIENT_EPH_PUB_LEN) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        // MEAP-2 §handshake §57: a body whose first byte is not 0x04 MUST be rejected with
-        // 6FB2, not 6700 — the wrong prefix is a cryptographic check failure, not a length
-        // mismatch. (Audit H-2.01.)
+        // Per MEAP-2: a non-0x04 prefix is a crypto failure (6FB2), not a length error (6700).
         if (apduBuffer[inDataOffset] != (byte) 0x04) {
             ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
         }
 
-        // Stage the inbound client pubkey, the card pubkey, the shared secret and the HKDF salt
-        // in the dedicated scratch buffer. The APDU buffer is left untouched until we are ready
-        // to emit the response.
+        // Stage every handshake field in hsScratch; the APDU buffer is reserved for the response.
         Util.arrayCopyNonAtomic(
                 apduBuffer, inDataOffset, hsScratch, HS_CLIENT_PUB, CLIENT_EPH_PUB_LEN);
 
@@ -336,20 +323,16 @@ public final class SecureChannel {
         short ctOffset = (short) (ivOffset + Constants.SC_BLOCK_LEN);
         short macOffset = (short) (ctOffset + ctLen);
 
-        // Replay defense (MEAP-2 §record-layer step 2; audit H-1.03):
-        // The replay check MUST happen BEFORE MAC verification so a wire attacker with no
-        // K_mac knowledge still gets a hard reject without the card burning an HMAC
-        // computation. Iterating the comparison left-to-right is fine here because the IV is
-        // public.
+        // Replay defense before MAC verification: a non-monotonic IV is a hard reject without
+        // burning an HMAC computation, and IV bytes are public so a non-constant-time compare is
+        // fine here.
         if (compare16(apduBuffer, ivOffset, lastInboundIv, (short) 0) <= 0) {
             reset();
             ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
         }
 
-        // MAC = HMAC-SHA-256(K_mac, outer_header ‖ IV ‖ ciphertext)[0..16].
-        // Verification uses ConstantTime.equals — Util.arrayCompare is documented as a left-to-
-        // right ternary compare and is NOT guaranteed constant-time, which would leak the
-        // position of the first mismatch through timing in a MAC verification path.
+        // MAC = HMAC-SHA-256(K_mac, outer_header ‖ IV ‖ ciphertext)[0..16]. ConstantTime.equals
+        // is mandatory: Util.arrayCompare is left-to-right ternary, leaking mismatch position.
         hmac.init(macKey, (short) 0, Constants.SC_KEY_LEN);
         hmac.update(apduBuffer, (short) 0, (short) 5);
         hmac.doFinal(
@@ -366,7 +349,7 @@ public final class SecureChannel {
         Util.arrayCopyNonAtomic(
                 apduBuffer, ivOffset, lastInboundIv, (short) 0, Constants.SC_BLOCK_LEN);
 
-        // Decrypt. AES-CBC NOPAD: we strip PKCS#5 manually afterwards.
+        // AES-CBC NOPAD; PKCS#5 padding is stripped manually below.
         aesCbc.init(encKey, Cipher.MODE_DECRYPT, apduBuffer, ivOffset, Constants.SC_BLOCK_LEN);
         short paddedLen =
                 aesCbc.doFinal(apduBuffer, ctOffset, ctLen, apduBuffer, ISO7816.OFFSET_CDATA);
@@ -388,20 +371,17 @@ public final class SecureChannel {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
 
-        // Move plaintext to its final pre-encryption position (offset SC_BLOCK_LEN, right after
-        // the IV slot) and append PKCS#5 padding. Util.arrayCopyNonAtomic handles overlapping
-        // ranges per the JC spec.
+        // Move plaintext to its final pre-encryption position (after the IV slot) and pad.
         Util.arrayCopyNonAtomic(
                 apduBuffer, plainOffset, apduBuffer, Constants.SC_BLOCK_LEN, plaintextLen);
         applyPkcs5(apduBuffer, Constants.SC_BLOCK_LEN, plaintextLen, padded);
 
-        // Build the outbound IV: counter++ then XOR-mix with IV_base.
+        // IV = IV_base XOR (counter++).
         incrementCounter();
         for (short i = 0; i < Constants.SC_BLOCK_LEN; i++) {
             apduBuffer[i] = (byte) (okm[(short) (OKM_IV_OFFSET + i)] ^ outboundCounter[i]);
         }
 
-        // Encrypt in place.
         aesCbc.init(encKey, Cipher.MODE_ENCRYPT, apduBuffer, (short) 0, Constants.SC_BLOCK_LEN);
         short ctLen =
                 aesCbc.doFinal(
@@ -411,7 +391,6 @@ public final class SecureChannel {
                         apduBuffer,
                         Constants.SC_BLOCK_LEN);
 
-        // MAC over RESP_HEADER ‖ IV ‖ ciphertext.
         short macOffset = (short) (Constants.SC_BLOCK_LEN + ctLen);
         hmac.init(macKey, (short) 0, Constants.SC_KEY_LEN);
         hmac.update(RESP_HEADER, (short) 0, (short) RESP_HEADER.length);

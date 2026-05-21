@@ -170,64 +170,57 @@ class HmacShaTest {
                 expected, out, "RFC 4231 vector " + idx + " mismatch (software " + algName + ")");
     }
 
-    @ParameterizedTest(name = "differential vs JDK Mac: SHA-{0}, run {1}")
-    @MethodSource("differentialMatrix")
-    @DisplayName("software path matches JDK javax.crypto.Mac on 1000 random inputs")
-    void softwareMatchesJdkOnRandomInputs(String algName, int seed) throws Exception {
-        java.util.Random rng = new java.util.Random(seed);
-        int keyLen = rng.nextInt(257); // 0..256, hits both <B and >B branches
-        int msgLen = rng.nextInt(513); // 0..512
-        byte[] key = new byte[keyLen];
-        rng.nextBytes(key);
-        byte[] msg = new byte[msgLen];
-        rng.nextBytes(msg);
+    /**
+     * Differential agreement against {@code javax.crypto.Mac} on 200 random {@code (key, message)}
+     * pairs per algorithm. The seed range exercises every length branch in the RFC 2104 software
+     * path: {@code |K| == 0}, {@code |K| < B}, {@code |K| == B}, {@code |K| > B}, and messages
+     * shorter / equal / longer than the digest block.
+     */
+    @ParameterizedTest(name = "software HMAC-{0} matches JDK on 200 random inputs")
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"SHA-256", "SHA-512"})
+    void softwareMatchesJdkOnRandomInputs(String algName) throws Exception {
+        String jdkAlg = "SHA-256".equals(algName) ? "HmacSHA256" : "HmacSHA512";
+        byte alg = "SHA-256".equals(algName) ? HmacSha.ALG_SHA_256 : HmacSha.ALG_SHA_512;
+        for (int seed = 0; seed < 200; seed++) {
+            java.util.Random rng = new java.util.Random(seed);
+            int keyLen = rng.nextInt(257); // 0..256, hits both <B and >B branches
+            int msgLen = rng.nextInt(513); // 0..512
+            byte[] key = new byte[keyLen];
+            rng.nextBytes(key);
+            byte[] msg = new byte[msgLen];
+            rng.nextBytes(msg);
 
-        Mac jdkMac =
-                Mac.getInstance(
-                        "HmacSHA256".equals("Hmac" + algName.replace("-", ""))
-                                ? "HmacSHA256"
-                                : "HmacSHA512");
-        // Empty key: JDK's Mac.init rejects 0-length keys; HMAC is technically defined for them, so
-        // we substitute a 1-byte zero key on both sides for parity. (Real callers never pass 0.)
-        byte[] safeKey = key.length == 0 ? new byte[1] : key;
-        jdkMac.init(new SecretKeySpec(safeKey, "Hmac" + algName.replace("-", "")));
-        byte[] expected = jdkMac.doFinal(msg);
+            // JDK's Mac.init rejects 0-length keys; HMAC is technically defined for them, so we
+            // substitute a single zero byte on both sides for parity. Real callers never pass 0.
+            byte[] safeKey = key.length == 0 ? new byte[1] : key;
+            Mac jdkMac = Mac.getInstance(jdkAlg);
+            jdkMac.init(new SecretKeySpec(safeKey, jdkAlg));
+            byte[] expected = jdkMac.doFinal(msg);
 
-        HmacSha h =
-                HmacSha.forceSoftware(
-                        "SHA-256".equals(algName) ? HmacSha.ALG_SHA_256 : HmacSha.ALG_SHA_512);
-        byte[] out = new byte[expected.length];
-        h.sign(
-                safeKey,
-                (short) 0,
-                (short) safeKey.length,
-                msg,
-                (short) 0,
-                (short) msg.length,
-                out,
-                (short) 0);
+            HmacSha h = HmacSha.forceSoftware(alg);
+            byte[] out = new byte[expected.length];
+            h.sign(
+                    safeKey,
+                    (short) 0,
+                    (short) safeKey.length,
+                    msg,
+                    (short) 0,
+                    (short) msg.length,
+                    out,
+                    (short) 0);
 
-        assertArrayEquals(
-                expected,
-                out,
-                "software HMAC-"
-                        + algName
-                        + " disagrees with JDK on seed="
-                        + seed
-                        + ", keyLen="
-                        + safeKey.length
-                        + ", msgLen="
-                        + msg.length);
-    }
-
-    static java.util.stream.Stream<Arguments> differentialMatrix() {
-        java.util.List<Arguments> args = new java.util.ArrayList<>();
-        for (String alg : new String[] {"SHA-256", "SHA-512"}) {
-            for (int seed = 0; seed < 1000; seed++) {
-                args.add(Arguments.of(alg, seed));
-            }
+            assertArrayEquals(
+                    expected,
+                    out,
+                    "software HMAC-"
+                            + algName
+                            + " disagrees with JDK on seed="
+                            + seed
+                            + ", keyLen="
+                            + safeKey.length
+                            + ", msgLen="
+                            + msg.length);
         }
-        return args.stream();
     }
 
     private static byte[] repeat(byte v, int n) {

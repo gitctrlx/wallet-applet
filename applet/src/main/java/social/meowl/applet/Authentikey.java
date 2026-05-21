@@ -12,16 +12,10 @@ import javacard.security.KeyBuilder;
 import javacard.security.KeyPair;
 
 /**
- * Long-lived secp256k1 keypair that identifies this physical card.
- *
- * <p>Generated exactly once during applet {@code install} and immutable for the lifetime of the
- * applet instance. The private half never leaves the secure element. The public half is exposed via
- * {@code GET_AUTHENTIKEY} and is used as the in-band card-identity anchor for the Secure Channel
- * handshake (see {@code docs/specs/meap-2.md}) and as the CSR subject during PKI personalisation
- * (see {@code docs/specs/meap-4.md}).
- *
- * <p>{@code reset-to-factory} does <em>not</em> regenerate this keypair — the keypair is the card's
- * stable identity and is preserved across factory resets per {@code docs/specs/meap-4.md}.
+ * Long-lived secp256k1 keypair that identifies this physical card. Generated exactly once during
+ * applet install and preserved across factory resets per MEAP-4. The private half never leaves the
+ * secure element; the public half is the card-identity anchor for the Secure Channel handshake
+ * (MEAP-2) and the CSR subject during PKI personalisation (MEAP-4).
  */
 public final class Authentikey {
 
@@ -48,16 +42,9 @@ public final class Authentikey {
     }
 
     /**
-     * Writes the SEC 1 §2.3.3 compressed public key into {@code dst} starting at {@code offset}.
-     *
-     * <p>The compression rebuilds the parity byte from the {@code y} coordinate's least significant
-     * bit, then prepends it to the existing {@code x} coordinate already written by {@link
-     * ECPublicKey#getW(byte[], short)}. The trailing y-coordinate bytes (32 bytes past the 33-byte
+     * Writes the SEC 1 §2.3.3 compressed public key into {@code dst} at {@code offset}. Returns
+     * {@link Constants#EC_POINT_COMPRESSED_LEN}. The trailing y-coordinate bytes (past the 33-byte
      * compressed point) are zeroised so no ephemeral residue leaks into outbound buffers.
-     *
-     * @return the number of bytes written, i.e. {@link Constants#EC_POINT_COMPRESSED_LEN}. The
-     *     return type matches the JavaCard convention of length-not-end-offset shared by {@link
-     *     ECPublicKey#getW}, {@link javacard.security.Signature#sign}, etc.
      */
     public short writeCompressedPubkeyTo(byte[] dst, short offset) {
         ensureCapacity(dst, offset, Constants.EC_POINT_UNCOMPRESSED_LEN);

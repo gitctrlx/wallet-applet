@@ -24,7 +24,7 @@ import javacard.framework.Util;
  *       JCSystem#beginTransaction()} block around it; see the method-level javadoc for the
  *       rationale.
  *   <li>{@link #verifyPin(byte[], short, short)} returns the post-attempt try counter via the
- *       status word — success raises {@link Constants#SW_NO_ERROR}, failure raises {@code 0x63Cn}
+ *       status word — success raises {@code 9000}, failure raises {@code 0x63Cn}
  *       per ISO 7816-4 (with the 4-bit retry count in the low nibble). A length-policy violation
  *       returns {@link Constants#SW_WRONG_LENGTH} and does <em>not</em> consume a retry; it is a
  *       protocol error on the host side, not a guess.

@@ -10,30 +10,17 @@ import javacard.framework.Util;
 import javacard.security.MessageDigest;
 
 /**
- * Software RFC 8032 Ed25519 signing primitive.
+ * Software RFC 8032 Ed25519 signing primitive. JavaCard 3.0.5 ships no native Ed25519, so the
+ * entire pipeline runs in user code: SHA-512 expansion + clamping of the SLIP-10 leaf seed,
+ * scalar-mult against the base point for both the public key and the nonce point {@code R}, two
+ * tagged SHA-512 invocations for {@code r} and the challenge {@code k}, and the software
+ * big-integer reduction {@code S = (r + k · s) mod ℓ}.
  *
- * <p>JavaCard 3.0.5 ships no native Ed25519, so the entire signing pipeline lives in user code:
- * SHA-512 expansion of the SLIP-10 leaf seed (clamped per RFC 8032 §5.1.5), public-key derivation
- * via {@link Edwards25519#scalarMult} of the clamped scalar against the base point,
- * tagged-domain-separated SHA-512 calls for the deterministic ephemeral scalar {@code r} and the
- * challenge {@code k}, a second base-point scalar multiplication for {@code R = r · B}, a software
- * big-integer multiplication for {@code S = (r + k · s) mod ℓ}, and finally an RFC 8032 §5.1.2
- * little-endian compressed encoding of the signature.
- *
- * <p>Wire input: 32-byte SLIP-10 leaf private key plus the message bytes verbatim. RFC 8032
- * specifies that the message is hashed inside the algorithm, so the host supplies the raw payload
- * (this is the only path that produces a verifier-compatible signature for chains like Solana / Sui
- * / TON / Aptos that wrap the message in chain-specific framing the host already applied; per the
- * hash-only invariant of {@code docs/specs/meap-6.md} the card never parses the message).
- *
- * <p>Wire output: 64 bytes laid out as {@code R(32) ‖ S(32)}, both in RFC 8032 little-endian
- * compressed form.
- *
- * <p>All intermediate state (clamped scalar {@code s}, ephemeral {@code r}, challenge {@code k},
- * computed point coordinates, SHA-512 chunks) lives in a single {@link JCSystem#CLEAR_ON_DESELECT}
- * transient byte array and is wiped by an explicit {@code finally} clause at the end of {@link
- * #sign}; the {@code CLEAR_ON_DESELECT} lifecycle alone is not sufficient because a subsequent call
- * within the same session would otherwise see stale secrets in the slot.
+ * <p>Wire contract: input is {@code [SLIP-10 leaf priv(32), message(*)]} — the message is hashed
+ * inside the algorithm so the card never parses payloads (MEAP-6 hash-only invariant). Output is
+ * {@code R(32) ‖ S(32)} in RFC 8032 §5.1.2 little-endian compressed form. All intermediate state
+ * lives in a single {@link JCSystem#CLEAR_ON_DESELECT} scratch and is wiped by a {@code finally}
+ * in {@link #sign} so a subsequent same-session call cannot observe stale secrets.
  */
 public final class Ed25519 {
 

@@ -153,9 +153,6 @@ public final class Constants {
     /** ISO 7816-4 {@code 6E00} — CLA not supported. */
     public static final short SW_CLA_NOT_SUPPORTED = (short) 0x6E00;
 
-    /** ISO 7816-4 {@code 9000} — success. */
-    public static final short SW_NO_ERROR = (short) 0x9000;
-
     /**
      * Reset-to-factory countdown base. The card returns {@code SW_RESET_COUNTDOWN_BASE + n}, where
      * {@code n} is the number of additional {@code RESET_TO_FACTORY} invocations still required to
@@ -212,8 +209,7 @@ public final class Constants {
     /** Bit 2 — card supports Ed25519 EdDSA signing. */
     public static final short CAP_ED25519 = (short) 0x0004;
 
-    /** Bit 3 — card exposes a Secure Channel using AES-GCM. */
-    public static final short CAP_SC_GCM = (short) 0x0008;
+    // Bit 3 reserved for future AES-GCM Secure Channel.
 
     /** Bit 4 — card exposes a Secure Channel using AES-CBC + HMAC-SHA-256. */
     public static final short CAP_SC_CBC_HMAC = (short) 0x0010;

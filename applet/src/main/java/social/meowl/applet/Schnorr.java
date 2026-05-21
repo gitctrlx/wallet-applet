@@ -10,19 +10,15 @@ import javacard.security.MessageDigest;
 import javacard.security.RandomData;
 
 /**
- * BIP-340 Schnorr signing primitive on secp256k1.
+ * BIP-340 Schnorr signing primitive on secp256k1. JavaCard 3.0.5 ships no native BIP-340; only
+ * ECDH scalar multiplication is platform-provided ({@code d' · G}, {@code k' · G}). Tagged
+ * hashing, parity testing and modular arithmetic are implemented in software on top of {@link
+ * MessageDigest#ALG_SHA_256} and {@link Bignat}.
  *
- * <p>JavaCard 3.0.5 ships no native BIP-340 (Schnorr / Taproot) primitive; the only EC operation
- * exposed by the platform is the ECDH-based scalar multiplication used here for {@code d' · G} and
- * {@code k' · G}. Everything else — tagged hashing, parity testing, modular arithmetic — is
- * implemented in software on top of {@link MessageDigest#ALG_SHA_256} and the multi-precision
- * primitives in {@link Bignat}.
- *
- * <p>Algorithm — verbatim from <a
+ * <p>Algorithm — <a
  * href="https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki#default-signing">BIP-340
- * §3</a> with the {@code aux_rand} input drawn from the JC platform RNG so the resulting signature
- * is randomised (matching the random-nonce behaviour of {@link EcdsaK1} on real silicon; the wire
- * contract is specified in {@code docs/specs/meap-6.md}):
+ * §3</a> verbatim, with {@code aux_rand} drawn from the JC platform RNG so the signature is
+ * randomised:
  *
  * <ol>
  *   <li>{@code d' = bip32.deriveLeafScalar(path)}; BIP-32 already enforces {@code 0 < d' < n}.
@@ -36,21 +32,13 @@ import javacard.security.RandomData;
  *   <li>{@code s ← (k + e · d) mod n}; emit {@code bytes(R) ‖ s} (64 bytes total).
  * </ol>
  *
- * <p>Where {@code bytes(X)} for a curve point is the big-endian {@code x}-coordinate (32 bytes, SEC
- * 1 §2.3.5 form with implicit even {@code y}). The on-card algorithm always outputs an even-{@code
- * y} {@code R}: the parity flip in step 6 enforces this so the host never has to recover {@code
- * y(R)} or carry a parity bit.
+ * <p>{@code bytes(X)} is the big-endian {@code x}-coordinate (SEC 1 §2.3.5 with implicit even
+ * {@code y}); the parity flip in step 6 ensures the on-card output always has even-{@code y(R)}.
+ * Tagged hashing follows BIP-340 §3.2: {@code SHA256(SHA256(tag) ‖ SHA256(tag) ‖ msg)}; the three
+ * tag strings are concatenated into {@link #TAGS} and indexed by offset/length pairs.
  *
- * <p>Tagged hashing per BIP-340 §3.2: {@code tagged_hash(tag, msg) = SHA256(SHA256(tag) ‖
- * SHA256(tag) ‖ msg)}. The tag bytes for the three BIP-340 contexts ({@code "BIP0340/aux"}, {@code
- * "BIP0340/nonce"}, {@code "BIP0340/challenge"}) are stored as a single concatenated constant
- * {@link #TAGS} and indexed by offset/length pairs.
- *
- * <p>Scratch usage: 386 bytes of transient {@code CLEAR_ON_DESELECT} memory holds every
- * intermediate including the leaf scalar, the public key, the nonce point, the challenge, the
- * digest copy, and the multi-precision multiply / reduce buffer. The whole scratch is wiped via a
- * {@code finally} clause on every code path — both success and exception — so no secret material
- * survives the call.
+ * <p>Every secret intermediate lives in a 386-byte {@code CLEAR_ON_DESELECT} scratch and is wiped
+ * by a {@code finally} on every code path so no residue survives the call.
  */
 public final class Schnorr {
 
@@ -157,14 +145,14 @@ public final class Schnorr {
         this.bip32 = bip32;
         try {
             this.sha256 = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
-            // Match the RNG fallback chain used by MasterSeed: prefer ALG_KEYGENERATION (designed
-            // for cryptographic key material on every JC 3.0.5 platform), fall back to ALG_TRNG
-            // on cards where the keygen flavour is restricted to internal key-builder use.
+            // Match the RNG fallback chain used by MasterSeed: ALG_TRNG is the canonical strong-
+            // entropy class (since JC 3.0.5); fall back to ALG_KEYGENERATION on cards whose TRNG
+            // class is restricted (key-material-only accelerators).
             RandomData candidate;
             try {
-                candidate = RandomData.getInstance(RandomData.ALG_KEYGENERATION);
-            } catch (Exception e) {
                 candidate = RandomData.getInstance(RandomData.ALG_TRNG);
+            } catch (Exception e) {
+                candidate = RandomData.getInstance(RandomData.ALG_KEYGENERATION);
             }
             this.rng = candidate;
         } catch (Exception e) {
@@ -207,7 +195,7 @@ public final class Schnorr {
 
             // === Step 3: t = bytes(d) ⊕ tagged_hash("BIP0340/aux", aux) ===
             // aux is staged in WORK_OFF; the slot is reused for the multiply-add later.
-            rng.generateData(scratch, WORK_OFF, COORD_LEN);
+            rng.nextBytes(scratch, WORK_OFF, COORD_LEN);
             taggedHashStart(TAG_AUX_OFF, TAG_AUX_LEN);
             sha256.doFinal(scratch, WORK_OFF, COORD_LEN, scratch, T_OFF);
             for (short i = 0; i < COORD_LEN; i++) {

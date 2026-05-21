@@ -9,30 +9,19 @@ import javacard.framework.JCSystem;
 import javacard.framework.Util;
 
 /**
- * Persistent master-seed storage and HD derivation root for {@code MeowlApplet}.
+ * Persistent master-seed storage and HD derivation root.
  *
- * <h2>What lives on the card</h2>
- *
- * <p>The card never persists the raw BIP-39 seed material after a single import. It computes the
- * two HMAC-SHA-512 chains once and persists only the resulting master keying material:
+ * <p>The raw BIP-39 seed is never retained: on import the card computes the two HMAC-SHA-512
+ * chains once and persists only the resulting master keying material:
  *
  * <pre>
- *   bip32Master  = HMAC-SHA-512("Bitcoin seed",  seed)   // 64 bytes
- *   slip10Master = HMAC-SHA-512("ed25519 seed",  seed)   // 64 bytes
+ *   bip32Master  = HMAC-SHA-512("Bitcoin seed", seed)   // 64 bytes, k(32) || c(32)
+ *   slip10Master = HMAC-SHA-512("ed25519 seed", seed)   // 64 bytes, k(32) || c(32)
  * </pre>
  *
- * <p>Both fields layout {@code k_master(32) || c_master(32)}. The raw seed is overwritten in the
- * APDU buffer by the handler before the response is emitted.
- *
- * <h2>Lifecycle</h2>
- *
- * <ul>
- *   <li>{@link #importSeed(byte[], short, short)} — host-supplied seed; advances to seeded state.
- *   <li>{@link #generateSeed(byte[], short)} — card-internal CSPRNG seed; writes the raw seed into
- *       the caller-supplied buffer (the {@code GENERATE_SEED} APDU then emits it as the response —
- *       the only path on which the raw seed ever leaves the card).
- *   <li>{@link #wipe()} — reset-to-factory hook; clears both master fields and the seeded flag.
- * </ul>
+ * <p>Lifecycle: {@link #importSeed} for a host-supplied seed, {@link #generateSeed} for a
+ * card-internal CSPRNG seed (the only path on which raw seed bytes ever leave the card), and
+ * {@link #wipe} as the reset-to-factory hook.
  */
 public final class MasterSeed {
 
@@ -117,9 +106,8 @@ public final class MasterSeed {
      * @param seedLen seed length in bytes; must lie in {@code [SEED_MIN_LEN, SEED_MAX_LEN]}
      */
     public void importSeed(byte[] seedBuf, short seedOff, short seedLen) {
-        // Audit M-2.03: enforce the "caller must hold a JC transaction" contract at runtime so a
-        // future caller that forgets the wrap gets a hard 6985 at development time instead of a
-        // half-mutated MasterSeed surviving a torn power-off.
+        // Enforce the "caller must hold a JC transaction" contract at runtime: a half-mutated
+        // MasterSeed surviving a torn power-off would brick the card.
         if (JCSystem.getTransactionDepth() == 0) {
             ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
         }
@@ -158,8 +146,8 @@ public final class MasterSeed {
      * @return the number of seed bytes written, i.e. {@link Constants#SEED_GENERATED_LEN}
      */
     public short generateSeed(byte[] outBuf, short outOff) {
-        // Audit M-2.03: same transaction-depth guard as importSeed — the caller's
-        // beginTransaction wrap is load-bearing and was previously enforced only by code review.
+        // Same transaction-depth guard as importSeed — the caller's beginTransaction wrap is
+        // load-bearing and was previously enforced only by code review.
         if (JCSystem.getTransactionDepth() == 0) {
             ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
         }
@@ -171,17 +159,17 @@ public final class MasterSeed {
                 || (short) (outOff + Constants.SEED_GENERATED_LEN) > (short) outBuf.length) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        // Pull randomness into the output buffer. ALG_TRNG is the modern (since JC 3.0.5)
-        // strong-entropy class; ALG_KEYGENERATION is the fallback explicitly designed for key
-        // material on platforms whose TRNG is restricted.
+        // ALG_TRNG (since JC 3.0.5) draws directly from physical entropy and is the canonical
+        // choice for seed material; fall back to ALG_KEYGENERATION on cards whose TRNG class is
+        // restricted (key-material-only accelerators).
         javacard.security.RandomData random;
         try {
             random =
-                    javacard.security.RandomData.getInstance(
-                            javacard.security.RandomData.ALG_KEYGENERATION);
+                    javacard.security.RandomData.getInstance(javacard.security.RandomData.ALG_TRNG);
         } catch (Exception e) {
             random =
-                    javacard.security.RandomData.getInstance(javacard.security.RandomData.ALG_TRNG);
+                    javacard.security.RandomData.getInstance(
+                            javacard.security.RandomData.ALG_KEYGENERATION);
         }
         // Resample until the BIP-32 master k passes the parse256(I_L) ∈ (0, n) check. The bound
         // is below 2⁻¹²⁷ per draw so the loop terminates in a single iteration with overwhelming
