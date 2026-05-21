@@ -55,8 +55,11 @@ public final class ResetToFactory {
         byte step = (byte) (remaining[0] - 1);
         remaining[0] = step;
         if (step == 0) {
-            trigger.wipe();
+            // Rearm BEFORE invoking wipe(): if wipe() throws (it shouldn't in practice, but the
+            // failure mode otherwise leaves remaining[0] = 0 and the next recordInvocation
+            // computes step = -1 = 0xFF, emitting a spurious 0x6FFF status word). Audit L-2.01.
             remaining[0] = Constants.RESET_REQUIRED_INVOCATIONS;
+            trigger.wipe();
             ISOException.throwIt(Constants.SW_RESET_COUNTDOWN_BASE);
         }
         ISOException.throwIt((short) (Constants.SW_RESET_COUNTDOWN_BASE + (step & 0xFF)));

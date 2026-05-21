@@ -7,6 +7,7 @@ package social.meowl.applet;
 import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
 import javacard.framework.OwnerPIN;
+import javacard.framework.Util;
 
 /**
  * User PIN + PUK manager per {@code docs/specs/meap-3.md}.
@@ -194,9 +195,43 @@ public final class PinManager {
         JCSystem.commitTransaction();
     }
 
-    /** Destroys all PIN/PUK state. Called by the reset-to-factory flow. */
+    /**
+     * Destroys all PIN/PUK state. Called by the reset-to-factory flow.
+     *
+     * <p>The JC platform exposes no {@code clearKey()}-equivalent on {@link OwnerPIN}, so the
+     * EEPROM cells that held the previous PIN/PUK might retain recoverable signal until they are
+     * written over by a future {@code update()} call. Audit H-1.16 asks for a best-effort
+     * overwrite: before discarding the references, we drive one {@code update()} cycle through each
+     * {@code OwnerPIN} with a 16-byte all-{@code 0xFF} buffer. This forces a write through whatever
+     * internal storage the JC implementation uses, defeating the simplest residue-recovery attacks
+     * against a clear EEPROM cell. We then re-instantiate fresh {@code OwnerPIN} objects so the
+     * provisioned flag flips back to "fresh card" semantics.
+     *
+     * <p>The overwrite-buffer length matches the max PIN/PUK size declared at construction ({@code
+     * PIN_MAX_LEN} / {@code PUK_MAX_LEN}); writing under the platform's per-PIN length bound is
+     * exactly what {@code OwnerPIN.update()} accepts.
+     */
     public void wipe() {
         JCSystem.beginTransaction();
+        // Best-effort EEPROM scrub: overwrite the existing PIN/PUK with a known-garbage value
+        // before discarding the OwnerPIN references. The new bytes are not a credential the user
+        // can verify against (we set provisioned[0] = 0 below, so any verify call short-circuits
+        // out before reaching the PIN material), but they do drive at least one write through
+        // whatever internal cells the JC implementation uses. Audit H-1.16.
+        byte[] scrub =
+                JCSystem.makeTransientByteArray(Constants.PIN_MAX_LEN, JCSystem.CLEAR_ON_RESET);
+        Util.arrayFillNonAtomic(scrub, (short) 0, Constants.PIN_MAX_LEN, (byte) 0xFF);
+        try {
+            pin.update(scrub, (short) 0, Constants.PIN_MAX_LEN);
+        } catch (Exception ignored) {
+            // If the platform rejects the scrub update for any reason, proceed with the
+            // re-instantiation below — that still provides the JC-level invalidation.
+        }
+        try {
+            puk.update(scrub, (short) 0, Constants.PUK_MAX_LEN);
+        } catch (Exception ignored) {
+            // Same fallback rationale as the PIN scrub.
+        }
         // Rebuild fresh OwnerPIN instances rather than try to scrub the old ones in-place; the
         // JC spec does not document a clearKey-style method for OwnerPIN.
         this.pin = new OwnerPIN(Constants.PIN_RETRY_LIMIT, Constants.PIN_MAX_LEN);
