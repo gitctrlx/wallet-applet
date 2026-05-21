@@ -7,28 +7,31 @@ package social.meowl.tools.cli;
 import java.nio.file.Path;
 import java.util.concurrent.Callable;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Parameters;
 import picocli.CommandLine.ParentCommand;
-import pro.javacard.gp.keys.PlaintextKeys;
 import social.meowl.tools.gp.GpFacade;
 
 /**
  * {@code meowl gp install <cap-file>} — installs (or replaces) a CAP file on the connected card.
  *
- * <p>Authenticates with the GlobalPlatform default test keys ({@code 4040…4F}). Production
- * deployments should rotate to per-card keys; the CLI does not yet expose a key flag, but the
- * underlying {@link GpFacade} is parameterised on {@link pro.javacard.gp.GPCardKeys} so the option
- * can be added without rewriting the install pipeline.
+ * <p>By default authenticates with the GlobalPlatform development static keys ({@code 4040…4F}).
+ * Pass {@code --key-master} or the {@code --key-enc / --key-mac / --key-kek} triple to use the
+ * vendor-supplied or production-rotated ISD keys instead; see {@link GpKeysOption} for the full
+ * surface.
  */
 @Command(
         name = "install",
         mixinStandardHelpOptions = true,
         description =
-                "Installs (or replaces) the given CAP file on the connected card using the"
-                        + " GlobalPlatform default test keys.")
+                "Installs (or replaces) the given CAP file on the connected card. ISD keys default"
+                        + " to the GP development static set; override with --key-master or"
+                        + " --key-enc/--key-mac/--key-kek.")
 public final class GpInstallCommand implements Callable<Integer> {
 
     @ParentCommand private GpCommand parent;
+
+    @Mixin public GpKeysOption keys = new GpKeysOption();
 
     @Parameters(arity = "1", paramLabel = "CAP", description = "Path to the CAP file to install.")
     public Path capFile;
@@ -36,8 +39,7 @@ public final class GpInstallCommand implements Callable<Integer> {
     @Override
     public Integer call() {
         MeowlCli root = (MeowlCli) parent.spec.commandLine().getParent().getCommand();
-        GpFacade facade =
-                new GpFacade(root.globalOptions.toReaderPreferences(), PlaintextKeys.defaultKey());
+        GpFacade facade = new GpFacade(root.globalOptions.toReaderPreferences(), keys.toCardKeys());
         GpFacade.InstallResult result = facade.install(capFile);
 
         if (root.globalOptions.json) {

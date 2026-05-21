@@ -7,8 +7,8 @@ package social.meowl.tools.cli;
 import java.util.List;
 import java.util.concurrent.Callable;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Mixin;
 import picocli.CommandLine.ParentCommand;
-import pro.javacard.gp.keys.PlaintextKeys;
 import social.meowl.tools.gp.GpFacade;
 
 /**
@@ -18,16 +18,20 @@ import social.meowl.tools.gp.GpFacade;
 @Command(
         name = "list",
         mixinStandardHelpOptions = true,
-        description = "Lists all installed packages, applets and security domains on the card.")
+        description =
+                "Lists installed packages, applets and security domains. ISD keys default to the GP"
+                        + " development static set; override with --key-master or"
+                        + " --key-enc/--key-mac/--key-kek.")
 public final class GpListCommand implements Callable<Integer> {
 
     @ParentCommand private GpCommand parent;
 
+    @Mixin public GpKeysOption keys = new GpKeysOption();
+
     @Override
     public Integer call() {
         MeowlCli root = root();
-        GpFacade facade =
-                new GpFacade(root.globalOptions.toReaderPreferences(), PlaintextKeys.defaultKey());
+        GpFacade facade = new GpFacade(root.globalOptions.toReaderPreferences(), keys.toCardKeys());
         GpFacade.InventoryReport report = facade.list();
 
         if (root.globalOptions.json) {

@@ -16,8 +16,9 @@ A modern picocli command tree that wraps every host-side workflow you need while
 | Raw APDU | `apdu <hex>` | Transmits an arbitrary hex APDU (optionally with `--no-select`). |
 | | `replay <dump> <hex>` | Replays a previously captured `--dump` session against `MockBIBO` — no card required. |
 | GlobalPlatform | `gp list` | Enumerate installed packages, applets and security domains. |
-| | `gp install <cap>` | Install (or replace) a CAP file with the GP default test keys. |
+| | `gp install <cap>` | Install (or replace) a CAP file. |
 | | `gp uninstall [--aid HEX]` | Delete an applet (and, by default, its package). |
+| | _ISD keys_ | Every `gp` subcommand accepts `--key-master HEX` _or_ `--key-enc HEX --key-mac HEX --key-kek HEX`; without flags the well-known GP development default `40 41 ... 4F` is used. |
 | Secure Channel | `sc handshake` | One-shot MEAP-2 handshake with authentikey-signature verification. |
 | | `sc send <inner-hex>` | Open an SC and send one inner APDU through the encrypted envelope. |
 | Interactive | `shell` | Persistent REPL with one PC/SC connection and an optional SC session. |
@@ -70,6 +71,23 @@ Every subcommand inherits the same mixin via picocli:
 # 3. Hand the card to the user, who will SETUP from their wallet app.
 ```
 
+### Provision a card with vendor-supplied ISD keys
+
+Most JCOP 4 cards (incl. NXP J3R180) ship with a vendor-specific "default" ISD key set rather than the GP development static set. Supply it as a master key (when a single 16-byte master is documented) or as a pre-diversified ENC/MAC/KEK triple:
+
+```bash
+# Master-key form: per-card diversification is applied by GlobalPlatformPro.
+./gradlew :tools:run -q --args="gp list --key-master 404142434445464748494A4B4C4D4E4F"
+
+# Triple form: the three components are used as static SCP02/SCP03 keys.
+./gradlew :tools:run -q --args="gp install applet/build/cap/meowl-applet.cap \
+  --key-enc 5A9E63D03BADBC2A240FE8F534709EDF \
+  --key-mac 7CCC1E79D64FC5FA263B8F2955282998 \
+  --key-kek B040703EC3DE23EE8AE4CFB6D632AA80"
+```
+
+The two modes are mutually exclusive; supplying both raises a usage error. Each component must be exactly 16 bytes (32 hex chars) — current J3R180 silicon authenticates over SCP03 with AES-128.
+
 ### Debug a single APDU
 
 ```bash
@@ -118,6 +136,21 @@ meowl[sc]> exit
 ```
 
 The Rust SDK's integration tests can shell out to `meowl info --json` and parse the result without re-implementing any APDU framing.
+
+## Production hardening
+
+> ⚠ **The vendor-supplied "default" CDK is not a secret.** It is publicly known and reused across every unprovisioned card from the same vendor (we observed identical CDKs across two independent retailers for J3R180). Anyone who knows the CDK can `GP DELETE` your applet and replace it with a malicious build that mimics the meowl wire — at which point a future `SETUP` or seed-recovery flow leaks the user's master seed.
+
+A production deployment **MUST** rotate the ISD keys before loading any sensitive applet:
+
+1. **Rotate** ISD keys to a per-card random value via `PUT KEY` (under the vendor CDK).
+   _The CLI surface for this — `meowl gp put-key` — is on the roadmap; today, use `gp.exe` from GlobalPlatformPro directly._
+2. **Install** the meowl applet with the new keys.
+3. **Personalise** at the applet layer (`SETUP`, master seed, PIN).
+4. **Lock** the ISD: switch the card to `CARD_LOCKED` lifecycle and securely destroy the rotated keys (one-way burn). After this step, no one — including you — can replace or remove the applet, which is the very definition of an immutable hardware wallet.
+   _CLI surface: `meowl gp lock-card`, also on the roadmap._
+
+Until the rotation+lock flow is automated end-to-end, the safe operating mode is: **use the development-default or vendor CDK only on cards that hold no real key material**.
 
 ## Exit codes
 

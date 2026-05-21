@@ -9,7 +9,6 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ParentCommand;
-import pro.javacard.gp.keys.PlaintextKeys;
 import social.meowl.tools.gp.GpFacade;
 
 /**
@@ -20,12 +19,16 @@ import social.meowl.tools.gp.GpFacade;
         name = "uninstall",
         mixinStandardHelpOptions = true,
         description =
-                "Removes the meowl applet (and its package, by default) from the connected card.")
+                "Removes the meowl applet (and its package, by default) from the connected card."
+                        + " ISD keys default to the GP development static set; override with"
+                        + " --key-master or --key-enc/--key-mac/--key-kek.")
 public final class GpUninstallCommand implements Callable<Integer> {
 
     @ParentCommand private GpCommand parent;
 
     @Mixin public AidOption aid = new AidOption();
+
+    @Mixin public GpKeysOption keys = new GpKeysOption();
 
     @Option(
             names = "--no-deps",
@@ -35,8 +38,7 @@ public final class GpUninstallCommand implements Callable<Integer> {
     @Override
     public Integer call() {
         MeowlCli root = (MeowlCli) parent.spec.commandLine().getParent().getCommand();
-        GpFacade facade =
-                new GpFacade(root.globalOptions.toReaderPreferences(), PlaintextKeys.defaultKey());
+        GpFacade facade = new GpFacade(root.globalOptions.toReaderPreferences(), keys.toCardKeys());
         facade.uninstall(aid.bytes(), !noDeps);
 
         if (root.globalOptions.json) {
