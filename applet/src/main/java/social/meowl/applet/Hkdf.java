@@ -78,7 +78,10 @@ public final class Hkdf {
      * @param salt buffer holding the salt; if {@code saltLen == 0} a zero-filled buffer is used as
      *     per RFC 5869 §2.2
      * @param saltOffset offset of the salt within {@code salt}
-     * @param saltLen length of the salt in bytes (must be {@code >= 0} and {@code <= 256})
+     * @param saltLen length of the salt in bytes ({@code >= 0}); RFC 5869 places no upper bound on
+     *     the salt — the underlying HMAC absorbs arbitrary lengths and either pre-hashes the salt
+     *     when {@code |salt| > B} or pads it to {@code B} when {@code |salt| <= B}. Audit S3-05
+     *     removed the previous arbitrary 256-byte cap.
      * @param ikm buffer holding the input keying material
      * @param ikmOffset offset of the IKM
      * @param ikmLen length of the IKM in bytes
@@ -90,7 +93,7 @@ public final class Hkdf {
             byte[] ikm,
             short ikmOffset,
             short ikmLen) {
-        if (saltLen < 0 || saltLen > (short) 256 || ikmLen < 0) {
+        if (saltLen < 0 || ikmLen < 0) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         if (saltLen == 0) {

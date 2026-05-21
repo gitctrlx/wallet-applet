@@ -47,7 +47,7 @@ public final class Authentikey {
      * compressed point) are zeroised so no ephemeral residue leaks into outbound buffers.
      */
     public short writeCompressedPubkeyTo(byte[] dst, short offset) {
-        ensureCapacity(dst, offset, Constants.EC_POINT_UNCOMPRESSED_LEN);
+        Bounds.requireCapacity(dst, offset, Constants.EC_POINT_UNCOMPRESSED_LEN);
 
         short uncompressedLen = publicKey.getW(dst, offset);
         if (uncompressedLen != Constants.EC_POINT_UNCOMPRESSED_LEN || dst[offset] != (byte) 0x04) {
@@ -76,11 +76,5 @@ public final class Authentikey {
     /** Package-private access for the PKI CSR signer. */
     ECPublicKey publicKey() {
         return publicKey;
-    }
-
-    private static void ensureCapacity(byte[] dst, short offset, short needed) {
-        if (dst == null || offset < 0 || (short) (offset + needed) > (short) dst.length) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
-        }
     }
 }

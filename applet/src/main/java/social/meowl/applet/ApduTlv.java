@@ -48,7 +48,7 @@ public final class ApduTlv {
      * @return the offset immediately after the written record
      */
     public static short putByte(byte[] dst, short offset, byte tag, byte value) {
-        ensureCapacity(dst, offset, (short) (2 + BYTE_VALUE_LEN));
+        Bounds.requireCapacity(dst, offset, (short) (2 + BYTE_VALUE_LEN));
         dst[offset] = tag;
         dst[(short) (offset + 1)] = (byte) BYTE_VALUE_LEN;
         dst[(short) (offset + 2)] = value;
@@ -61,7 +61,7 @@ public final class ApduTlv {
      * @return the offset immediately after the written record
      */
     public static short putShort(byte[] dst, short offset, byte tag, short value) {
-        ensureCapacity(dst, offset, (short) (2 + SHORT_VALUE_LEN));
+        Bounds.requireCapacity(dst, offset, (short) (2 + SHORT_VALUE_LEN));
         dst[offset] = tag;
         dst[(short) (offset + 1)] = (byte) SHORT_VALUE_LEN;
         Util.setShort(dst, (short) (offset + 2), value);
@@ -79,15 +79,11 @@ public final class ApduTlv {
      */
     public static short putBytes(
             byte[] dst, short offset, byte tag, byte[] src, short srcOffset, short length) {
-        if (length < 0 || length > MAX_VALUE_LEN) {
+        if (length > MAX_VALUE_LEN) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        // Source-side bounds: rearranged as `length > (src.length - srcOffset)` so an attacker
-        // cannot wrap the comparison via short overflow when `srcOffset + length` exceeds 2^15.
-        if (src == null || srcOffset < 0 || length > (short) (src.length - srcOffset)) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
-        }
-        ensureCapacity(dst, offset, (short) (2 + length));
+        Bounds.requireRange(src, srcOffset, length);
+        Bounds.requireCapacity(dst, offset, (short) (2 + length));
         dst[offset] = tag;
         dst[(short) (offset + 1)] = (byte) length;
         Util.arrayCopyNonAtomic(src, srcOffset, dst, (short) (offset + 2), length);
@@ -105,7 +101,7 @@ public final class ApduTlv {
      * @return the offset immediately after the reserved 2-byte header
      */
     public static short reserve(byte[] dst, short offset, byte tag) {
-        ensureCapacity(dst, offset, (short) 2);
+        Bounds.requireCapacity(dst, offset, (short) 2);
         dst[offset] = tag;
         // length placeholder; back-patched by finishReserved().
         dst[(short) (offset + 1)] = (byte) 0;
@@ -124,15 +120,5 @@ public final class ApduTlv {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         dst[(short) (headerOffset + 1)] = (byte) valueLen;
-    }
-
-    private static void ensureCapacity(byte[] dst, short offset, short needed) {
-        if (dst == null
-                || offset < 0
-                || needed < 0
-                || offset > (short) dst.length
-                || needed > (short) (dst.length - offset)) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
-        }
     }
 }

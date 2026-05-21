@@ -192,7 +192,14 @@ public final class EcdsaK1 {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
         short cursor = (short) (derOff + 1);
+        // DER length field: short-form covers 0..127 in a single byte; long-form (0x81 LL ...)
+        // is required for any length >= 128. JC's native ECDSA outputs at most 72 bytes of DER
+        // (always < 128), so we never legitimately see long-form here. Rejecting the high bit
+        // upfront prevents an off-by-one parse against a malformed silicon output (audit S3-13).
         short seqLen = (short) (der[cursor++] & 0xFF);
+        if ((seqLen & 0x80) != 0) {
+            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
+        }
         if ((short) (cursor + seqLen) != (short) (derOff + derLen)) {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
@@ -216,7 +223,13 @@ public final class EcdsaK1 {
         if (der[cursor++] != DER_TAG_INTEGER) {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
+        // Reject DER long-form length here too; an ECDSA INTEGER over secp256k1 is at most 33
+        // bytes (32 magnitude + optional leading 0x00 sign byte), so the high bit of the length
+        // octet is always clear (audit S3-13).
         short rawLen = (short) (der[cursor++] & 0xFF);
+        if ((rawLen & 0x80) != 0) {
+            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
+        }
         short valStart = cursor;
         short nextCursor = (short) (cursor + rawLen);
         short copyLen = rawLen;
