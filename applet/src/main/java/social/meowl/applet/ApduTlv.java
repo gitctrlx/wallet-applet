@@ -22,8 +22,17 @@ import javacard.framework.Util;
  */
 public final class ApduTlv {
 
-    /** Maximum value length supported by the simplified single-byte length form. */
-    public static final short MAX_VALUE_LEN = (short) 0x7F;
+    /**
+     * Maximum value length supported by the simplified single-byte length form.
+     *
+     * <p>The single-byte length encodes the inclusive range {@code [0, 255]} per MEAP-1
+     * §TLV-encoding; previously this constant was {@code 0x7F} (audit M-1.06), which over-
+     * restricted the cap below what the spec and the host parser accept. Today every value the
+     * applet emits is well below 128 bytes (the largest is the 33-byte compressed authentikey), but
+     * raising the cap to {@code 0xFF} aligns the three TLV touch-points (spec, applet,
+     * tools/core/Tlv) so a future field with 128+ bytes is unblocked.
+     */
+    public static final short MAX_VALUE_LEN = (short) 0xFF;
 
     /** Fixed length of the value carried by {@link #putByte(byte[], short, byte, byte)}. */
     public static final short BYTE_VALUE_LEN = (short) 1;

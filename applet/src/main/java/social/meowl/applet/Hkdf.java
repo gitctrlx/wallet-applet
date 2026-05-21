@@ -46,6 +46,16 @@ public final class Hkdf {
     private final byte[] prk;
     private final byte[] scratch;
 
+    /**
+     * One-byte transient buffer holding the HKDF counter byte {@code i} fed into the {@code T(i) =
+     * HMAC(PRK, T(i-1) ‖ info ‖ i)} computation in {@link #expand}. Dedicated so we do not mutate
+     * {@link #scratch} between {@code hmac.update(scratch, …)} and {@code hmac.sign(…)} — JC's
+     * {@code Signature.update} is allowed by the spec to defer ingestion until the next sign(), and
+     * that deferred ingestion would observe the post-mutation byte if we wrote into the same buffer
+     * (audit M-1.14).
+     */
+    private final byte[] counterBuf;
+
     /** Instantiates an HKDF helper, allocating its transient state. */
     public Hkdf() {
         this.hmac = Signature.getInstance(Signature.ALG_HMAC_SHA_256, false);
@@ -68,6 +78,9 @@ public final class Hkdf {
         this.scratch =
                 javacard.framework.JCSystem.makeTransientByteArray(
                         HASH_LEN, javacard.framework.JCSystem.CLEAR_ON_DESELECT);
+        this.counterBuf =
+                javacard.framework.JCSystem.makeTransientByteArray(
+                        (short) 1, javacard.framework.JCSystem.CLEAR_ON_DESELECT);
     }
 
     /**
@@ -134,8 +147,6 @@ public final class Hkdf {
         }
 
         // T(0) is empty; T(i) = HMAC(PRK, T(i-1) ‖ info ‖ i).
-        hmac.init(prkKey, Signature.MODE_SIGN);
-
         short remaining = length;
         short writeOffset = outOffset;
         byte counter = (byte) 0x01;
@@ -149,11 +160,15 @@ public final class Hkdf {
             if (infoLen > 0) {
                 hmac.update(info_or_null, infoOffset, infoLen);
             }
-            scratch[0] = counter;
+            // Feed the counter byte from a dedicated 1-byte buffer (audit M-1.14): JC's
+            // Signature.update is allowed to defer ingestion until sign(), so we must not mutate
+            // scratch between the update() above and the sign() below if scratch is also the
+            // input buffer.
+            counterBuf[0] = counter;
             // We need T(i) as a contiguous 32-byte buffer for the next iteration's update().
             // Write into scratch first, then copy out (or directly into out when this is the last
             // partial block).
-            hmac.sign(scratch, (short) 0, (short) 1, scratch, (short) 0);
+            hmac.sign(counterBuf, (short) 0, (short) 1, scratch, (short) 0);
             short take = remaining < HASH_LEN ? remaining : HASH_LEN;
             Util.arrayCopyNonAtomic(scratch, (short) 0, out, writeOffset, take);
             writeOffset += take;
@@ -169,5 +184,6 @@ public final class Hkdf {
         prkKey.clearKey();
         Util.arrayFillNonAtomic(prk, (short) 0, HASH_LEN, (byte) 0);
         Util.arrayFillNonAtomic(scratch, (short) 0, HASH_LEN, (byte) 0);
+        counterBuf[0] = 0;
     }
 }
