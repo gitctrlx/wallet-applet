@@ -41,6 +41,7 @@ import picocli.CommandLine.Spec;
             ReplayCommand.class,
             GpCommand.class,
             ScCommand.class,
+            ShellCommand.class,
         })
 public final class MeowlCli implements Callable<Integer> {
 
