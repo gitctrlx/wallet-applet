@@ -51,11 +51,22 @@ public final class PinManager {
     private OwnerPIN puk;
     private final byte[] provisioned; // [0] != 0 → setup() has been called
 
+    /**
+     * Pre-allocated scratch used by {@link #wipe()} to drive a known-pattern write through both
+     * {@link OwnerPIN} cells before discarding their references (audit H-1.16). Sized at {@link
+     * Constants#PUK_MAX_LEN} so the same buffer covers both PIN and PUK updates without an
+     * out-of-bounds read on the PUK call. Lives in {@link JCSystem#CLEAR_ON_DESELECT} memory because
+     * its lifetime is bounded by a single APDU.
+     */
+    private final byte[] scrub;
+
     /** Constructs an unprovisioned manager. */
     public PinManager() {
         this.pin = new OwnerPIN(Constants.PIN_RETRY_LIMIT, Constants.PIN_MAX_LEN);
         this.puk = new OwnerPIN(Constants.PUK_RETRY_LIMIT, Constants.PUK_MAX_LEN);
         this.provisioned = new byte[1];
+        this.scrub =
+                JCSystem.makeTransientByteArray(Constants.PUK_MAX_LEN, JCSystem.CLEAR_ON_DESELECT);
     }
 
     /** Returns {@code true} once {@link #setup} has been called successfully. */
@@ -218,9 +229,7 @@ public final class PinManager {
         // can verify against (we set provisioned[0] = 0 below, so any verify call short-circuits
         // out before reaching the PIN material), but they do drive at least one write through
         // whatever internal cells the JC implementation uses. Audit H-1.16.
-        byte[] scrub =
-                JCSystem.makeTransientByteArray(Constants.PIN_MAX_LEN, JCSystem.CLEAR_ON_RESET);
-        Util.arrayFillNonAtomic(scrub, (short) 0, Constants.PIN_MAX_LEN, (byte) 0xFF);
+        Util.arrayFillNonAtomic(scrub, (short) 0, Constants.PUK_MAX_LEN, (byte) 0xFF);
         try {
             pin.update(scrub, (short) 0, Constants.PIN_MAX_LEN);
         } catch (Exception ignored) {

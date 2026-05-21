@@ -65,7 +65,7 @@ public final class Slip10 {
     public Slip10(MasterSeed masterSeed, HmacSha sharedHmac512) {
         this.masterSeed = masterSeed;
         this.hmac = sharedHmac512;
-        this.state = JCSystem.makeTransientByteArray(STATE_LEN, JCSystem.CLEAR_ON_RESET);
+        this.state = JCSystem.makeTransientByteArray(STATE_LEN, JCSystem.CLEAR_ON_DESELECT);
     }
 
     /**

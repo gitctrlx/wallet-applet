@@ -83,21 +83,17 @@ public final class Bip32 {
         try {
             this.scalarMult = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY, false);
             // Prefer the RAM-backed transient flavour so the derived leaf scalar never touches
-            // EEPROM (audit C-2.02: even a clearKey() does not necessarily wipe EEPROM cells
-            // on every silicon, leaving a residue an attacker with physical access could
-            // recover). Fall back to the persistent flavour only on cards that refuse the
-            // transient form (some pre-3.0.5 JC silicon, and a small number of recent cards
-            // that restrict TRANSIENT_DESELECT to symmetric keys).
+            // EEPROM (audit C-2.02: a plain clearKey() does not necessarily wipe EEPROM cells on
+            // every silicon, leaving a residue an attacker with physical access could recover).
+            // Fall back to the persistent flavour only on cards that refuse the transient form
+            // (some pre-3.0.5 JC silicon, and a handful of recent cards that restrict
+            // TRANSIENT_DESELECT to symmetric keys).
             ECPrivateKey scalarKey;
             try {
-                // TRANSIENT_RESET (rather than TRANSIENT_DESELECT) since cards with a small
-                // DESELECT pool (notably J3R180) cannot accommodate the additional EC key here;
-                // the leaf scalar is wiped explicitly in derivation cleanup so the difference is
-                // not security-relevant.
                 scalarKey =
                         (ECPrivateKey)
                                 KeyBuilder.buildKey(
-                                        KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_RESET,
+                                        KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT,
                                         KeyBuilder.LENGTH_EC_FP_256,
                                         false);
             } catch (javacard.security.CryptoException e) {
@@ -114,7 +110,7 @@ public final class Bip32 {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
             throw new RuntimeException(); // unreachable
         }
-        this.state = JCSystem.makeTransientByteArray(STATE_LEN, JCSystem.CLEAR_ON_RESET);
+        this.state = JCSystem.makeTransientByteArray(STATE_LEN, JCSystem.CLEAR_ON_DESELECT);
     }
 
     /**

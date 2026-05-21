@@ -27,10 +27,10 @@ import javacard.security.MessageDigest;
  * </ul>
  *
  * <p>All operations write into caller-supplied buffers. The class delegates the keyed compression
- * to a shared {@link HmacSha} engine handed in via the constructor, and holds a small {@code
- * CLEAR_ON_RESET} scratch buffer for the running {@code T(i-1)} state during {@link #expand(byte[],
- * short, byte[], short, short)}. The PRK is also held in transient memory so it is wiped on reset /
- * power-off.
+ * to a shared {@link HmacSha} engine handed in via the constructor, and holds a small {@link
+ * JCSystem#CLEAR_ON_DESELECT} scratch buffer for the running {@code T(i-1)} state during {@link
+ * #expand(byte[], short, byte[], short, short)}. The PRK is also held in DESELECT transient memory
+ * so it is wiped automatically on session teardown.
  */
 public final class Hkdf {
 
@@ -63,9 +63,9 @@ public final class Hkdf {
      */
     public Hkdf(HmacSha sharedHmac256) {
         this.hmac = sharedHmac256;
-        this.prk = JCSystem.makeTransientByteArray(HASH_LEN, JCSystem.CLEAR_ON_RESET);
-        this.scratch = JCSystem.makeTransientByteArray(HASH_LEN, JCSystem.CLEAR_ON_RESET);
-        this.counterBuf = JCSystem.makeTransientByteArray((short) 1, JCSystem.CLEAR_ON_RESET);
+        this.prk = JCSystem.makeTransientByteArray(HASH_LEN, JCSystem.CLEAR_ON_DESELECT);
+        this.scratch = JCSystem.makeTransientByteArray(HASH_LEN, JCSystem.CLEAR_ON_DESELECT);
+        this.counterBuf = JCSystem.makeTransientByteArray((short) 1, JCSystem.CLEAR_ON_DESELECT);
     }
 
     /**

@@ -39,8 +39,10 @@ import javacard.security.Signature;
  * <p><b>Security.</b>
  *
  * <ul>
- *   <li>The padded key buffer {@code K'} lives in {@code CLEAR_ON_DESELECT} transient memory; it is
- *       wiped on every {@link #reset()} and on card deselect.
+ *   <li>The padded key buffer {@code K'} and the inner-hash slot live in {@link
+ *       JCSystem#CLEAR_ON_DESELECT} transient memory: they are wiped on every {@link #reset()} and
+ *       implicitly cleared on card deselect, which is the strictest lifecycle that still permits
+ *       the {@code init → update* → doFinal} sequence to span multiple APDUs of one session.
  *   <li>The XOR loop and the digest API are data-independent in their timing on every JC platform
  *       we target (J3R180's SHA-256 / SHA-512 are hardware-accelerated and constant-time per the
  *       NXP datasheet).
@@ -159,10 +161,16 @@ public final class HmacSha {
         this.nativeKey = k;
 
         // Software-path buffers are only allocated when we are actually going to use them; this
-        // keeps RAM consumption flat on jcardsim / cards with native HMAC.
+        // keeps RAM consumption flat on jcardsim / cards with native HMAC. CLEAR_ON_DESELECT (not
+        // CLEAR_ON_RESET) is mandatory on resource-constrained NFC SECID configurations such as
+        // J3R180: the install-time CLEAR_ON_RESET pool there is too small to host two parallel
+        // software HMAC engines (96 B + 192 B for SHA-256 + SHA-512), whereas the DESELECT pool
+        // comfortably absorbs them. Lifecycle-wise an HMAC engine never needs to retain key
+        // material across a deselect because every consumer (Hkdf, MasterSeed, SecureChannel)
+        // re-keys via {@link #init} on every fresh session.
         if (s == null) {
-            this.softKey = JCSystem.makeTransientByteArray(blockSize, JCSystem.CLEAR_ON_RESET);
-            this.softInner = JCSystem.makeTransientByteArray(hashSize, JCSystem.CLEAR_ON_RESET);
+            this.softKey = JCSystem.makeTransientByteArray(blockSize, JCSystem.CLEAR_ON_DESELECT);
+            this.softInner = JCSystem.makeTransientByteArray(hashSize, JCSystem.CLEAR_ON_DESELECT);
         } else {
             this.softKey = null;
             this.softInner = null;

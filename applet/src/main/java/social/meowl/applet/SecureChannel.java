@@ -55,9 +55,9 @@ import javacardx.crypto.Cipher;
  * rather than in the APDU buffer, because the working set during ECDH + HKDF + ECDSA-sign exceeds
  * the 261-byte short APDU buffer typical of contemporary silicon.
  *
- * <p>All AES / HMAC keys are {@code TYPE_*_TRANSIENT_DESELECT} so a deselect tears the session down
- * automatically; the explicit {@link #reset()} called from {@link MeowlApplet#select} acts as a
- * belt-and-braces.
+ * <p>All session keys, IVs, replay counters and the open-flag live in {@link
+ * JCSystem#CLEAR_ON_DESELECT} transient memory — a deselect tears the session down automatically.
+ * The explicit {@link #reset()} called from {@link MeowlApplet#select} acts as a belt-and-braces.
  */
 public final class SecureChannel {
 
@@ -109,11 +109,11 @@ public final class SecureChannel {
     private final HmacSha hmac;
 
     /**
-     * Session MAC key {@code K_mac}. Lives in {@code CLEAR_ON_RESET} transient memory; written by
-     * {@link #initHandshake} from the HKDF output and consumed by every {@link #unwrap} / {@link
-     * #wrap} via {@link HmacSha#init}. Using a plain byte array (rather than {@code HMACKey}) lets
-     * the same code path work on cards that omit {@code TYPE_HMAC*} from their key builder
-     * catalogue (notably J3R180).
+     * Session MAC key {@code K_mac}. Lives in {@link JCSystem#CLEAR_ON_DESELECT} transient memory;
+     * written by {@link #initHandshake} from the HKDF output and consumed by every {@link #unwrap}
+     * / {@link #wrap} via {@link HmacSha#init}. Using a plain byte array (rather than {@code
+     * HMACKey}) lets the same code path work on cards that omit {@code TYPE_HMAC*} from their key
+     * builder catalogue (notably J3R180).
      */
     private final byte[] macKey;
 
@@ -167,28 +167,31 @@ public final class SecureChannel {
         this.aesCbc = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
         this.ecdsa = Signature.getInstance(Signature.ALG_ECDSA_SHA_256, false);
 
-        // CLEAR_ON_RESET (rather than CLEAR_ON_DESELECT) so the key sits in the larger of the two
-        // transient pools on cards (notably J3R180) whose DESELECT pool is too small to host the
-        // applet's session-key footprint. SecureChannel.reset() in select() and on every
-        // teardown explicitly clearKey()s this key, so the lifecycle semantics match what
-        // CLEAR_ON_DESELECT would have given us.
+        // Every session-scoped buffer (encKey, macKey, okm, IVs, macScratch, openFlag) lives in
+        // CLEAR_ON_DESELECT transient memory. That is both the canonical lifecycle for SCP-style
+        // session state — deselect implies the host has lost the session anyway — and a hard
+        // requirement on resource-constrained NFC SECID configurations (notably J3R180), where the
+        // install-time CLEAR_ON_RESET pool is on the order of 250 B and cannot host this many
+        // simultaneous allocations. SecureChannel.reset() also wipes everything explicitly to
+        // protect against a same-session leak across two consecutive handshakes.
         this.encKey =
                 (AESKey)
                         KeyBuilder.buildKey(
-                                KeyBuilder.TYPE_AES_TRANSIENT_RESET,
+                                KeyBuilder.TYPE_AES_TRANSIENT_DESELECT,
                                 KeyBuilder.LENGTH_AES_256,
                                 false);
         this.macKey =
-                JCSystem.makeTransientByteArray(Constants.SC_KEY_LEN, JCSystem.CLEAR_ON_RESET);
+                JCSystem.makeTransientByteArray(Constants.SC_KEY_LEN, JCSystem.CLEAR_ON_DESELECT);
 
-        this.okm = JCSystem.makeTransientByteArray(OKM_LEN, JCSystem.CLEAR_ON_RESET);
+        this.okm = JCSystem.makeTransientByteArray(OKM_LEN, JCSystem.CLEAR_ON_DESELECT);
         this.lastInboundIv =
-                JCSystem.makeTransientByteArray(Constants.SC_BLOCK_LEN, JCSystem.CLEAR_ON_RESET);
+                JCSystem.makeTransientByteArray(Constants.SC_BLOCK_LEN, JCSystem.CLEAR_ON_DESELECT);
         this.outboundCounter =
-                JCSystem.makeTransientByteArray(Constants.SC_BLOCK_LEN, JCSystem.CLEAR_ON_RESET);
-        this.macScratch = JCSystem.makeTransientByteArray(Hkdf.HASH_LEN, JCSystem.CLEAR_ON_RESET);
+                JCSystem.makeTransientByteArray(Constants.SC_BLOCK_LEN, JCSystem.CLEAR_ON_DESELECT);
+        this.macScratch =
+                JCSystem.makeTransientByteArray(Hkdf.HASH_LEN, JCSystem.CLEAR_ON_DESELECT);
         this.hsScratch = sharedScratch;
-        this.openFlag = JCSystem.makeTransientByteArray((short) 1, JCSystem.CLEAR_ON_RESET);
+        this.openFlag = JCSystem.makeTransientByteArray((short) 1, JCSystem.CLEAR_ON_DESELECT);
     }
 
     /** Whether a Secure Channel session is currently open. */

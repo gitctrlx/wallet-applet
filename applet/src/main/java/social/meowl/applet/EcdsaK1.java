@@ -83,13 +83,10 @@ public final class EcdsaK1 {
             // persistent only on silicon that refuses the transient form.
             ECPrivateKey signKey;
             try {
-                // TRANSIENT_RESET — see Bip32.scalarKey for the rationale (J3R180 DESELECT pool
-                // is too small to host this key alongside the rest of the applet's transient
-                // state).
                 signKey =
                         (ECPrivateKey)
                                 KeyBuilder.buildKey(
-                                        KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_RESET,
+                                        KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT,
                                         KeyBuilder.LENGTH_EC_FP_256,
                                         false);
             } catch (javacard.security.CryptoException e) {
