@@ -89,7 +89,7 @@ The `GET_INFO` response (status `9000`) is the canonical TLV record. A conformin
 
 | Tag | Mnemonic | Value |
 | --- | --- | --- |
-| `0x01` | `TAG_PROTOCOL_VERSION` | 2 bytes, big-endian. The MEAP wire revision the applet implements; `0x0001` for this revision. |
+| `0x01` | `TAG_PROTOCOL_VERSION` | 2 bytes, big-endian, packed as `major(1)` ‖ `minor(1)`. The MEAP wire revision the applet implements; `0x0100` ("1.0") for this revision. |
 | `0x02` | `TAG_APPLET_VERSION` | 2 bytes, big-endian. The applet implementation's own version; freely allocated by the applet author. |
 | `0x03` | `TAG_LIFECYCLE_STATE` | 1 byte. The current lifecycle FSM state; see [MEAP-3 §Lifecycle](./meap-3.md) for the encoding. |
 | `0x04` | `TAG_CAPABILITIES` | 2 bytes, big-endian. The capability bitmap defined below. |

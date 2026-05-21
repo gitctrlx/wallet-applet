@@ -70,10 +70,15 @@ Outbound APDU body:
 
 ```text
 card_eph_pub    : 65 bytes              ; SEC1-uncompressed
-sig             : variable, ≤72 bytes   ; DER-encoded ECDSA signature over the two pubkeys
+sig_len         : 2 bytes               ; unsigned 16-bit big-endian length of the signature
+sig             : sig_len bytes, ≤72    ; DER-encoded ECDSA signature over the two pubkeys
 ```
 
+The DER signature is variable-length (typically 70–72 bytes; structurally bounded by 72 because each of `r` and `s` is at most 33 bytes including the optional leading `0x00` sign byte). The 2-byte big-endian `sig_len` prefix makes the boundary explicit so the host can locate the signature without first parsing the DER structure — a deliberate engineering trade-off to keep the wire parseable by hosts that do not link a full ASN.1 toolchain.
+
 A conforming host MUST verify the DER-encoded signature against the `authentikey` public key obtained from `GET_INFO` ([MEAP-1](./meap-1.md) §`GET_INFO` payload) before deriving the session keys. The host MUST treat any DER-decoding failure or signature-verification failure as a fatal error and MUST NOT proceed to the encrypted record layer. Hosts that previously cached the `authentikey` SHOULD compare against the cached fingerprint to defeat counterfeit cards that present a manufacturer-issued (i.e. legitimately signed) but different `authentikey`.
+
+A conforming applet MUST emit `sig_len` matching the exact length of the DER signature it produces, and MUST NOT emit any trailing bytes past `sig`. A conforming host MUST treat a body length other than `65 + 2 + sig_len` as a fatal protocol error.
 
 A conforming applet MUST tear down any previously open Secure Channel and any prior `VERIFY_PIN` authorisation flag at the **start** of `INIT_SECURE_CHANNEL`, before generating the new ephemeral keypair. This makes the PIN session strictly bound to a single Secure Channel session; an attacker who steals an authenticated card cannot inherit the PIN flag by re-handshaking.
 
