@@ -35,67 +35,55 @@ import javacard.security.RandomData;
  * <p>{@code bytes(X)} is the big-endian {@code x}-coordinate (SEC 1 §2.3.5 with implicit even
  * {@code y}); the parity flip in step 6 ensures the on-card output always has even-{@code y(R)}.
  * Tagged hashing follows BIP-340 §3.2: {@code SHA256(SHA256(tag) ‖ SHA256(tag) ‖ msg)}; the three
- * tag strings are concatenated into {@link #TAGS} and indexed by offset/length pairs.
+ * {@code SHA256(tag)} values are precomputed as {@link #HASH_OF_TAG_AUX}, {@link
+ * #HASH_OF_TAG_NONCE} and {@link #HASH_OF_TAG_CHALLENGE}, saving three SHA-256 invocations per
+ * signature compared to evaluating them at runtime (audit S3-08).
  *
- * <p>Every secret intermediate lives in a 386-byte {@code CLEAR_ON_DESELECT} scratch and is wiped
+ * <p>Every secret intermediate lives in a 354-byte {@code CLEAR_ON_DESELECT} scratch and is wiped
  * by a {@code finally} on every code path so no residue survives the call.
  */
 public final class Schnorr {
 
-    /** Concatenation of the three BIP-340 hash-tag strings, ASCII-encoded big-endian. */
-    private static final byte[] TAGS = {
-        // "BIP0340/aux" — 11 bytes, offset 0
-        (byte) 'B',
-        (byte) 'I',
-        (byte) 'P',
-        (byte) '0',
-        (byte) '3',
-        (byte) '4',
-        (byte) '0',
-        (byte) '/',
-        (byte) 'a',
-        (byte) 'u',
-        (byte) 'x',
-        // "BIP0340/nonce" — 13 bytes, offset 11
-        (byte) 'B',
-        (byte) 'I',
-        (byte) 'P',
-        (byte) '0',
-        (byte) '3',
-        (byte) '4',
-        (byte) '0',
-        (byte) '/',
-        (byte) 'n',
-        (byte) 'o',
-        (byte) 'n',
-        (byte) 'c',
-        (byte) 'e',
-        // "BIP0340/challenge" — 17 bytes, offset 24
-        (byte) 'B',
-        (byte) 'I',
-        (byte) 'P',
-        (byte) '0',
-        (byte) '3',
-        (byte) '4',
-        (byte) '0',
-        (byte) '/',
-        (byte) 'c',
-        (byte) 'h',
-        (byte) 'a',
-        (byte) 'l',
-        (byte) 'l',
-        (byte) 'e',
-        (byte) 'n',
-        (byte) 'g',
-        (byte) 'e',
+    /**
+     * Pre-computed {@code SHA256("BIP0340/aux")}, big-endian. Pinned here so every Schnorr
+     * signature avoids three redundant SHA-256 invocations over the tag strings (audit S3-08). The
+     * {@code SchnorrTagHashTest} sanity-check verifies these constants against a runtime SHA-256 of
+     * the literal tag bytes so any typo trips on the first build.
+     */
+    static final byte[] HASH_OF_TAG_AUX = {
+        (byte) 0xF1, (byte) 0xEF, (byte) 0x4E, (byte) 0x5E,
+        (byte) 0xC0, (byte) 0x63, (byte) 0xCA, (byte) 0xDA,
+        (byte) 0x6D, (byte) 0x94, (byte) 0xCA, (byte) 0xFA,
+        (byte) 0x9D, (byte) 0x98, (byte) 0x7E, (byte) 0xA0,
+        (byte) 0x69, (byte) 0x26, (byte) 0x58, (byte) 0x39,
+        (byte) 0xEC, (byte) 0xC1, (byte) 0x1F, (byte) 0x97,
+        (byte) 0x2D, (byte) 0x77, (byte) 0xA5, (byte) 0x2E,
+        (byte) 0xD8, (byte) 0xC1, (byte) 0xCC, (byte) 0x90,
     };
 
-    private static final short TAG_AUX_OFF = 0;
-    private static final short TAG_AUX_LEN = 11;
-    private static final short TAG_NONCE_OFF = 11;
-    private static final short TAG_NONCE_LEN = 13;
-    private static final short TAG_CHALLENGE_OFF = 24;
-    private static final short TAG_CHALLENGE_LEN = 17;
+    /** Pre-computed {@code SHA256("BIP0340/nonce")}, big-endian. */
+    static final byte[] HASH_OF_TAG_NONCE = {
+        (byte) 0x07, (byte) 0x49, (byte) 0x77, (byte) 0x34,
+        (byte) 0xA7, (byte) 0x9B, (byte) 0xCB, (byte) 0x35,
+        (byte) 0x5B, (byte) 0x9B, (byte) 0x8C, (byte) 0x7D,
+        (byte) 0x03, (byte) 0x4F, (byte) 0x12, (byte) 0x1C,
+        (byte) 0xF4, (byte) 0x34, (byte) 0xD7, (byte) 0x3E,
+        (byte) 0xF7, (byte) 0x2D, (byte) 0xDA, (byte) 0x19,
+        (byte) 0x87, (byte) 0x00, (byte) 0x61, (byte) 0xFB,
+        (byte) 0x52, (byte) 0xBF, (byte) 0xEB, (byte) 0x2F,
+    };
+
+    /** Pre-computed {@code SHA256("BIP0340/challenge")}, big-endian. */
+    static final byte[] HASH_OF_TAG_CHALLENGE = {
+        (byte) 0x7B, (byte) 0xB5, (byte) 0x2D, (byte) 0x7A,
+        (byte) 0x9F, (byte) 0xEF, (byte) 0x58, (byte) 0x32,
+        (byte) 0x3E, (byte) 0xB1, (byte) 0xBF, (byte) 0x7A,
+        (byte) 0x40, (byte) 0x7D, (byte) 0xB3, (byte) 0x82,
+        (byte) 0xD2, (byte) 0xF3, (byte) 0xF2, (byte) 0xD8,
+        (byte) 0x1B, (byte) 0xB1, (byte) 0x22, (byte) 0x4F,
+        (byte) 0x49, (byte) 0xFE, (byte) 0x51, (byte) 0x8F,
+        (byte) 0x6D, (byte) 0x48, (byte) 0xD3, (byte) 0x7C,
+    };
 
     /*
      * Scratch layout. Every signature lives entirely in this transient buffer:
@@ -110,7 +98,12 @@ public final class Schnorr {
      *                          Before the multiply-add step, the same 32-byte slot at WORK_OFF
      *                          temporarily holds the BIP-340 aux randomness (consumed by the
      *                          synthetic-nonce hash before WORK is needed by `(k + e·d) mod n`).
-     *   HASH_TAG_OFF [354,386) SHA-256(tag) — refreshed on every taggedHashStart() call
+     *
+     * The previous revision reserved a 32-byte `HASH_TAG_OFF` slot to hold the running
+     * SHA-256(tag) digest; that slot is gone since {@link #HASH_OF_TAG_AUX} / {@link
+     * #HASH_OF_TAG_NONCE} / {@link #HASH_OF_TAG_CHALLENGE} are now precomputed constants fed
+     * directly into {@link MessageDigest#update}, saving 32 bytes of transient RAM and three
+     * SHA-256 invocations per signature (audit S3-08).
      */
     private static final short D_OFF = 0;
     private static final short T_OFF = 32;
@@ -120,8 +113,7 @@ public final class Schnorr {
     private static final short K_OFF = 226;
     private static final short M_OFF = 258;
     private static final short WORK_OFF = 290;
-    private static final short HASH_TAG_OFF = 354;
-    private static final short SCRATCH_LEN = 386;
+    private static final short SCRATCH_LEN = 354;
 
     /** Size of a coordinate (x or y), the SHA-256 digest, and a mod-n scalar — all 32 bytes. */
     private static final short COORD_LEN = 32;
@@ -195,24 +187,27 @@ public final class Schnorr {
             // === Step 3: t = bytes(d) ⊕ tagged_hash("BIP0340/aux", aux) ===
             // aux is staged in WORK_OFF; the slot is reused for the multiply-add later.
             rng.nextBytes(scratch, WORK_OFF, COORD_LEN);
-            taggedHashStart(TAG_AUX_OFF, TAG_AUX_LEN);
+            taggedHashStart(HASH_OF_TAG_AUX);
             sha256.doFinal(scratch, WORK_OFF, COORD_LEN, scratch, T_OFF);
             for (short i = 0; i < COORD_LEN; i++) {
                 scratch[(short) (T_OFF + i)] ^= scratch[(short) (D_OFF + i)];
             }
 
             // === Step 4: rand = tagged_hash("BIP0340/nonce", t ‖ bytes(P) ‖ m) ===
-            taggedHashStart(TAG_NONCE_OFF, TAG_NONCE_LEN);
+            taggedHashStart(HASH_OF_TAG_NONCE);
             sha256.update(scratch, T_OFF, COORD_LEN);
             sha256.update(scratch, (short) (P_OFF + 1), COORD_LEN); // P.x (skip the 0x04 prefix)
             sha256.doFinal(scratch, M_OFF, COORD_LEN, scratch, K_OFF);
 
             // === Step 5: k' = int(rand) mod n; reject k' == 0 ===
-            // rand < 2^256 and n > 2^255, so a single conditional subtract suffices.
-            if (!Bignat.lessThan(scratch, K_OFF, ModN.SECP256K1_N, (short) 0, COORD_LEN)) {
-                Bignat.sub(scratch, K_OFF, ModN.SECP256K1_N, (short) 0, COORD_LEN);
-            }
-            if (Bignat.isZero(scratch, K_OFF, COORD_LEN)) {
+            // rand < 2^256 and n > 2^255 so a single conditional subtract of n suffices. We run
+            // the subtract through a mask-derived predicate so the cost is constant regardless
+            // of whether the unreduced value was below or above n (audit S2-03 mitigation).
+            short kLessN =
+                    Bignat.ctLessThan(scratch, K_OFF, ModN.SECP256K1_N, (short) 0, COORD_LEN);
+            Bignat.condSubInPlace(
+                    scratch, K_OFF, ModN.SECP256K1_N, (short) 0, COORD_LEN, (short) ~kLessN);
+            if (Bignat.ctIsZero(scratch, K_OFF, COORD_LEN) != 0) {
                 ISOException.throwIt(Constants.SW_INTERNAL_ERROR);
             }
 
@@ -224,13 +219,14 @@ public final class Schnorr {
             }
 
             // === Step 7: e = int(tagged_hash("BIP0340/challenge", R.x ‖ P.x ‖ m)) mod n ===
-            taggedHashStart(TAG_CHALLENGE_OFF, TAG_CHALLENGE_LEN);
+            taggedHashStart(HASH_OF_TAG_CHALLENGE);
             sha256.update(scratch, (short) (R_OFF + 1), COORD_LEN); // R.x
             sha256.update(scratch, (short) (P_OFF + 1), COORD_LEN); // P.x
             sha256.doFinal(scratch, M_OFF, COORD_LEN, scratch, E_OFF);
-            if (!Bignat.lessThan(scratch, E_OFF, ModN.SECP256K1_N, (short) 0, COORD_LEN)) {
-                Bignat.sub(scratch, E_OFF, ModN.SECP256K1_N, (short) 0, COORD_LEN);
-            }
+            short eLessN =
+                    Bignat.ctLessThan(scratch, E_OFF, ModN.SECP256K1_N, (short) 0, COORD_LEN);
+            Bignat.condSubInPlace(
+                    scratch, E_OFF, ModN.SECP256K1_N, (short) 0, COORD_LEN, (short) ~eLessN);
 
             // === Step 8: s = (k + e · d) mod n ===
             // 8a) e · d (32×32 → 64) into WORK_OFF.
@@ -280,14 +276,16 @@ public final class Schnorr {
 
     /**
      * Initialises the SHA-256 instance for a tagged-hash computation: seeds the digest state with
-     * {@code SHA256(tag) ‖ SHA256(tag)}, leaving the caller free to {@link MessageDigest#update
-     * update} message segments and finalise with {@link MessageDigest#doFinal doFinal}.
+     * {@code SHA256(tag) ‖ SHA256(tag)} by reading the precomputed digest from one of {@link
+     * #HASH_OF_TAG_AUX} / {@link #HASH_OF_TAG_NONCE} / {@link #HASH_OF_TAG_CHALLENGE} twice in a
+     * row, leaving the caller free to {@link MessageDigest#update update} message segments and
+     * finalise with {@link MessageDigest#doFinal doFinal}. The earlier revision called {@code
+     * SHA256(tag)} live; the precomputed constants eliminate three SHA-256 invocations per
+     * signature (audit S3-08).
      */
-    private void taggedHashStart(short tagOff, short tagLen) {
+    private void taggedHashStart(byte[] tagHash) {
         sha256.reset();
-        sha256.doFinal(TAGS, tagOff, tagLen, scratch, HASH_TAG_OFF);
-        sha256.reset();
-        sha256.update(scratch, HASH_TAG_OFF, COORD_LEN);
-        sha256.update(scratch, HASH_TAG_OFF, COORD_LEN);
+        sha256.update(tagHash, (short) 0, COORD_LEN);
+        sha256.update(tagHash, (short) 0, COORD_LEN);
     }
 }
