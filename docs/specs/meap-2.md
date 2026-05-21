@@ -1,6 +1,7 @@
 ---
 meap: 2
 title: Secure Channel — ECDH + AES-256-CBC + HMAC-SHA-256
+description: Ephemeral-ECDH handshake on secp256k1, HKDF-SHA-256 key schedule and an authenticated record layer that wraps every inner-band command.
 status: Final
 type: Standards Track
 category: Wire
@@ -42,7 +43,7 @@ A conforming applet MUST implement, and a conforming host MUST drive, exactly th
 - **Confidentiality**: AES-256-CBC with PKCS#5 padding (`Cipher.ALG_AES_BLOCK_128_CBC_NOPAD` plus an explicit padding step in software).
 - **Authentication**: HMAC-SHA-256 (`Signature.ALG_HMAC_SHA_256`), output truncated to the leftmost 16 bytes.
 
-This suite is advertised by the `CAP_SC_CBC_HMAC` capability bit (mask `0x0010` per [MEAP-1](./meap-1.md)). The capability bit `CAP_SC_GCM` (mask `0x0008`) is reserved for a future AES-GCM suite and MUST NOT be set in this revision.
+This suite is advertised by the `CAP_SC_CBC_HMAC` capability bit (mask `0x0010` per [MEAP-1](./meap-1.md)). A future MEAP MAY introduce additional Secure Channel suites and allocate further capability bits at that time.
 
 ### Handshake — `INIT_SECURE_CHANNEL` (INS `0x10`)
 
@@ -174,7 +175,7 @@ JCAlgTest's [survey of 112 production cards](https://jcalgtest.org/) finds `AEAD
 1. The MAC verification is constant-time (`ConstantTime.equals`).
 2. The plaintext is **never** parsed before the MAC has been verified (the MAC-then-decrypt order).
 
-A future MEAP MAY introduce an AES-GCM cipher suite under the `CAP_SC_GCM` capability bit once silicon support is broader. Such a MEAP would assign a different HKDF `info` label so that the two suites cannot be confused for one another by a host.
+A future MEAP MAY introduce an AES-GCM cipher suite once silicon support is broader. Such a MEAP would assign a different HKDF `info` label so that the two suites cannot be confused for one another by a host.
 
 ### Why ephemeral ECDH on both sides
 
@@ -202,7 +203,36 @@ N/A — this is the v1.0 wire. A future MEAP MAY introduce an alternative cipher
 
 ## Test Vectors
 
-Reproducible vectors require an ephemeral keypair on the host side, which makes pinning byte-level expected output across runs impossible. Instead the reference test suite in this repository pins the **invariants**:
+The end-to-end handshake is non-deterministic (each side draws a fresh ephemeral keypair), but the KDF schedule from §*Key derivation* is purely deterministic given its three inputs. The reference test suite pins both surfaces.
+
+### KDF vector (deterministic)
+
+Given the following synthetic ECDH outputs — the byte values are not on-curve points; they are chosen for ease of reproduction by any host SDK with an HMAC-SHA-256 implementation:
+
+```text
+client_eph_pub_x = 32 × 0x11
+card_eph_pub_x   = 32 × 0x22
+shared_x         = 32 × 0x33
+salt             = client_eph_pub_x ‖ card_eph_pub_x  ; 64 bytes total (32 × 0x11 then 32 × 0x22)
+ikm              = shared_x                            ; 32 bytes
+info             = "meowl-sc-v1"                       ; 11 ASCII bytes, no terminating NUL
+L                = 80
+```
+
+A conforming HKDF-SHA-256 implementation MUST produce, byte-for-byte:
+
+```text
+PRK     = 27d5c053aba7808dccba40fc66bfa0094129483e592db687e7345ec0550da58e
+K_enc   = 6189c1be9f1bb2feb34f38887be5e37f8360d16ba16f845cba9827dc6e8d1d3c
+K_mac   = e22e70e0bc34d1e073d444dacc8f3065195571aef13ff7232387c8cf70432317
+IV_base = 215d786fc0934b749621541e7203add4
+```
+
+This vector is pinned in [`SecureChannelTest.kdfVectorMatchesPinnedExpectation`](../../tests/src/test/java/social/meowl/applet/SecureChannelTest.java) and is the single check a host SDK author can run to confirm their HKDF + label routing matches the reference applet without standing up a JCardSim end-to-end.
+
+### Envelope invariants (non-deterministic)
+
+The end-to-end handshake produces fresh ephemeral keypairs on every run, so byte-level signature / `IV` pinning is not possible. The reference test suite pins the **invariants**:
 
 - After a successful handshake, the next `OPEN_SECURE_CHANNEL` envelope decrypts to the inner APDU verbatim, regardless of length and content.
 - A modified MAC byte → `6FB2`.

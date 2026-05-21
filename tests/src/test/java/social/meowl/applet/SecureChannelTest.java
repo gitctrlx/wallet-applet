@@ -207,6 +207,34 @@ class SecureChannelTest {
     }
 
     @Test
+    @DisplayName("KDF vector pinned in MEAP-2 §Test Vectors matches the host-side HKDF reference")
+    void kdfVectorMatchesPinnedExpectation() {
+        byte[] clientX = filled((byte) 0x11, 32);
+        byte[] cardX = filled((byte) 0x22, 32);
+        byte[] sharedX = filled((byte) 0x33, 32);
+        byte[] salt = concat(clientX, cardX);
+        byte[] prk = HkdfSha256.extract(salt, sharedX);
+        byte[] okm = HkdfSha256.expand(prk, HKDF_INFO, 32 + 32 + 16);
+
+        assertEquals(
+                "27d5c053aba7808dccba40fc66bfa0094129483e592db687e7345ec0550da58e",
+                hex(prk),
+                "PRK must match the value pinned in MEAP-2 §Test Vectors §KDF vector");
+        assertEquals(
+                "6189c1be9f1bb2feb34f38887be5e37f8360d16ba16f845cba9827dc6e8d1d3c",
+                hex(Arrays.copyOfRange(okm, 0, 32)),
+                "K_enc must match MEAP-2 §Test Vectors §KDF vector");
+        assertEquals(
+                "e22e70e0bc34d1e073d444dacc8f3065195571aef13ff7232387c8cf70432317",
+                hex(Arrays.copyOfRange(okm, 32, 64)),
+                "K_mac must match MEAP-2 §Test Vectors §KDF vector");
+        assertEquals(
+                "215d786fc0934b749621541e7203add4",
+                hex(Arrays.copyOfRange(okm, 64, 80)),
+                "IV_base must match MEAP-2 §Test Vectors §KDF vector");
+    }
+
+    @Test
     @DisplayName("two consecutive envelopes succeed with monotonically increasing IVs")
     void twoEnvelopesMonotonicIv() throws Exception {
         Session session = openSession();
@@ -296,6 +324,12 @@ class SecureChannelTest {
         byte[] out = new byte[a.length + b.length];
         System.arraycopy(a, 0, out, 0, a.length);
         System.arraycopy(b, 0, out, a.length, b.length);
+        return out;
+    }
+
+    private static byte[] filled(byte value, int length) {
+        byte[] out = new byte[length];
+        Arrays.fill(out, value);
         return out;
     }
 

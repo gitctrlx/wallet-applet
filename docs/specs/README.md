@@ -6,16 +6,16 @@ MEAP-0 is itself a MEAP; it specifies the format, numbering, status lifecycle an
 
 ## Index
 
-| Number | Title | Status | Type | Category |
-| ------ | ----- | ------ | ---- | -------- |
-| [MEAP-0](./meap-0.md) | MEAP process and template | Final | Process | — |
-| [MEAP-1](./meap-1.md) | Protocol framing — CLA, INS layout, ISO 7816-4 conformance | Final | Standards Track | Wire |
-| [MEAP-2](./meap-2.md) | Secure Channel — ECDH + AES-256-CBC + HMAC-SHA-256 | Final | Standards Track | Wire |
-| [MEAP-3](./meap-3.md) | Lifecycle, PIN/PUK and reset-to-factory | Final | Standards Track | Wire |
-| [MEAP-4](./meap-4.md) | Card identity — `authentikey` and manufacturer PKI | Final | Standards Track | Wire |
-| [MEAP-5](./meap-5.md) | Hierarchical-deterministic key derivation | Final | Standards Track | Crypto |
-| [MEAP-6](./meap-6.md) | Signing primitives — ECDSA, Schnorr, EdDSA | Final | Standards Track | Crypto |
-| [MEAP-7](./meap-7.md) | Status-word reference | Final | Standards Track | Wire |
+| Number | Title | Description | Status | Type | Category |
+| ------ | ----- | ----------- | ------ | ---- | -------- |
+| [MEAP-0](./meap-0.md) | MEAP process and template | Format, numbering, lifecycle and contribution workflow of the MEAP set itself. | Final | Process | — |
+| [MEAP-1](./meap-1.md) | Protocol framing | CLA byte, INS bands, outer-vs-inner frame partition, TLV layout and the `GET_INFO` record. | Final | Standards Track | Wire |
+| [MEAP-2](./meap-2.md) | Secure Channel | Ephemeral-ECDH handshake, HKDF-SHA-256 schedule and the authenticated record layer. | Final | Standards Track | Wire |
+| [MEAP-3](./meap-3.md) | Lifecycle and PIN/PUK | Four-state FSM, single PIN/PUK policy, three authorisation rules, multi-step reset. | Final | Standards Track | Wire |
+| [MEAP-4](./meap-4.md) | Card identity | `authentikey` keypair generated at install, preserved across reset, plus manufacturer PKI. | Final | Standards Track | Wire |
+| [MEAP-5](./meap-5.md) | HD key derivation | BIP-32 over secp256k1 and SLIP-10 hardened-only over Ed25519, sharing one master seed. | Final | Standards Track | Crypto |
+| [MEAP-6](./meap-6.md) | Signing primitives | ECDSA, BIP-340 Schnorr and RFC 8032 Ed25519 with a hash-only invariant. | Final | Standards Track | Crypto |
+| [MEAP-7](./meap-7.md) | Status-word reference | Single-source enumeration of every two-byte status word a conforming applet may emit. | Final | Standards Track | Wire |
 
 ## Status definitions
 
@@ -42,3 +42,11 @@ The reference implementation lives in [`applet/src/main/java/social/meowl/applet
 - A MEAP may declare itself `replaces:` an earlier MEAP only when accepted as Final; the replaced MEAP simultaneously moves to **Superseded** with a back-reference in its Status block.
 
 See [MEAP-0](./meap-0.md) for the full editorial template, header schema and process timing rules.
+
+## Contributing
+
+To propose a new MEAP, open an issue describing the problem first, then submit a pull request adding `meap-<n>.md` against the editorial template in [MEAP-0 §Specification](./meap-0.md). Editors will assign the number on PR open. Substantive amendments to a Final MEAP MUST be made via a new MEAP that lists the affected one in its `replaces:` header — the in-place text of a Final MEAP changes only for editorial errata.
+
+## License
+
+Every MEAP is licensed under the project licence ([AGPL-3.0-or-later](../../LICENSE)) unless its Copyright section says otherwise.

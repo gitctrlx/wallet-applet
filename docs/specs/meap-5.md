@@ -1,6 +1,7 @@
 ---
 meap: 5
 title: Hierarchical-deterministic key derivation
+description: BIP-32 over secp256k1 and SLIP-10 hardened-only over Ed25519, both rooted in a single HMAC-SHA-512 master derived from one BIP-39 seed.
 status: Final
 type: Standards Track
 category: Crypto

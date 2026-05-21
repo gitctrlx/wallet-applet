@@ -1,6 +1,7 @@
 ---
 meap: 4
 title: Card identity — authentikey and manufacturer PKI
+description: Long-lived authentikey keypair generated at applet install, preserved across reset, and the optional manufacturer PKI signing ceremony.
 status: Final
 type: Standards Track
 category: Wire
@@ -35,7 +36,7 @@ Models 2 and 3 give the manufacturer too much authority — a malicious or compr
 
 ### `authentikey` keypair
 
-A conforming applet MUST generate the `authentikey` keypair exactly **once**, at applet `install` time, using `RandomData.ALG_SECURE_RANDOM` (or the strongest available CSPRNG advertised by the platform). The keypair is over secp256k1 with the standard SEC1 parameters.
+A conforming applet MUST generate the `authentikey` keypair exactly **once**, at applet `install` time, by calling `KeyPair.genKeyPair()` on a freshly built secp256k1 keypair object. The keygen primitive draws from the platform's CSPRNG (typically `RandomData.ALG_KEYGENERATION` on JC 3.0.4+ silicon) without the applet selecting an explicit `RandomData` algorithm. The keypair is over secp256k1 with the standard SEC1 parameters.
 
 A conforming applet MUST NOT expose any APDU that re-generates, replaces, imports or exports the `authentikey` private half. The private half is reachable only by:
 

@@ -1,6 +1,7 @@
 ---
 meap: 7
 title: Status-word reference
+description: Single-source enumeration of every two-byte status word a conforming applet may emit, with triggering conditions and owning MEAP per code.
 status: Final
 type: Standards Track
 category: Wire
@@ -37,7 +38,7 @@ Where a status word's low byte carries a payload (e.g. `63Cn` for PIN retries, `
 
 | SW | Mnemonic | Source | Triggering condition | MEAP |
 | -- | -------- | ------ | -------------------- | ---- |
-| `9000` | `SW_NO_ERROR` | ISO 7816-4 | Successful execution. The response data field, if any, is the payload defined by the corresponding MEAP. | all |
+| `9000` | (no constant) | ISO 7816-4 | Successful execution. The response data field, if any, is the payload defined by the corresponding MEAP. Hosts MUST treat any other status word as a failure. | all |
 | `63Cn` | `SW_PIN_RETRIES_BASE + n` | ISO 7816-4 | `VERIFY_PIN`, `CHANGE_PIN` or `UNBLOCK_PIN` failed authentication; `n ∈ {1, 2}` retries remain. The card transitions to `6983` once `n` would otherwise drop to 0. | [3](./meap-3.md) |
 | `6700` | `SW_WRONG_LENGTH` | ISO 7816-4 | Data field length does not match the layout the INS requires. Specifically: ECDSA / Schnorr inner data length ≠ `1 + 4·depth + 32`; Ed25519 inner data length < `1 + 4·depth`; `EXPORT_XPUB` inner data length ≠ `2 + 4·depth`; `IMPORT_SEED` `seed_len ∉ [16, 64]`; `SETUP` PIN/PUK lengths outside policy; `VERIFY_PIN` length outside `[4, 16]` (does NOT consume a retry); `IMPORT_PKI_CERT` chunk parameters out of range; the Secure Channel envelope shorter than the minimum `IV + 1 block + MAC = 48` bytes. | [1](./meap-1.md), [2](./meap-2.md), [3](./meap-3.md), [4](./meap-4.md), [5](./meap-5.md), [6](./meap-6.md) |
 | `6982` | `SW_SECURITY_STATUS_NOT_SATISFIED` | ISO 7816-4 | The command requires `pin_verified` to be true and it is not. Hosts MUST run `VERIFY_PIN` inside the current Secure Channel session and retry. | [3](./meap-3.md), [5](./meap-5.md), [6](./meap-6.md) |
@@ -57,7 +58,7 @@ The `6Fxx` range is reserved by ISO 7816-4 for application-defined errors. The c
 
 | SW | Mnemonic | Triggering condition | MEAP |
 | -- | -------- | -------------------- | ---- |
-| `6FA0` | `SW_RESET_COUNTDOWN_BASE + 0` (`SW_RESET_DONE`) | The fourth consecutive `RESET_TO_FACTORY` invocation; the wipe has been performed. The next `GET_INFO` shows lifecycle `UNINITIALIZED` with the `authentikey` preserved. | [3](./meap-3.md) |
+| `6FA0` | `SW_RESET_COUNTDOWN_BASE + 0` | The fourth consecutive `RESET_TO_FACTORY` invocation; the wipe has been performed. The next `GET_INFO` shows lifecycle `UNINITIALIZED` with the `authentikey` preserved. Often referred to as *reset-done*. | [3](./meap-3.md) |
 | `6FA1` | `SW_RESET_COUNTDOWN_BASE + 1` | Three consecutive `RESET_TO_FACTORY` invocations have been received; one more is required to trigger the wipe. | [3](./meap-3.md) |
 | `6FA2` | `SW_RESET_COUNTDOWN_BASE + 2` | Two consecutive `RESET_TO_FACTORY` invocations have been received. | [3](./meap-3.md) |
 | `6FA3` | `SW_RESET_COUNTDOWN_BASE + 3` | One `RESET_TO_FACTORY` invocation has been received; the counter starts at 4 on every applet `select()` and is rearmed by every non-`RESET_TO_FACTORY` APDU. | [3](./meap-3.md) |
@@ -134,7 +135,7 @@ The reference test suite covers every status word in the table:
 
 ## Reference Implementation
 
-- Status-word constants: [`Constants`](../../applet/src/main/java/social/meowl/applet/Constants.java) — every value listed in this MEAP is declared there and only there.
+- Status-word constants: [`Constants`](../../applet/src/main/java/social/meowl/applet/Constants.java) — every named mnemonic in the tables above corresponds to a declaration in this file. The bare `9000` success code is written verbatim at each call site rather than via a constant.
 - Reference test classes: enumerated in *Test Vectors* above.
 
 ## Security Considerations

@@ -1,6 +1,7 @@
 ---
 meap: 3
 title: Lifecycle, PIN/PUK and reset-to-factory
+description: Four-state lifecycle FSM, single PIN/PUK authentication policy, three authorisation rules and the multi-step reset-to-factory primitive.
 status: Final
 type: Standards Track
 category: Wire
@@ -152,7 +153,7 @@ A conforming applet MUST implement a multi-step reset trigger:
 
 - An internal `remaining` counter starts at **4** on every applet `select()` and is set back to 4 by **every non-`RESET_TO_FACTORY` APDU** (including outer-frame APDUs and any `OPEN_SECURE_CHANNEL` envelope, regardless of the inner INS or its outcome).
 - Each `RESET_TO_FACTORY` APDU decrements `remaining` by 1.
-- After the decrement, the applet emits status word `0x6FA0 + remaining`. The first three invocations therefore return `0x6FA3`, `0x6FA2`, `0x6FA1` in succession. The fourth invocation triggers the wipe and returns `0x6FA0` (`SW_RESET_DONE`).
+- After the decrement, the applet emits status word `0x6FA0 + remaining`. The first three invocations therefore return `0x6FA3`, `0x6FA2`, `0x6FA1` in succession. The fourth invocation triggers the wipe and returns `0x6FA0` (the *reset-done* code; see [MEAP-7](./meap-7.md)).
 
 `RESET_TO_FACTORY` carries no inner data. P1, P2 and LC MUST be `0x00`; the applet MUST NOT inspect them.
 

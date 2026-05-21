@@ -1,6 +1,7 @@
 ---
 meap: 1
 title: Protocol framing — CLA, INS layout, ISO 7816-4 conformance
+description: CLA byte, INS bands, outer-vs-inner frame partition, TLV layout and the GET_INFO record that frames every other MEAP's payload.
 status: Final
 type: Standards Track
 category: Wire
@@ -106,13 +107,12 @@ Future MEAPs MAY add tags `0x06` and above; conforming hosts MUST tolerate unkno
 | 0 | `0x0001` | `CAP_K1_ECDSA` — secp256k1 ECDSA signing per [MEAP-6 §SIGN_ECDSA_K1](./meap-6.md). |
 | 1 | `0x0002` | `CAP_K1_SCHNORR` — BIP-340 Schnorr signing per [MEAP-6 §SIGN_SCHNORR_K1](./meap-6.md). |
 | 2 | `0x0004` | `CAP_ED25519` — RFC 8032 Ed25519 signing per [MEAP-6 §SIGN_ED25519](./meap-6.md). |
-| 3 | `0x0008` | `CAP_SC_GCM` — Reserved for a future AES-GCM Secure Channel suite. MUST be `0` in this revision. |
 | 4 | `0x0010` | `CAP_SC_CBC_HMAC` — AES-256-CBC + HMAC-SHA-256 Secure Channel per [MEAP-2](./meap-2.md). |
 | 5 | `0x0020` | `CAP_PKI` — Manufacturer PKI personalisation flow per [MEAP-4 §PKI](./meap-4.md). |
 | 6 | `0x0040` | `CAP_RESET_TO_FACTORY` — Multi-step factory reset per [MEAP-3 §Reset-to-Factory](./meap-3.md). |
 | 7 | `0x0080` | `CAP_BIP32` — secp256k1 BIP-32 derivation per [MEAP-5 §BIP-32](./meap-5.md). |
 | 8 | `0x0100` | `CAP_SLIP10` — Ed25519 SLIP-10 derivation per [MEAP-5 §SLIP-10](./meap-5.md). |
-| 9–15 | — | Reserved. MUST be `0`. |
+| 3, 9–15 | — | Reserved. MUST be `0`. A successor MEAP that allocates one of these bits supersedes this MEAP’s bit-allocation table. |
 
 A conforming applet on this revision MUST set at minimum `CAP_SC_CBC_HMAC | CAP_RESET_TO_FACTORY` because those two capabilities are unconditional under MEAP-2 and MEAP-3. A conforming host MAY discover further features by inspecting the rest of the bitmap; absent a bit, the host MUST behave as if the corresponding INS would return `6D00` (INS not supported) regardless of whether the underlying applet would actually accept it.
 
@@ -168,14 +168,14 @@ N/A — this is the v1.0 wire. There is no prior meowl protocol revision to be c
 A freshly installed applet, immediately after a successful applet `install`, MUST respond to the outer-frame APDU `0x80 0x01 0x00 0x00 0x00` (`GET_INFO`, no data, no expected length) with status `9000` and a TLV body of the form:
 
 ```text
-01 02 ?? ??     ; TAG_PROTOCOL_VERSION  = 0x0001 in this revision
+01 02 01 00     ; TAG_PROTOCOL_VERSION  = 0x0100 in this revision
 02 02 ?? ??     ; TAG_APPLET_VERSION    = applet-defined
 03 01 00        ; TAG_LIFECYCLE_STATE   = 0x00 (UNINITIALIZED)
 04 02 00 50     ; TAG_CAPABILITIES      = CAP_RESET_TO_FACTORY | CAP_SC_CBC_HMAC
 05 21 02|03 .. ; TAG_AUTHENTIKEY_PUBKEY = 33-byte SEC1-compressed point (prefix 0x02 or 0x03)
 ```
 
-The `TAG_CAPABILITIES` value `0x0050` in the listing above is the minimum mandatory set. A specific applet build will set additional bits per its supported MEAPs; for example, the reference applet in this repository emits `0x01F7` (every defined bit except the reserved `CAP_SC_GCM`).
+The `TAG_CAPABILITIES` value `0x0050` in the listing above is the minimum mandatory set. A specific applet build will set additional bits per its supported MEAPs; for example, the reference applet in this repository emits `0x01F7` (every currently allocated bit).
 
 A non-installed applet MUST respond with the underlying GlobalPlatform / ISO 7816-4 default and not be reachable as a meowl applet at all; reaching `GET_INFO` is itself a sign of correct installation.
 

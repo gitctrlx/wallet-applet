@@ -1,6 +1,7 @@
 ---
 meap: 0
 title: MEAP process and template
+description: Format, numbering, lifecycle and contribution workflow of the MEAP set itself.
 status: Final
 type: Process
 created: 2026-05-19
@@ -32,6 +33,7 @@ Every MEAP MUST begin with a YAML preamble delimited by `---` lines. The preambl
 | --- | --- | --- | --- |
 | `meap` | yes | integer ≥ 0 | The MEAP number. Numbers are allocated densely in submission order and are never re-used. |
 | `title` | yes | short string | A descriptive title, written as a noun phrase, max 70 characters. |
+| `description` | yes | short string | A one-sentence summary of the MEAP, written in declarative prose, max 140 characters. Used by the index page in [`README.md`](./README.md) and by any external tooling that scrapes the MEAP set. |
 | `status` | yes | enum | One of: `Idea`, `Draft`, `Last Call`, `Final`, `Stagnant`, `Withdrawn`, `Superseded`. |
 | `type` | yes | enum | One of: `Standards Track`, `Informational`, `Process`. |
 | `category` | conditional | enum | REQUIRED iff `type = Standards Track`. One of: `Wire`, `Crypto`, `Process`. |
@@ -110,6 +112,9 @@ The departures from those models are deliberate:
 - **Numbering is dense**. EIP allows huge gaps; we expect ≤ 50 MEAPs in the v1.0 horizon and dense numbering is faster to read.
 - **Process MEAPs and Informational MEAPs use the same template** as Standards Track ones, with two sections optional. EIP splits the template per type; we don't, because the simplification is worth the redundancy.
 - **No `discussions-to:` header**. We prefer GitHub issues threaded under the PR; a separate URL field invites link rot.
+- **No `Review` status between Draft and Last Call**. EIP-1 inserts a Review phase that, in practice, has been used to gate editor sign-off before the public comment window opens. With a small editor team and a single-repository review surface (the GitHub PR itself), the Review phase collapses into ordinary PR review without ceremony, so the lifecycle stays at four active states.
+- **No `last-call-deadline:` header**. The 14-day Last Call window is documented in prose (see *Status lifecycle* above) rather than encoded as a per-MEAP date field. A dated field is only useful when multiple MEAPs are simultaneously in Last Call against a fixed editorial calendar; we do not anticipate that throughput within the v1.0 horizon.
+- **No multi-editor formal roster**. EIP-1 maintains a list of editors and a transfer-of-ownership procedure. The meowl project is small enough that any committer with write access to the repository acts as an editor de facto; if the project ever grows enough to need a roster, a successor MEAP-0 will introduce one and supersede this one.
 
 ## Backwards Compatibility
 
