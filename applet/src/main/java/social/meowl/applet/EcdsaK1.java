@@ -5,7 +5,6 @@
 package social.meowl.applet;
 
 import javacard.framework.ISOException;
-import javacard.framework.JCSystem;
 import javacard.framework.Util;
 import javacard.security.ECPrivateKey;
 import javacard.security.KeyBuilder;
@@ -64,7 +63,17 @@ public final class EcdsaK1 {
     private static final short S_OFF = (short) (R_OFF + ModN.LEN);
     private static final short SCRATCH_LEN = (short) (S_OFF + ModN.LEN);
 
-    public EcdsaK1(Bip32 bip32) {
+    /**
+     * @param sharedScratch the singleton transient scratch buffer allocated by {@link MeowlApplet}.
+     *     Must be at least {@link #SCRATCH_LEN} bytes. The same buffer is reused across signing INS
+     *     handlers ({@link Schnorr}, {@link Ed25519}, this class) and the handshake scratch in
+     *     {@link SecureChannel}, since APDU dispatch is single-threaded and no two of those flows
+     *     can run concurrently.
+     */
+    public EcdsaK1(Bip32 bip32, byte[] sharedScratch) {
+        if ((short) sharedScratch.length < SCRATCH_LEN) {
+            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
+        }
         this.bip32 = bip32;
         try {
             this.ecdsa = Signature.getInstance(Signature.ALG_ECDSA_SHA_256, false);
@@ -74,10 +83,13 @@ public final class EcdsaK1 {
             // persistent only on silicon that refuses the transient form.
             ECPrivateKey signKey;
             try {
+                // TRANSIENT_RESET — see Bip32.scalarKey for the rationale (J3R180 DESELECT pool
+                // is too small to host this key alongside the rest of the applet's transient
+                // state).
                 signKey =
                         (ECPrivateKey)
                                 KeyBuilder.buildKey(
-                                        KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT,
+                                        KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_RESET,
                                         KeyBuilder.LENGTH_EC_FP_256,
                                         false);
             } catch (javacard.security.CryptoException e) {
@@ -93,7 +105,7 @@ public final class EcdsaK1 {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
             throw new RuntimeException(); // unreachable
         }
-        this.scratch = JCSystem.makeTransientByteArray(SCRATCH_LEN, JCSystem.CLEAR_ON_DESELECT);
+        this.scratch = sharedScratch;
     }
 
     /**

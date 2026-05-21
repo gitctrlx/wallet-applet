@@ -5,18 +5,18 @@
 package social.meowl.applet;
 
 import javacard.framework.ISOException;
+import javacard.framework.JCSystem;
 import javacard.framework.Util;
-import javacard.security.HMACKey;
-import javacard.security.KeyBuilder;
 import javacard.security.MessageDigest;
-import javacard.security.Signature;
 
 /**
  * RFC 5869 HKDF-SHA-256.
  *
- * <p>Implements the two-stage HKDF construction on top of the native {@link
- * Signature#ALG_HMAC_SHA_256} primitive (available since JavaCard 3.0.4 and ubiquitously supported
- * in 3.0.5+ silicon):
+ * <p>Implements the two-stage HKDF construction on top of {@link HmacSha} so the same code path
+ * works on every JC platform we target. {@link HmacSha} transparently selects the platform's native
+ * HMAC primitive when available (jcardsim, JCOP3 J3H082, …) and otherwise falls back to the RFC
+ * 2104 software construction over {@link MessageDigest#ALG_SHA_256} (J3R180 and the rest of the
+ * JCOP4 SECID family that omits {@code Signature.ALG_HMAC_SHA_*} from the firmware).
  *
  * <ul>
  *   <li><b>Extract</b>: {@code PRK = HMAC-SHA-256(salt, IKM)} — concentrates input keying material
@@ -26,11 +26,11 @@ import javacard.security.Signature;
  *       material.
  * </ul>
  *
- * <p>All operations write into caller-supplied buffers. The class holds two single-purpose {@link
- * HMACKey} instances (one for the {@code salt} role, one for the {@code PRK} role) backed by {@code
- * TYPE_HMAC_TRANSIENT_DESELECT} so key material is cleared whenever the applet is deselected. A
- * small {@code CLEAR_ON_DESELECT} scratch buffer holds the running {@code T(i-1)} state during
- * {@link #expand(byte[], short, byte[], short, short)}.
+ * <p>All operations write into caller-supplied buffers. The class delegates the keyed compression
+ * to a shared {@link HmacSha} engine handed in via the constructor, and holds a small {@code
+ * CLEAR_ON_RESET} scratch buffer for the running {@code T(i-1)} state during {@link #expand(byte[],
+ * short, byte[], short, short)}. The PRK is also held in transient memory so it is wiped on reset /
+ * power-off.
  */
 public final class Hkdf {
 
@@ -40,47 +40,32 @@ public final class Hkdf {
     /** Hard ceiling on a single HKDF expansion, per RFC 5869 §2.3. */
     public static final short MAX_EXPAND_LEN = (short) (255 * HASH_LEN);
 
-    private final Signature hmac;
-    private final HMACKey saltKey;
-    private final HMACKey prkKey;
+    private final HmacSha hmac;
     private final byte[] prk;
     private final byte[] scratch;
 
     /**
      * One-byte transient buffer holding the HKDF counter byte {@code i} fed into the {@code T(i) =
      * HMAC(PRK, T(i-1) ‖ info ‖ i)} computation in {@link #expand}. Dedicated so we do not mutate
-     * {@link #scratch} between {@code hmac.update(scratch, …)} and {@code hmac.sign(…)} — JC's
-     * {@code Signature.update} is allowed by the spec to defer ingestion until the next sign(), and
-     * that deferred ingestion would observe the post-mutation byte if we wrote into the same buffer
-     * (audit M-1.14).
+     * {@link #scratch} between {@code hmac.update(scratch, …)} and {@code hmac.doFinal(…)} — JC's
+     * underlying {@code Signature.update} is allowed by the spec to defer ingestion until the next
+     * sign(), and that deferred ingestion would observe the post-mutation byte if we wrote into the
+     * same buffer (audit M-1.14).
      */
     private final byte[] counterBuf;
 
-    /** Instantiates an HKDF helper, allocating its transient state. */
-    public Hkdf() {
-        this.hmac = Signature.getInstance(Signature.ALG_HMAC_SHA_256, false);
-        // We use the longest reasonable key length the platform exposes; HMAC trims internally.
-        this.saltKey =
-                (HMACKey)
-                        KeyBuilder.buildKey(
-                                KeyBuilder.TYPE_HMAC_TRANSIENT_DESELECT,
-                                (short) (HASH_LEN * 8),
-                                false);
-        this.prkKey =
-                (HMACKey)
-                        KeyBuilder.buildKey(
-                                KeyBuilder.TYPE_HMAC_TRANSIENT_DESELECT,
-                                (short) (HASH_LEN * 8),
-                                false);
-        this.prk =
-                javacard.framework.JCSystem.makeTransientByteArray(
-                        HASH_LEN, javacard.framework.JCSystem.CLEAR_ON_DESELECT);
-        this.scratch =
-                javacard.framework.JCSystem.makeTransientByteArray(
-                        HASH_LEN, javacard.framework.JCSystem.CLEAR_ON_DESELECT);
-        this.counterBuf =
-                javacard.framework.JCSystem.makeTransientByteArray(
-                        (short) 1, javacard.framework.JCSystem.CLEAR_ON_DESELECT);
+    /**
+     * @param sharedHmac256 a shared {@link HmacSha} engine configured for HMAC-SHA-256. Hkdf does
+     *     not own the engine — the surrounding {@link SecureChannel} hands the same instance to
+     *     this constructor and to its envelope-MAC code path so a single software-fallback engine
+     *     suffices on cards without native HMAC. APDU dispatch is single-threaded, so sharing is
+     *     safe.
+     */
+    public Hkdf(HmacSha sharedHmac256) {
+        this.hmac = sharedHmac256;
+        this.prk = JCSystem.makeTransientByteArray(HASH_LEN, JCSystem.CLEAR_ON_RESET);
+        this.scratch = JCSystem.makeTransientByteArray(HASH_LEN, JCSystem.CLEAR_ON_RESET);
+        this.counterBuf = JCSystem.makeTransientByteArray((short) 1, JCSystem.CLEAR_ON_RESET);
     }
 
     /**
@@ -111,13 +96,11 @@ public final class Hkdf {
         if (saltLen == 0) {
             // RFC 5869 §2.2: if salt is empty, use HashLen zero bytes.
             Util.arrayFillNonAtomic(scratch, (short) 0, HASH_LEN, (byte) 0);
-            saltKey.setKey(scratch, (short) 0, HASH_LEN);
+            hmac.init(scratch, (short) 0, HASH_LEN);
         } else {
-            saltKey.setKey(salt, saltOffset, saltLen);
+            hmac.init(salt, saltOffset, saltLen);
         }
-        hmac.init(saltKey, Signature.MODE_SIGN);
-        hmac.sign(ikm, ikmOffset, ikmLen, prk, (short) 0);
-        prkKey.setKey(prk, (short) 0, HASH_LEN);
+        hmac.doFinal(ikm, ikmOffset, ikmLen, prk, (short) 0);
     }
 
     /**
@@ -153,22 +136,16 @@ public final class Hkdf {
         boolean firstBlock = true;
 
         while (remaining > 0) {
-            hmac.init(prkKey, Signature.MODE_SIGN);
+            hmac.init(prk, (short) 0, HASH_LEN);
             if (!firstBlock) {
                 hmac.update(scratch, (short) 0, HASH_LEN);
             }
             if (infoLen > 0) {
                 hmac.update(info_or_null, infoOffset, infoLen);
             }
-            // Feed the counter byte from a dedicated 1-byte buffer (audit M-1.14): JC's
-            // Signature.update is allowed to defer ingestion until sign(), so we must not mutate
-            // scratch between the update() above and the sign() below if scratch is also the
-            // input buffer.
             counterBuf[0] = counter;
-            // We need T(i) as a contiguous 32-byte buffer for the next iteration's update().
-            // Write into scratch first, then copy out (or directly into out when this is the last
-            // partial block).
-            hmac.sign(counterBuf, (short) 0, (short) 1, scratch, (short) 0);
+            // T(i) lands in scratch so the next iteration can prefix the new input with it.
+            hmac.doFinal(counterBuf, (short) 0, (short) 1, scratch, (short) 0);
             short take = remaining < HASH_LEN ? remaining : HASH_LEN;
             Util.arrayCopyNonAtomic(scratch, (short) 0, out, writeOffset, take);
             writeOffset += take;
@@ -180,8 +157,7 @@ public final class Hkdf {
 
     /** Resets the PRK material. Called by the Secure Channel when a session is torn down. */
     public void reset() {
-        saltKey.clearKey();
-        prkKey.clearKey();
+        hmac.reset();
         Util.arrayFillNonAtomic(prk, (short) 0, HASH_LEN, (byte) 0);
         Util.arrayFillNonAtomic(scratch, (short) 0, HASH_LEN, (byte) 0);
         counterBuf[0] = 0;

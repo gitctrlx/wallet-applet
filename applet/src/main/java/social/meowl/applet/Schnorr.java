@@ -5,7 +5,6 @@
 package social.meowl.applet;
 
 import javacard.framework.ISOException;
-import javacard.framework.JCSystem;
 import javacard.framework.Util;
 import javacard.security.MessageDigest;
 import javacard.security.RandomData;
@@ -144,7 +143,17 @@ public final class Schnorr {
     private final RandomData rng;
     private final byte[] scratch;
 
-    public Schnorr(Bip32 bip32) {
+    /**
+     * @param sharedScratch the singleton transient scratch buffer allocated by {@link MeowlApplet}.
+     *     Must be at least {@link #SCRATCH_LEN} bytes. The same buffer is reused across signing INS
+     *     handlers ({@link EcdsaK1}, {@link Ed25519}, this class) and the handshake scratch in
+     *     {@link SecureChannel}, since APDU dispatch is single-threaded and no two of those flows
+     *     can run concurrently.
+     */
+    public Schnorr(Bip32 bip32, byte[] sharedScratch) {
+        if ((short) sharedScratch.length < SCRATCH_LEN) {
+            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
+        }
         this.bip32 = bip32;
         try {
             this.sha256 = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
@@ -162,7 +171,7 @@ public final class Schnorr {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
             throw new RuntimeException(); // unreachable
         }
-        this.scratch = JCSystem.makeTransientByteArray(SCRATCH_LEN, JCSystem.CLEAR_ON_DESELECT);
+        this.scratch = sharedScratch;
     }
 
     /**

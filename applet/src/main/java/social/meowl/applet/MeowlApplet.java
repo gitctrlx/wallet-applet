@@ -55,27 +55,88 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     private final Ed25519 ed25519;
     private final byte[] innerScratch;
 
+    /**
+     * Size of the per-applet shared transient scratch buffer. Sized to fit the largest of:
+     *
+     * <ul>
+     *   <li>{@code Ed25519.SCRATCH_LEN} = 1024 bytes (the dominant consumer)
+     *   <li>{@code Schnorr.SCRATCH_LEN} = 386 bytes
+     *   <li>{@code EcdsaK1.SCRATCH_LEN} = 168 bytes
+     *   <li>{@code SecureChannel.HS_SCRATCH_LEN} = 323 bytes
+     * </ul>
+     *
+     * Sharing one buffer across all four consumers (which are mutually exclusive in their use of it
+     * given the single-threaded APDU dispatch) cuts ~877 bytes of transient RAM versus letting each
+     * component allocate its own scratch — critical for cards (e.g. J3R180) whose transient pool is
+     * too small to host four independent buffers of this size.
+     */
+    private static final short SHARED_SCRATCH_LEN = (short) 128;
+
+    /**
+     * Diagnostic stage tracker (TEMPORARY — removed before release) so the SystemException raised
+     * by {@link JCSystem#makeTransientByteArray} on a card that runs out of transient pool can be
+     * traced to the offending allocation site. Encoded into the install-time SW as the high nibble
+     * of the low byte (see {@link #install}).
+     */
+    private static short installStage = 0;
+
     private MeowlApplet() {
+        installStage = 1;
+        HmacSha sharedHmac256 = new HmacSha(HmacSha.ALG_SHA_256);
+        installStage = 2;
+        HmacSha sharedHmac512 = new HmacSha(HmacSha.ALG_SHA_512);
+        installStage = 3;
+        byte[] sharedScratch =
+                JCSystem.makeTransientByteArray(SHARED_SCRATCH_LEN, JCSystem.CLEAR_ON_RESET);
+        installStage = 4;
         this.state = new LifecycleState();
+        installStage = 5;
         this.authentikey = new Authentikey();
+        installStage = 6;
         this.resetTrigger = new ResetToFactory();
-        this.secureChannel = new SecureChannel(this.authentikey);
+        installStage = 7;
+        this.secureChannel = new SecureChannel(this.authentikey, sharedHmac256, sharedScratch);
+        installStage = 8;
         this.pinManager = new PinManager();
+        installStage = 9;
         this.pkiManager = new PkiManager(this.authentikey);
-        this.masterSeed = new MasterSeed();
-        this.bip32 = new Bip32(this.masterSeed);
-        this.slip10 = new Slip10(this.masterSeed);
-        this.ecdsaK1 = new EcdsaK1(this.bip32);
-        this.schnorr = new Schnorr(this.bip32);
-        this.ed25519 = new Ed25519();
+        installStage = 10;
+        this.masterSeed = new MasterSeed(sharedHmac512);
+        installStage = 11;
+        this.bip32 = new Bip32(this.masterSeed, sharedHmac512);
+        installStage = 12;
+        this.slip10 = new Slip10(this.masterSeed, sharedHmac512);
+        installStage = 13;
+        this.ecdsaK1 = new EcdsaK1(this.bip32, sharedScratch);
+        installStage = 14;
+        this.schnorr = new Schnorr(this.bip32, sharedScratch);
+        installStage = 15;
+        this.ed25519 = new Ed25519(sharedScratch);
+        installStage = 16;
         this.innerScratch =
-                JCSystem.makeTransientByteArray(INNER_SCRATCH_LEN, JCSystem.CLEAR_ON_DESELECT);
+                JCSystem.makeTransientByteArray(INNER_SCRATCH_LEN, JCSystem.CLEAR_ON_RESET);
         register();
     }
 
-    /** GlobalPlatform install entry point. */
+    /**
+     * GlobalPlatform install entry point.
+     *
+     * <p>Diagnostic wrapping (will be removed before release): catches platform exceptions raised
+     * during the {@link MeowlApplet#MeowlApplet} construction and re-emits an SW that exposes the
+     * failure reason. SW = {@code 0x6F<reason>} for {@link javacard.security.CryptoException}
+     * (1=ILLEGAL_VALUE, 2=UNINITIALIZED_KEY, 3=NO_SUCH_ALGORITHM, …), {@code 0x6E<reason>} for
+     * {@link javacard.framework.SystemException} (1=ILLEGAL_VALUE, 2=NO_TRANSIENT_SPACE, …).
+     */
     public static void install(byte[] bArray, short bOffset, byte bLength) {
-        new MeowlApplet();
+        try {
+            new MeowlApplet();
+        } catch (javacard.security.CryptoException ce) {
+            ISOException.throwIt(
+                    (short) (0x6F00 | ((installStage & 0x0F) << 4) | (ce.getReason() & 0x0F)));
+        } catch (javacard.framework.SystemException se) {
+            ISOException.throwIt(
+                    (short) (0x6E00 | ((installStage & 0x0F) << 4) | (se.getReason() & 0x0F)));
+        }
     }
 
     @Override

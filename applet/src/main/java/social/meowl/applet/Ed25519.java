@@ -43,6 +43,9 @@ public final class Ed25519 {
     /** Length of the compressed Ed25519 public key (RFC 8032 §5.1.2 encoded form). */
     public static final short PUBLIC_KEY_LEN = (short) 32;
 
+    /** Bytes per point in {@code (X, Y, Z, T)} extended-coordinate layout. */
+    public static final short POINT_LEN = (short) 128;
+
     /** Length of the encoded signature {@code R ‖ S}. */
     public static final short SIGNATURE_LEN = (short) 64;
 
@@ -95,14 +98,25 @@ public final class Ed25519 {
     private final MessageDigest sha512;
     private final byte[] scratch;
 
-    public Ed25519() {
+    /**
+     * @param sharedScratch the singleton transient scratch buffer allocated by {@link MeowlApplet}.
+     *     Must be at least {@link #SCRATCH_LEN} bytes. The same buffer is reused across signing INS
+     *     handlers ({@link EcdsaK1}, {@link Schnorr}, this class) and the handshake scratch in
+     *     {@link SecureChannel}, since APDU dispatch is single-threaded and no two of those flows
+     *     can run concurrently. Of all four consumers Ed25519 has the largest scratch requirement
+     *     ({@link #SCRATCH_LEN} = 1024 bytes), so the shared buffer is sized to match.
+     */
+    public Ed25519(byte[] sharedScratch) {
+        if ((short) sharedScratch.length < SCRATCH_LEN) {
+            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
+        }
         try {
             this.sha512 = MessageDigest.getInstance(MessageDigest.ALG_SHA_512, false);
         } catch (Exception e) {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
             throw new RuntimeException(); // unreachable
         }
-        this.scratch = JCSystem.makeTransientByteArray(SCRATCH_LEN, JCSystem.CLEAR_ON_DESELECT);
+        this.scratch = sharedScratch;
     }
 
     /**

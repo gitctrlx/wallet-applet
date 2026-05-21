@@ -11,7 +11,6 @@ import javacard.framework.Util;
 import javacard.security.AESKey;
 import javacard.security.ECPrivateKey;
 import javacard.security.ECPublicKey;
-import javacard.security.HMACKey;
 import javacard.security.KeyAgreement;
 import javacard.security.KeyBuilder;
 import javacard.security.KeyPair;
@@ -107,9 +106,18 @@ public final class SecureChannel {
     private final KeyPair ephKeypair;
     private final KeyAgreement ecdh;
     private final AESKey encKey;
-    private final HMACKey macKey;
+    private final HmacSha hmac;
+
+    /**
+     * Session MAC key {@code K_mac}. Lives in {@code CLEAR_ON_RESET} transient memory; written by
+     * {@link #initHandshake} from the HKDF output and consumed by every {@link #unwrap} / {@link
+     * #wrap} via {@link HmacSha#init}. Using a plain byte array (rather than {@code HMACKey}) lets
+     * the same code path work on cards that omit {@code TYPE_HMAC*} from their key builder
+     * catalogue (notably J3R180).
+     */
+    private final byte[] macKey;
+
     private final Cipher aesCbc;
-    private final Signature hmac;
     private final Signature ecdsa;
 
     /** {@code K_enc ‖ K_mac ‖ IV_base} scratch produced by HKDF-Expand. */
@@ -130,9 +138,26 @@ public final class SecureChannel {
     /** Single-byte open flag (transient). */
     private final byte[] openFlag;
 
-    public SecureChannel(Authentikey authentikey) {
+    /**
+     * @param sharedHmac256 the shared HMAC-SHA-256 engine the surrounding applet uses for both HKDF
+     *     and envelope MAC. Sharing is safe because all consumers run on the single APDU dispatch
+     *     thread, and on the software fallback path it cuts ~96 bytes of transient RAM.
+     * @param sharedScratch a singleton transient buffer (allocated once in {@link MeowlApplet}) of
+     *     at least {@link #HS_SCRATCH_LEN} bytes, repurposed as the handshake scratch. The same
+     *     buffer is repurposed by {@link EcdsaK1}, {@link Schnorr} and {@link Ed25519} during their
+     *     respective signing INS handlers; since APDU dispatch is single-threaded the handshake
+     *     (which writes to the buffer here) and the signing flows (which read/write it after the
+     *     handshake has finished) never overlap. Sharing one buffer across the four consumers cuts
+     *     ~877 bytes of transient RAM, which matters on cards (e.g. J3R180) whose transient pool is
+     *     too small to host four independent buffers of this size.
+     */
+    public SecureChannel(Authentikey authentikey, HmacSha sharedHmac256, byte[] sharedScratch) {
+        if ((short) sharedScratch.length < HS_SCRATCH_LEN) {
+            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
+        }
         this.authentikey = authentikey;
-        this.hkdf = new Hkdf();
+        this.hkdf = new Hkdf(sharedHmac256);
+        this.hmac = sharedHmac256;
 
         this.ephKeypair = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
         Secp256k1.setCurveParameters((ECPrivateKey) ephKeypair.getPrivate());
@@ -140,32 +165,30 @@ public final class SecureChannel {
 
         this.ecdh = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY, false);
         this.aesCbc = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
-        this.hmac = Signature.getInstance(Signature.ALG_HMAC_SHA_256, false);
         this.ecdsa = Signature.getInstance(Signature.ALG_ECDSA_SHA_256, false);
 
+        // CLEAR_ON_RESET (rather than CLEAR_ON_DESELECT) so the key sits in the larger of the two
+        // transient pools on cards (notably J3R180) whose DESELECT pool is too small to host the
+        // applet's session-key footprint. SecureChannel.reset() in select() and on every
+        // teardown explicitly clearKey()s this key, so the lifecycle semantics match what
+        // CLEAR_ON_DESELECT would have given us.
         this.encKey =
                 (AESKey)
                         KeyBuilder.buildKey(
-                                KeyBuilder.TYPE_AES_TRANSIENT_DESELECT,
+                                KeyBuilder.TYPE_AES_TRANSIENT_RESET,
                                 KeyBuilder.LENGTH_AES_256,
                                 false);
         this.macKey =
-                (HMACKey)
-                        KeyBuilder.buildKey(
-                                KeyBuilder.TYPE_HMAC_TRANSIENT_DESELECT,
-                                (short) (Constants.SC_KEY_LEN * 8),
-                                false);
+                JCSystem.makeTransientByteArray(Constants.SC_KEY_LEN, JCSystem.CLEAR_ON_RESET);
 
-        this.okm = JCSystem.makeTransientByteArray(OKM_LEN, JCSystem.CLEAR_ON_DESELECT);
+        this.okm = JCSystem.makeTransientByteArray(OKM_LEN, JCSystem.CLEAR_ON_RESET);
         this.lastInboundIv =
-                JCSystem.makeTransientByteArray(Constants.SC_BLOCK_LEN, JCSystem.CLEAR_ON_DESELECT);
+                JCSystem.makeTransientByteArray(Constants.SC_BLOCK_LEN, JCSystem.CLEAR_ON_RESET);
         this.outboundCounter =
-                JCSystem.makeTransientByteArray(Constants.SC_BLOCK_LEN, JCSystem.CLEAR_ON_DESELECT);
-        this.macScratch =
-                JCSystem.makeTransientByteArray(Hkdf.HASH_LEN, JCSystem.CLEAR_ON_DESELECT);
-        this.hsScratch =
-                JCSystem.makeTransientByteArray(HS_SCRATCH_LEN, JCSystem.CLEAR_ON_DESELECT);
-        this.openFlag = JCSystem.makeTransientByteArray((short) 1, JCSystem.CLEAR_ON_DESELECT);
+                JCSystem.makeTransientByteArray(Constants.SC_BLOCK_LEN, JCSystem.CLEAR_ON_RESET);
+        this.macScratch = JCSystem.makeTransientByteArray(Hkdf.HASH_LEN, JCSystem.CLEAR_ON_RESET);
+        this.hsScratch = sharedScratch;
+        this.openFlag = JCSystem.makeTransientByteArray((short) 1, JCSystem.CLEAR_ON_RESET);
     }
 
     /** Whether a Secure Channel session is currently open. */
@@ -176,7 +199,8 @@ public final class SecureChannel {
     /** Tears down the session, clearing all derived keys and counters. */
     public void reset() {
         encKey.clearKey();
-        macKey.clearKey();
+        Util.arrayFillNonAtomic(macKey, (short) 0, Constants.SC_KEY_LEN, (byte) 0);
+        hmac.reset();
         hkdf.reset();
         Util.arrayFillNonAtomic(okm, (short) 0, OKM_LEN, (byte) 0);
         Util.arrayFillNonAtomic(lastInboundIv, (short) 0, Constants.SC_BLOCK_LEN, (byte) 0);
@@ -256,8 +280,9 @@ public final class SecureChannel {
                 Constants.EC_SCALAR_LEN);
         hkdf.expand(HKDF_INFO, (short) 0, (short) HKDF_INFO.length, okm, (short) 0, OKM_LEN);
         encKey.setKey(okm, (short) 0);
-        // HMACKey.setKey takes byte length (not bit length, unlike buildKey).
-        macKey.setKey(okm, Constants.SC_KEY_LEN, Constants.SC_KEY_LEN);
+        // K_mac lives in transient byte storage so the same code path works on cards without
+        // TYPE_HMAC* in their key builder catalogue (J3R180).
+        Util.arrayCopyNonAtomic(okm, Constants.SC_KEY_LEN, macKey, (short) 0, Constants.SC_KEY_LEN);
 
         Util.arrayFillNonAtomic(lastInboundIv, (short) 0, Constants.SC_BLOCK_LEN, (byte) 0);
         Util.arrayFillNonAtomic(outboundCounter, (short) 0, Constants.SC_BLOCK_LEN, (byte) 0);
@@ -322,9 +347,9 @@ public final class SecureChannel {
         // Verification uses ConstantTime.equals — Util.arrayCompare is documented as a left-to-
         // right ternary compare and is NOT guaranteed constant-time, which would leak the
         // position of the first mismatch through timing in a MAC verification path.
-        hmac.init(macKey, Signature.MODE_SIGN);
+        hmac.init(macKey, (short) 0, Constants.SC_KEY_LEN);
         hmac.update(apduBuffer, (short) 0, (short) 5);
-        hmac.sign(
+        hmac.doFinal(
                 apduBuffer,
                 ivOffset,
                 (short) (Constants.SC_BLOCK_LEN + ctLen),
@@ -385,9 +410,9 @@ public final class SecureChannel {
 
         // MAC over RESP_HEADER ‖ IV ‖ ciphertext.
         short macOffset = (short) (Constants.SC_BLOCK_LEN + ctLen);
-        hmac.init(macKey, Signature.MODE_SIGN);
+        hmac.init(macKey, (short) 0, Constants.SC_KEY_LEN);
         hmac.update(RESP_HEADER, (short) 0, (short) RESP_HEADER.length);
-        hmac.sign(
+        hmac.doFinal(
                 apduBuffer,
                 (short) 0,
                 (short) (Constants.SC_BLOCK_LEN + ctLen),

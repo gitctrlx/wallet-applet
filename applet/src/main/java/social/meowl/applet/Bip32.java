@@ -8,10 +8,8 @@ import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
 import javacard.framework.Util;
 import javacard.security.ECPrivateKey;
-import javacard.security.HMACKey;
 import javacard.security.KeyAgreement;
 import javacard.security.KeyBuilder;
-import javacard.security.Signature;
 
 /**
  * BIP-32 hierarchical deterministic key derivation for secp256k1.
@@ -58,8 +56,7 @@ public final class Bip32 {
     private static final byte[] HARDENED_PREFIX = {(byte) 0x00};
 
     private final MasterSeed masterSeed;
-    private final Signature hmac;
-    private final HMACKey chainKey;
+    private final HmacSha hmac;
 
     /** Working buffer holding {@code k_cur || c_cur || I (64) || scratch_pub(65)}. */
     private final byte[] state;
@@ -76,16 +73,14 @@ public final class Bip32 {
     private static final short STATE_LEN =
             (short) (STATE_PUB_OFF + Constants.EC_POINT_UNCOMPRESSED_LEN);
 
-    public Bip32(MasterSeed masterSeed) {
+    /**
+     * @param sharedHmac512 the same engine handed to {@link MasterSeed} and {@link Slip10};
+     *     instance reuse is safe because all consumers run on the single APDU dispatch thread.
+     */
+    public Bip32(MasterSeed masterSeed, HmacSha sharedHmac512) {
         this.masterSeed = masterSeed;
+        this.hmac = sharedHmac512;
         try {
-            this.hmac = Signature.getInstance(Signature.ALG_HMAC_SHA_512, false);
-            this.chainKey =
-                    (HMACKey)
-                            KeyBuilder.buildKey(
-                                    KeyBuilder.TYPE_HMAC_TRANSIENT_DESELECT,
-                                    (short) (HASH_LEN * 8),
-                                    false);
             this.scalarMult = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY, false);
             // Prefer the RAM-backed transient flavour so the derived leaf scalar never touches
             // EEPROM (audit C-2.02: even a clearKey() does not necessarily wipe EEPROM cells
@@ -95,10 +90,14 @@ public final class Bip32 {
             // that restrict TRANSIENT_DESELECT to symmetric keys).
             ECPrivateKey scalarKey;
             try {
+                // TRANSIENT_RESET (rather than TRANSIENT_DESELECT) since cards with a small
+                // DESELECT pool (notably J3R180) cannot accommodate the additional EC key here;
+                // the leaf scalar is wiped explicitly in derivation cleanup so the difference is
+                // not security-relevant.
                 scalarKey =
                         (ECPrivateKey)
                                 KeyBuilder.buildKey(
-                                        KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT,
+                                        KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_RESET,
                                         KeyBuilder.LENGTH_EC_FP_256,
                                         false);
             } catch (javacard.security.CryptoException e) {
@@ -115,7 +114,7 @@ public final class Bip32 {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
             throw new RuntimeException(); // unreachable
         }
-        this.state = JCSystem.makeTransientByteArray(STATE_LEN, JCSystem.CLEAR_ON_DESELECT);
+        this.state = JCSystem.makeTransientByteArray(STATE_LEN, JCSystem.CLEAR_ON_RESET);
     }
 
     /**
@@ -206,8 +205,7 @@ public final class Bip32 {
         boolean hardened = (pathBuf[idxOff] & HARDENED_MASK) != 0;
 
         // HMAC key = c_par.
-        chainKey.setKey(state, STATE_C_OFF, Constants.CHAIN_CODE_LEN);
-        hmac.init(chainKey, Signature.MODE_SIGN);
+        hmac.init(state, STATE_C_OFF, Constants.CHAIN_CODE_LEN);
 
         if (hardened) {
             // Data = 0x00 || ser256(k_par) || ser32(i)
@@ -218,7 +216,7 @@ public final class Bip32 {
             computeCompressedPubkey(state, STATE_K_OFF, state, STATE_PUB_OFF);
             hmac.update(state, STATE_PUB_OFF, Constants.EC_POINT_COMPRESSED_LEN);
         }
-        hmac.sign(pathBuf, idxOff, INDEX_LEN, state, STATE_I_OFF);
+        hmac.doFinal(pathBuf, idxOff, INDEX_LEN, state, STATE_I_OFF);
 
         // Validate I_L < n and k_i != 0; on failure surface a clean SW so the host can retry
         // with a different index.

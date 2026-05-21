@@ -7,9 +7,6 @@ package social.meowl.applet;
 import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
 import javacard.framework.Util;
-import javacard.security.HMACKey;
-import javacard.security.KeyBuilder;
-import javacard.security.Signature;
 
 /**
  * SLIP-10 Ed25519 hierarchical deterministic key derivation.
@@ -49,8 +46,7 @@ public final class Slip10 {
     private static final short HASH_LEN = (short) 64;
 
     private final MasterSeed masterSeed;
-    private final Signature hmac;
-    private final HMACKey chainKey;
+    private final HmacSha hmac;
 
     /** {@code k_cur(32) || c_cur(32) || I(64)} scratch. */
     private final byte[] state;
@@ -60,21 +56,16 @@ public final class Slip10 {
     private static final short STATE_I_OFF = (short) 64;
     private static final short STATE_LEN = (short) 128;
 
-    public Slip10(MasterSeed masterSeed) {
+    /**
+     * @param sharedHmac512 same shared HMAC-SHA-512 engine used by {@link MasterSeed} and {@link
+     *     Bip32}. APDU handling is single-threaded so sharing one engine across the three consumers
+     *     cuts the worst-case transient RAM cost on cards (e.g. J3R180) that route every HMAC
+     *     through the {@link HmacSha} software fallback.
+     */
+    public Slip10(MasterSeed masterSeed, HmacSha sharedHmac512) {
         this.masterSeed = masterSeed;
-        try {
-            this.hmac = Signature.getInstance(Signature.ALG_HMAC_SHA_512, false);
-            this.chainKey =
-                    (HMACKey)
-                            KeyBuilder.buildKey(
-                                    KeyBuilder.TYPE_HMAC_TRANSIENT_DESELECT,
-                                    (short) (HASH_LEN * 8),
-                                    false);
-        } catch (Exception e) {
-            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
-            throw new RuntimeException(); // unreachable
-        }
-        this.state = JCSystem.makeTransientByteArray(STATE_LEN, JCSystem.CLEAR_ON_DESELECT);
+        this.hmac = sharedHmac512;
+        this.state = JCSystem.makeTransientByteArray(STATE_LEN, JCSystem.CLEAR_ON_RESET);
     }
 
     /**
@@ -127,11 +118,10 @@ public final class Slip10 {
     }
 
     private void ckdPriv(byte[] pathBuf, short idxOff) {
-        chainKey.setKey(state, STATE_C_OFF, Constants.CHAIN_CODE_LEN);
-        hmac.init(chainKey, Signature.MODE_SIGN);
+        hmac.init(state, STATE_C_OFF, Constants.CHAIN_CODE_LEN);
         hmac.update(ZERO_BYTE, (short) 0, (short) 1);
         hmac.update(state, STATE_K_OFF, (short) 32);
-        hmac.sign(pathBuf, idxOff, Bip32.INDEX_LEN, state, STATE_I_OFF);
+        hmac.doFinal(pathBuf, idxOff, Bip32.INDEX_LEN, state, STATE_I_OFF);
 
         Util.arrayCopyNonAtomic(state, STATE_I_OFF, state, STATE_K_OFF, (short) 32);
         Util.arrayCopyNonAtomic(

@@ -7,9 +7,6 @@ package social.meowl.applet;
 import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
 import javacard.framework.Util;
-import javacard.security.HMACKey;
-import javacard.security.KeyBuilder;
-import javacard.security.Signature;
 
 /**
  * Persistent master-seed storage and HD derivation root for {@code MeowlApplet}.
@@ -72,10 +69,6 @@ public final class MasterSeed {
     };
 
     private static final short MASTER_LEN = (short) 64;
-    private static final short HASH_LEN = (short) 64;
-
-    /** HMAC-SHA-512 block size (bytes). Used to right-size the HMAC key builder. */
-    private static final short HMAC_KEY_BITS = (short) (HASH_LEN * 8);
 
     /** Concatenated {@code k_master(32) || c_master(32)} for BIP-32 secp256k1. */
     private final byte[] bip32Master;
@@ -86,27 +79,19 @@ public final class MasterSeed {
     /** {@code [0] != 0} once a seed has been imported or generated. */
     private final byte[] seededFlag;
 
-    private final Signature hmac;
-    private final HMACKey labelKey;
+    private final HmacSha hmac;
 
-    public MasterSeed() {
+    /**
+     * @param sharedHmac512 a shared {@link HmacSha} engine configured for HMAC-SHA-512. The same
+     *     instance is reused by {@link Bip32} and {@link Slip10} since on-card APDU handling is
+     *     single-threaded — sharing one engine cuts the worst-case transient RAM cost on cards that
+     *     lack native HMAC (the software path needs ~192 bytes per engine).
+     */
+    public MasterSeed(HmacSha sharedHmac512) {
         this.bip32Master = new byte[MASTER_LEN];
         this.slip10Master = new byte[MASTER_LEN];
         this.seededFlag = new byte[1];
-
-        // HMAC-SHA-512 is mandatory; if the silicon does not advertise it we surface that fact
-        // as an applet-private SW (the install path will throw SW_UNSUPPORTED_FEATURE and the
-        // host SDK can refuse to use this card).
-        try {
-            this.hmac = Signature.getInstance(Signature.ALG_HMAC_SHA_512, false);
-            this.labelKey =
-                    (HMACKey)
-                            KeyBuilder.buildKey(
-                                    KeyBuilder.TYPE_HMAC_TRANSIENT_DESELECT, HMAC_KEY_BITS, false);
-        } catch (Exception e) {
-            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
-            throw new RuntimeException(); // unreachable; satisfies the constructor's flow analysis
-        }
+        this.hmac = sharedHmac512;
     }
 
     /** Whether a seed has been imported or generated. */
@@ -279,9 +264,7 @@ public final class MasterSeed {
             short inLen,
             byte[] out,
             short outOff) {
-        labelKey.setKey(label, (short) 0, labelLen);
-        hmac.init(labelKey, Signature.MODE_SIGN);
-        hmac.sign(in, inOff, inLen, out, outOff);
+        hmac.sign(label, (short) 0, labelLen, in, inOff, inLen, out, outOff);
     }
 
     private void requireSeeded() {
