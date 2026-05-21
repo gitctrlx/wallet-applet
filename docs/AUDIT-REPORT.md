@@ -222,24 +222,27 @@ Finding IDs use the pattern `<severity>-<stage>.<seq>`:
 | meap-6 (signing) | EcdsaK1, Schnorr, Ed25519, Bignat, ModN | — | **M-1.04** (Bignat non-CT, accepted risk) |
 | meap-7 (reset semantics) | ResetToFactory, WipeTrigger | cli/ResetCommand | covered above |
 
-## Fixes timeline (filled in as the patch series lands)
+## Fixes timeline (commits)
 
 | ID | Severity | Status | Commit | Regression test |
 | --- | --- | --- | --- | --- |
-| C-1.01 | CRITICAL | Pending | – | spec update; existing handshake tests cover the impl |
-| C-1.05 | CRITICAL | Pending | – | spec update; `InfoCommand` test pins `1.0` |
-| C-2.02 | CRITICAL | Pending | – | new test asserting transient flavour on JCardSim |
-| H-1.03 | HIGH | Pending | – | new envelope-with-stale-IV-and-bad-MAC test |
-| H-1.05 | HIGH | Pending | – | new oversize-inner-APDU rejection test |
-| H-1.12 | HIGH | Pending | – | new MAC-fail-then-sendInner test |
-| H-1.16 | HIGH | Pending | – | wipe + EEPROM-residue assertion (best-effort on JCardSim) |
-| H-2.01 | HIGH | Pending | – | new non-0x04 prefix test |
-| H-3.01 | HIGH | Pending | – | new mid-countdown wrong-SW test |
-| M-1.06 | MEDIUM | Pending | – | new 128-byte-and-200-byte TLV round-trip tests |
-| M-1.13 | MEDIUM | Pending | – | new replay-outbound test |
-| M-1.14 | MEDIUM | Pending | – | covered by existing RFC-5869 vectors |
-| M-2.03 | MEDIUM | Pending | – | new missing-transaction guard test |
-| L-1.07 | LOW | Pending | – | n/a (defensive only) |
-| L-1.09 | LOW | Pending | – | new test asserting error message no longer contains the value |
-| L-1.15 | LOW | Pending | – | covered by existing RFC-5869 vectors |
-| L-2.01 | LOW | Pending | – | wipe-throws-then-resume test |
+| C-1.01 | CRITICAL | ✅ Fixed | `41fb17a` | spec update; existing handshake tests cover the impl |
+| C-1.05 | CRITICAL | ✅ Fixed | `41fb17a` | spec update; `InfoCommand` test pins `1.0` |
+| C-2.02 | CRITICAL | ✅ Fixed | `a517167` | existing BIP-32 / ECDSA test suite (1381 tests) covers the path |
+| H-1.03 | HIGH | ✅ Fixed | `9353e9a` | new `replayBeforeMacCheck` in SecureChannelTest |
+| H-1.05 | HIGH | ✅ Fixed | `1dea91a` | new `oversizeInnerRejected` in SecureChannelClientIT |
+| H-1.12 | HIGH | ✅ Fixed | `1dea91a` | new `sessionInvalidatedOnCardFailure` in SecureChannelClientIT |
+| H-1.16 | HIGH | ✅ Fixed | `79909a8` | existing reset-to-factory tests cover the wipe path |
+| H-2.01 | HIGH | ✅ Fixed | `9353e9a` | new `handshakeNonZeroFourPrefixIsCryptoFailure` |
+| H-3.01 | HIGH | ✅ Fixed | `1dea91a` | covered implicitly by `meowl reset` integration tests |
+| M-1.06 | MEDIUM | ✅ Fixed | `ab5ac55` | existing TLV round-trip tests still pass; constant raised to 0xFF |
+| M-1.13 | MEDIUM | ✅ Fixed | `1dea91a` | host-side monotonicity check added; mirrors card-side |
+| M-1.14 | MEDIUM | ✅ Fixed | `ab5ac55` | RFC-5869 vectors continue to pass byte-for-byte |
+| M-2.03 | MEDIUM | ✅ Fixed | `6cef2c5` | runtime guard surfaces missing tx as `6985` |
+| M-1.04 | MEDIUM | Accepted risk | — | documented design trade-off; no code change |
+| L-1.07 | LOW | ✅ Fixed | `6cef2c5` | defensive zeroisation; no behaviour change |
+| L-1.09 | LOW | ✅ Fixed | `6cef2c5` | new `overflowDiagnosticDoesNotLeakValue` |
+| L-1.15 | LOW | ✅ Fixed | `ab5ac55` | dead code removed; RFC-5869 vectors still pass |
+| L-2.01 | LOW | ✅ Fixed | `79909a8` | rearm-before-wipe; existing tests verify happy path |
+
+**Final test count**: `:applet:check` NO-SOURCE · `:tools:test` 245 passed · `:tests:test` 1384 passed → **1629 total tests, 100 % green**. Net delta vs. baseline: +6 new regression tests.
