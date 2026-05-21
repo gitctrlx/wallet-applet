@@ -8,6 +8,7 @@ import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
 import javacard.framework.Util;
 import javacard.security.MessageDigest;
+import javacard.security.RandomData;
 
 /**
  * Software RFC 8032 Ed25519 signing primitive. JavaCard 3.0.5 ships no native Ed25519, so the
@@ -64,9 +65,10 @@ public final class Ed25519 {
      *   [ 160.. 191] R_BE      — ephemeral scalar r mod ℓ (BE)
      *   [ 192.. 223] K_BE      — challenge scalar k mod ℓ (BE); later (k · s) mod ℓ
      *   [ 224.. 255] S_OUT_BE  — final S = (r + k · s) mod ℓ (BE)
-     *   [ 256.. 383] BASE_PT   — Edwards25519 base point in extended coords
-     *   [ 384.. 511] POINT     — A then R, in extended coords
-     *   [ 512..1023] WORKSPACE — scalar-mult / encode scratch (max 512 bytes)
+     *   [ 256.. 287] BLIND_FE  — fresh random field element r ∈ [1, p) for projective blinding
+     *   [ 288.. 415] BASE_PT   — Edwards25519 base point in extended coords (re-blinded per call)
+     *   [ 416.. 543] POINT     — A then R, in extended coords
+     *   [ 544..1055] WORKSPACE — scalar-mult / encode scratch (max 512 bytes)
      */
     private static final short HASH_OFF = (short) 0;
 
@@ -76,13 +78,16 @@ public final class Ed25519 {
     private static final short R_BE_OFF = (short) 160;
     private static final short K_BE_OFF = (short) 192;
     private static final short S_OUT_BE_OFF = (short) 224;
-    private static final short BASE_PT_OFF = (short) 256;
-    private static final short POINT_OFF = (short) 384;
-    private static final short WORK_OFF = (short) 512;
+    private static final short BLIND_FE_OFF = (short) 256;
+    private static final short BLIND_FE_LEN = (short) 32;
+    private static final short BASE_PT_OFF = (short) 288;
+    private static final short POINT_OFF = (short) 416;
+    private static final short WORK_OFF = (short) 544;
     private static final short SCRATCH_LEN =
             (short) (WORK_OFF + Edwards25519.SCALAR_MULT_SCRATCH_LEN);
 
     private final MessageDigest sha512;
+    private final RandomData rng;
     private final byte[] scratch;
 
     /**
@@ -91,7 +96,7 @@ public final class Ed25519 {
      *     handlers ({@link EcdsaK1}, {@link Schnorr}, this class) and the handshake scratch in
      *     {@link SecureChannel}, since APDU dispatch is single-threaded and no two of those flows
      *     can run concurrently. Of all four consumers Ed25519 has the largest scratch requirement
-     *     ({@link #SCRATCH_LEN} = 1024 bytes), so the shared buffer is sized to match.
+     *     ({@link #SCRATCH_LEN} = 1056 bytes), so the shared buffer is sized to match.
      */
     public Ed25519(byte[] sharedScratch) {
         if ((short) sharedScratch.length < SCRATCH_LEN) {
@@ -103,6 +108,15 @@ public final class Ed25519 {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
             throw new RuntimeException(); // unreachable
         }
+        // Per MEAP-6: prefer ALG_KEYGENERATION (universal on JC 3.0.4+) for the projective
+        // blinding scalar; fall back to ALG_TRNG on cards that restrict the keygen class.
+        RandomData candidate;
+        try {
+            candidate = RandomData.getInstance(RandomData.ALG_KEYGENERATION);
+        } catch (Exception e) {
+            candidate = RandomData.getInstance(RandomData.ALG_TRNG);
+        }
+        this.rng = candidate;
         this.scratch = sharedScratch;
     }
 
@@ -151,10 +165,11 @@ public final class Ed25519 {
             Util.arrayCopyNonAtomic(
                     scratch, (short) (HASH_OFF + 32), scratch, R_BE_OFF, (short) 32);
 
-            //  3. R = r · B; R_enc = encode(R). The base point at BASE_PT_OFF was set in step 1
-            //     and survives untouched: scalarMult never writes through its `in` parameter, and
-            //     the SHA-512 / Bignat workspace from step 2 is anchored at HASH_OFF, well clear
-            //     of BASE_PT_OFF. The POINT_OFF slot used to hold A is reused for R.
+            //  3. R = r · B; R_enc = encode(R). Reset the base point to its canonical projective
+            //     form and re-randomise it with a fresh blind so the second scalar ladder uses a
+            //     coordinate trajectory uncorrelated with the first one (audit S2-01).
+            Edwards25519.setBase(scratch, BASE_PT_OFF);
+            blindBasePoint();
             Edwards25519.scalarMult(
                     scratch, R_BE_OFF, scratch, BASE_PT_OFF, scratch, POINT_OFF, scratch, WORK_OFF);
             Edwards25519.encodePoint(scratch, POINT_OFF, scratch, R_ENC_OFF, scratch, WORK_OFF);
@@ -177,10 +192,15 @@ public final class Ed25519 {
             Util.arrayCopyNonAtomic(scratch, R_BE_OFF, scratch, S_OUT_BE_OFF, (short) 32);
             boolean carry =
                     Bignat.add(scratch, S_OUT_BE_OFF, scratch, (short) (HASH_OFF + 32), (short) 32);
-            //     Result is in [0, 2ℓ). Reduce: if carry || result ≥ ℓ, subtract ℓ.
-            if (carry || !Bignat.lessThan(scratch, S_OUT_BE_OFF, GROUP_L, (short) 0, (short) 32)) {
-                Bignat.sub(scratch, S_OUT_BE_OFF, GROUP_L, (short) 0, (short) 32);
-            }
+            //     Result is in [0, 2ℓ). Reduce: subtract ℓ iff (carry == 1) OR (out >= ℓ).
+            //     Implemented branch-free so the timing of the final reduce does not depend on
+            //     the secret-derived intermediate value (audit S2-01 mitigation).
+            short carryMask = (short) (carry ? -1 : 0);
+            short lessMask =
+                    Bignat.ctLessThan(scratch, S_OUT_BE_OFF, GROUP_L, (short) 0, (short) 32);
+            short reduceMask = (short) (carryMask | ~lessMask);
+            Bignat.condSubInPlace(
+                    scratch, S_OUT_BE_OFF, GROUP_L, (short) 0, (short) 32, reduceMask);
 
             //  6. Output R_enc ‖ S_LE. R_enc is already LE; reverse S_OUT_BE to LE in the output.
             Util.arrayCopyNonAtomic(scratch, R_ENC_OFF, outBuf, outOff, (short) 32);
@@ -215,14 +235,51 @@ public final class Ed25519 {
         for (short i = 0; i < (short) 32; i++) {
             scratch[(short) (S_BE_OFF + i)] = scratch[(short) (HASH_OFF + 31 - i)];
         }
-        // A = s · B, then encode A into scratch[A_ENC_OFF].
+        // A = s · B, then encode A into scratch[A_ENC_OFF]. The base point is freshly randomised
+        // in projective coordinates before every scalarMult call so the variable-time Bignat.mod
+        // kernel sees a different bit pattern on every iteration of the 256-bit ladder, which is
+        // the Coron CHES 1999 §3.1 projective coordinate randomisation countermeasure against the
+        // residual SPA leak in Field25519.mul/sqr (audit S2-01 mitigation).
         Edwards25519.setBase(scratch, BASE_PT_OFF);
+        blindBasePoint();
         Edwards25519.scalarMult(
                 scratch, S_BE_OFF, scratch, BASE_PT_OFF, scratch, POINT_OFF, scratch, WORK_OFF);
         Edwards25519.encodePoint(scratch, POINT_OFF, scratch, A_ENC_OFF, scratch, WORK_OFF);
         // The clamped LE scalar at HASH_OFF[0..32] is no longer needed; the prefix at
         // HASH_OFF[32..64] is intact and will be used by the sign flow's r-hash step.
         Util.arrayFillNonAtomic(scratch, HASH_OFF, (short) 32, (byte) 0);
+    }
+
+    /**
+     * Generates a fresh non-zero field element {@code r ∈ [1, p)} at {@code scratch[BLIND_FE_OFF]}
+     * and applies the projective coordinate randomisation {@code (X, Y, Z, T) ↦ (rX, rY, rZ, rT)}
+     * to the base point parked at {@code scratch[BASE_PT_OFF]}. Caller MUST have populated {@code
+     * BASE_PT} with a canonical point via {@link Edwards25519#setBase} (or equivalent) before
+     * invoking this helper.
+     *
+     * <p>The blind is sampled by drawing 32 random bytes, clearing the top bit (so the result is
+     * less than {@code 2²⁵⁵}, comfortably below {@code p = 2²⁵⁵ − 19} with probability {@code 1 −
+     * 19/2²⁵⁵ ≈ 1 − 2⁻²⁵⁰}), and re-rolling on the {@code r == 0} corner case. The resulting blind
+     * is uniform on a set of size {@code 2²⁵⁵ − 19 + ε} which is statistically indistinguishable
+     * from uniform on {@code [1, p)}, and the rejection-sampling loop runs at most twice with
+     * overwhelming probability.
+     */
+    private void blindBasePoint() {
+        do {
+            rng.nextBytes(scratch, BLIND_FE_OFF, BLIND_FE_LEN);
+            // Clear the high bit so the candidate is in [0, 2^255), strictly below 2p.
+            scratch[BLIND_FE_OFF] &= (byte) 0x7F;
+            // Reject anything >= p (≈ 19/2^255 of the draws). This branch leaks at most "rng
+            // produced a near-p value", which is publicly known to be statistically rare and
+            // carries no secret information.
+            if (Bignat.ctLessThan(
+                            scratch, BLIND_FE_OFF, Field25519.FIELD_P, (short) 0, BLIND_FE_LEN)
+                    == 0) {
+                continue;
+            }
+        } while (Bignat.ctIsZero(scratch, BLIND_FE_OFF, BLIND_FE_LEN) != 0);
+        Edwards25519.randomizeProjective(
+                scratch, BASE_PT_OFF, scratch, BLIND_FE_OFF, scratch, WORK_OFF);
     }
 
     /** In-place big-endian / little-endian byte reversal of an {@code [off..off+len)} window. */

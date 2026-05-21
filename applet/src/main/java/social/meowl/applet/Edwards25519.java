@@ -363,6 +363,75 @@ public final class Edwards25519 {
     }
 
     /**
+     * Re-randomises the projective coordinates of a point in place: {@code (X, Y, Z, T) ← (r·X,
+     * r·Y, r·Z, r·T)} for a caller-supplied non-zero field element {@code r}. The affine projection
+     * {@code (X/Z, Y/Z)} is invariant under this map, so the group element is unchanged; only the
+     * bit pattern of every intermediate field element fed into the variable-time {@link Bignat#mod}
+     * kernel during a subsequent {@link #scalarMult} is now statistically decorrelated from the
+     * secret scalar across calls.
+     *
+     * <p>This is the {@em projective coordinate randomisation} side-channel countermeasure
+     * described by Coron (CHES 1999, §3.1). Combined with the {@link #scalarMult} double-and-add
+     * ladder it raises the cost of a remote timing attack from "average n calls to recover one bit"
+     * to "the attacker must additionally undo a fresh random {@code r} per call", which is
+     * statistically infeasible without an in-card oracle. {@code blindFE} MUST be in {@code [1, p)}
+     * — any zero or {@code ≥ p} value yields an output that, while still on the curve, may collapse
+     * to the identity or otherwise leak information.
+     *
+     * @param point a {@link #POINT_LEN}-byte extended-coordinate point buffer (mutated in place)
+     * @param pointOff start of the point inside {@code point}
+     * @param blindFE 32-byte big-endian field element {@code r} in {@code [1, p)}
+     * @param blindOff start of {@code r} inside {@code blindFE}
+     * @param scratch scratch buffer with at least {@link #POINT_OP_SCRATCH_LEN} bytes
+     * @param scratchOff start of the scratch slice
+     */
+    public static void randomizeProjective(
+            byte[] point,
+            short pointOff,
+            byte[] blindFE,
+            short blindOff,
+            byte[] scratch,
+            short scratchOff) {
+        short fScr = (short) (scratchOff + FIELD_SCR_OFF);
+        Field25519.mul(
+                point,
+                (short) (pointOff + PT_X_OFF),
+                blindFE,
+                blindOff,
+                point,
+                (short) (pointOff + PT_X_OFF),
+                scratch,
+                fScr);
+        Field25519.mul(
+                point,
+                (short) (pointOff + PT_Y_OFF),
+                blindFE,
+                blindOff,
+                point,
+                (short) (pointOff + PT_Y_OFF),
+                scratch,
+                fScr);
+        Field25519.mul(
+                point,
+                (short) (pointOff + PT_Z_OFF),
+                blindFE,
+                blindOff,
+                point,
+                (short) (pointOff + PT_Z_OFF),
+                scratch,
+                fScr);
+        Field25519.mul(
+                point,
+                (short) (pointOff + PT_T_OFF),
+                blindFE,
+                blindOff,
+                point,
+                (short) (pointOff + PT_T_OFF),
+                scratch,
+                fScr);
+    }
+
+    /**
      * Constant-time conditional copy: {@code dst ← (mask ? a : b)}. {@code mask} must be either
      * {@code 0xFF} (select {@code a}) or {@code 0x00} (select {@code b}); the bytewise AND/OR
      * pattern leaks no timing information about which branch was taken.
