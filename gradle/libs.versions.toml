@@ -40,7 +40,7 @@ ant-javacard      = { module = "com.github.martinpaljak:ant-javacard",     versi
 jcardsim          = { module = "com.klinec:jcardsim",                      version.ref = "jcardsim" }
 apdu4j-pcsc       = { module = "com.github.martinpaljak:apdu4j-pcsc",      version.ref = "apdu4j" }
 apdu4j-core       = { module = "com.github.martinpaljak:apdu4j-core",      version.ref = "apdu4j" }
-gppro             = { module = "com.github.martinpaljak:gppro",            version.ref = "globalplatformpro" }
+gppro             = { module = "com.github.martinpaljak:globalplatformpro", version.ref = "globalplatformpro" }
 bouncycastle-prov = { module = "org.bouncycastle:bcprov-jdk18on",          version.ref = "bouncycastle" }
 slf4j-api         = { module = "org.slf4j:slf4j-api",                      version.ref = "slf4j" }
 slf4j-simple      = { module = "org.slf4j:slf4j-simple",                   version.ref = "slf4j" }
