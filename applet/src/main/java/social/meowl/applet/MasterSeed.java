@@ -132,6 +132,12 @@ public final class MasterSeed {
      * @param seedLen seed length in bytes; must lie in {@code [SEED_MIN_LEN, SEED_MAX_LEN]}
      */
     public void importSeed(byte[] seedBuf, short seedOff, short seedLen) {
+        // Audit M-2.03: enforce the "caller must hold a JC transaction" contract at runtime so a
+        // future caller that forgets the wrap gets a hard 6985 at development time instead of a
+        // half-mutated MasterSeed surviving a torn power-off.
+        if (JCSystem.getTransactionDepth() == 0) {
+            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
+        }
         if (seededFlag[0] != 0) {
             ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
         }
@@ -167,6 +173,11 @@ public final class MasterSeed {
      * @return the number of seed bytes written, i.e. {@link Constants#SEED_GENERATED_LEN}
      */
     public short generateSeed(byte[] outBuf, short outOff) {
+        // Audit M-2.03: same transaction-depth guard as importSeed — the caller's
+        // beginTransaction wrap is load-bearing and was previously enforced only by code review.
+        if (JCSystem.getTransactionDepth() == 0) {
+            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
+        }
         if (seededFlag[0] != 0) {
             ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
         }

@@ -246,12 +246,19 @@ public final class HostCrypto {
         byte[] out = new byte[length];
         if (raw.length > length) {
             // BigInteger#toByteArray prepends a sign byte for positive values whose high bit is 1.
-            // Strip the leading zero(s) to fit, but reject genuine overflows.
+            // Strip the leading zero(s) to fit, but reject genuine overflows. Audit L-1.09: do
+            // NOT include the value itself in the diagnostic — this helper might in the future be
+            // called on private scalar material; logging the value via stderr / log frameworks
+            // would be a leak.
             int excess = raw.length - length;
             for (int i = 0; i < excess; i++) {
                 if (raw[i] != 0) {
                     throw new IllegalArgumentException(
-                            "value does not fit in %d bytes: %s".formatted(length, value));
+                            "value does not fit in "
+                                    + length
+                                    + " bytes (encoded width "
+                                    + raw.length
+                                    + " bytes)");
                 }
             }
             System.arraycopy(raw, excess, out, 0, length);

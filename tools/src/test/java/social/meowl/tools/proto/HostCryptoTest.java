@@ -205,6 +205,25 @@ class HostCryptoTest {
             BigInteger v = new BigInteger("1" + "00".repeat(33), 16); // 33+ bytes magnitude
             assertThrows(IllegalArgumentException.class, () -> HostCrypto.bigIntToFixed(v, 32));
         }
+
+        @Test
+        @DisplayName("overflow diagnostic does not leak the offending value (audit L-1.09)")
+        void overflowDiagnosticDoesNotLeakValue() {
+            // The helper could plausibly be called with private scalar material in the future.
+            // Its overflow diagnostic must NOT include BigInteger.toString(value), which would
+            // leak the secret through stderr / a structured log sink.
+            BigInteger secret = new BigInteger("DEADBEEFCAFEBABE".repeat(5), 16); // > 32 bytes
+            IllegalArgumentException ex =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> HostCrypto.bigIntToFixed(secret, 32));
+            String message = ex.getMessage();
+            assertFalse(
+                    message.contains("DEADBEEF") || message.contains("CAFEBABE"),
+                    "diagnostic should not contain the value bytes, got: " + message);
+            // It should still convey the length mismatch in a useful form.
+            assertTrue(message.contains("32") && message.contains("bytes"));
+        }
     }
 
     private static byte[] randomBytes(int n) {

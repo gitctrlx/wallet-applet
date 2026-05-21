@@ -82,7 +82,12 @@ public final class HkdfSha256 {
             mac.update(previous);
             mac.update(effectiveInfo);
             mac.update((byte) i);
-            previous = mac.doFinal();
+            byte[] next = mac.doFinal();
+            // Audit L-1.07: scrub each intermediate T(i-1) before reassigning to T(i). The last
+            // buffer is scrubbed by the post-loop fill below; this loop covers the case where a
+            // garbage-collected page could carry old T(i) bytes past the function's return.
+            Arrays.fill(previous, (byte) 0);
+            previous = next;
             int copyLen = Math.min(HASH_LEN, length - written);
             System.arraycopy(previous, 0, out, written, copyLen);
             written += copyLen;
