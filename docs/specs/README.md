@@ -35,6 +35,12 @@ A conforming **applet implementation** MUST satisfy every MUST/SHALL clause acro
 
 The reference implementation lives in [`applet/src/main/java/social/meowl/applet/`](../../applet/src/main/java/social/meowl/applet/). The reference test suite lives in [`tests/src/test/java/social/meowl/applet/`](../../tests/src/test/java/social/meowl/applet/) and is binding on every applet implementation that wants to claim MEAP conformance — the test vectors in each MEAP MUST pass against the implementation.
 
+## Security audit
+
+Every reference-implementation release ships with a line-by-line audit report in [`docs/AUDIT-REPORT.md`](../AUDIT-REPORT.md). The report enumerates every finding (S1 — Critical to S5 — Info), records its fix status (✅ Fixed / 🟡 Mitigated / ⏸ Deferred), and compares each design decision against the major reference implementations (Status Keycard, Satochip, Trezor firmware, Coldcard, libsodium, BoringSSL, Bitcoin Core). New conforming implementations SHOULD reproduce the table in §1.3 of the audit report against their own codebase before claiming MEAP conformance.
+
+The threat model that scopes those findings is normative in [MEAP-6 §Threat model](./meap-6.md); user-facing performance budgets for every signing INS live in the same MEAP under §Performance budget and are mirrored in the project [`README.md`](../../README.md).
+
 ## Numbering rules
 
 - Numbers are integers, allocated densely in submission order, never re-used. A withdrawn MEAP keeps its number permanently.

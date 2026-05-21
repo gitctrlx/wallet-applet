@@ -311,8 +311,33 @@ The Schnorr and Ed25519 paths are software-implemented. A conforming implementat
 - **`s = (r + k · s) mod ℓ`** in Ed25519 is computed via `Bignat.mult` (which is not constant-time but operates on values both of which are already public after the signature emerges) followed by `Bignat.mod` (likewise post-emergence).
 - **`s = (k + e · d) mod n`** in Schnorr is similarly computed on values that are public after the signature emerges, with one subtlety: the conditional `n − s` flip during scalar canonicalisation is **not** performed, so no timing channel exists at that step.
 - **MAC comparisons** in the Secure Channel use `ConstantTime.equals` per [MEAP-2](./meap-2.md).
+- **Mod-n / Mod-p comparisons** (`ModN.lessThanN`, `Field25519.add/sub/neg/equals/isZero`, `Bignat.ctIsZero`, …) use mask-based constant-time helpers (`Bignat.condAddInPlace`, `Bignat.condSubInPlace`, `Bignat.ctLessThan`, `Bignat.ctIsZero`); audit S2-01 and S2-03 introduced these primitives in v1.1.
+- **Edwards25519 scalar multiplication** randomises its projective `(X, Y, Z, T)` coordinates on every call by sampling a non-zero blinding scalar `r ∈ [1, p)` and replacing `(X, Y, Z, T)` with `(X·r, Y·r, Z·r, T·r)` before the schedule starts (see `Edwards25519.randomizeProjective` and `Ed25519.blindBasePoint`). The blind is uniform on a set of size `p − ε`, drawn from `RandomData.ALG_KEYGENERATION` (or `ALG_TRNG` fallback). Per <https://eprint.iacr.org/2009/444>, projective randomisation breaks the link between the still-variable-time inner `Bignat.mod` reduction and any single secret bit.
 
 The reference implementation does not claim full SCA resistance; deployments where SCA is in scope (lab attackers with side-channel equipment) MUST use a card whose silicon-level countermeasures (clock jitter, dummy operations, masked private keys) defend the underlying JC primitives.
+
+### Threat model
+
+The v1.0 / v1.1 threat model targets a **software-only adversary on the host**:
+
+- **In scope.** Host-resident malware reading process memory; networked APIs probing the SDK; an attacker with full APDU traffic on the bus but no fine-grained timing oracle (typical PCSC reader jitter is 1–5 ms).
+- **In scope.** Replay, MAC truncation, padding-oracle and key-confusion attacks on the Secure Channel — defended by MEAP-2 (Encrypt-then-MAC, strict IV monotonicity, session invalidation on first failure).
+- **In scope.** A lost / stolen card whose attacker has only commodity reader hardware — defended by the PIN/PUK retry counter and the EAL 5+ Augmented certification of the underlying NXP J3R180.
+- **Out of scope.** A *strong physical adversary* with sub-millisecond timing precision on the PCSC link, glitch-injection equipment, or invasive die probes. The variable-time `Bignat.mod` reduction (used inside `Field25519.mul / sqr` and inside `ModN`) yields a theoretical accumulating timing leak under such conditions, mitigated but not eliminated by the projective blinding above. Users in this threat model should wait for the v2.0 limb-radix `Field25519` rewrite tracked in [`AUDIT-REPORT.md` §6.3](../AUDIT-REPORT.md), or pick a vendor with EAL 6+ silicon.
+- **Out of scope.** Supply-chain attacks against the toolchain itself; defended at the build layer by SLSA L3 provenance and the CycloneDX SBOM published with each release.
+
+### Performance budget
+
+The numbers below are wall-clock budgets observed on a J3R180 SECID card running at ~32 MHz over a contact reader; NFC adds another ~50 ms of bus latency. Host SDKs SHOULD plan their UX timeouts around the *upper* bound of each range. The corresponding line in [`README.md`](../../README.md) is the user-facing version of this table.
+
+| INS | Operation | Typical | Notes |
+| --- | --------- | ------- | ----- |
+| `SIGN_ECDSA_K1` (0x50) | secp256k1 ECDSA | **150 – 300 ms** | Native `Signature.ALG_ECDSA_SHA_256`, dominated by EC scalar mul on the secure-element coprocessor |
+| `SIGN_SCHNORR_K1` (0x51) | BIP-340 Schnorr | **400 – 900 ms** | Two software scalar mults on secp256k1 + three SHA-256 ingests; tag pre-hashing (audit S3-08) saves ~15–30 ms vs the previous draft |
+| `SIGN_ED25519` (0x52) | RFC 8032 Ed25519 | **3 – 6 s** | Two software scalar mults on Edwards25519 plus projective blinding (audit S2-01); message capped at ~222 bytes by the inner short-form LC |
+| `EXPORT_XPUB` (0x42) | One BIP-32 / SLIP-10 step | **80 – 200 ms** | Hardened: one HMAC-SHA-512. Non-hardened: one HMAC-SHA-512 + one EC point add via JC `KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY`. |
+
+Limb-radix-`2^26` rewrites of `Field25519` and `Bignat` would likely cut Ed25519 below 1 s and Schnorr below 250 ms; both are tracked as v2.0 line items.
 
 ### Transient-memory wipe discipline
 

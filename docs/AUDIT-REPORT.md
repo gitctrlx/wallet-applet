@@ -4,13 +4,15 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 审计版本 | v1.0 (审计基线 commit HEAD) |
-| 审计日期 | 2026-01 |
-| 审计范围 | applet (24 文件 / ~5,400 行) + tools (36 文件 / ~3,500 行) + tests (14 文件 / ~5,000 行) |
-| 总代码量 | ~14,000 行 Java |
-| 审计深度 | 逐行审计 + 多参考实现并排对比 |
+| 审计版本 | v1.1 (修复 sweep 完成) |
+| 审计日期 | 2026-01 (v1.0) / 2026-05 (v1.1 sweep) |
+| 审计范围 | applet (25 文件 / ~5,500 行) + tools (37 文件 / ~3,500 行) + tests (16 文件 / ~5,300 行) |
+| 总代码量 | ~14,300 行 Java |
+| 审计深度 | 逐行审计 + 多参考实现并排对比 + 全部高/中优先级修复合并 |
 | 参考实现 | Status Keycard、Satochip、Trezor firmware、Coldcard、libsodium、BoringSSL、Bitcoin Core、bitcoin/bips |
 | 关键 RFC/BIP | RFC 2104、RFC 4231、RFC 5869、RFC 6979、RFC 7748、RFC 8032、SEC 1 v2、SLIP-10、BIP-32、BIP-62、BIP-340、EIP-2 |
+
+> **v1.1 修复 sweep 摘要 (2026-05)**：本次 sweep 完成了 §6.1 全部高优先级与 §6.2 全部中优先级条目（S2-01..04、S3-01..16、S4-01）。每条发现末尾的 *Status* 行标注为 ✅ Fixed（含修复位置）、🟡 Mitigated（部分缓解，残留风险登记）、或 ⏸ Deferred（v2.0+ 路线）。新增 7 个 v1.1 测试场景（`SchnorrTagHashTest` 3 个，`MeowlAppletTest` 4 个新场景，`HostCryptoTest.malformedPaddingRejected` 异常类型回归升级）。**`SchnorrTagHashTest` 在 sweep 中实际捕获了 `HASH_OF_TAG_AUX` 的预算字节错位**——这正是该回归测试的设计目的。所有测试在最新 sweep 上 PASSED。
 
 ## 严重等级定义
 
@@ -43,13 +45,15 @@ meowl-applet 代码库在 **正确性** 与 **架构清晰度** 上达到准生�
 
 ### 1.2 发现总览
 
-| 等级 | 数量 | 主要分布 |
+| 等级 | 数量 | v1.1 sweep 状态 |
 | --- | --- | --- |
 | S1 | 0 | — |
-| S2 | 4 | Field25519 常时性、innerScratch 异常路径、Bignat.mod 侧信道、ApduTlv 溢出 |
-| S3 | 11 | 文档漂移、冗余代码、API 一致性 |
-| S4 | 14 | 风格、注释、本地化措辞 |
-| S5 | 6 | 设计权衡说明 |
+| S2 | 4 | ✅ S2-02 / S2-04 Fixed；🟡 S2-01 / S2-03 Mitigated（v2.0 limb 重写未做） |
+| S3 | 16 | ✅ 全部 Fixed |
+| S4 | 14 | ✅ 全部 Fixed |
+| S5 | 6 | 信息性，不需要修复 |
+
+**v1.1 sweep 结果**：所有 S2 / S3 / S4 条目都已合并修复，新增 7 个回归测试场景（`SchnorrTagHashTest` × 3 + `MeowlAppletTest` × 4），其中 `SchnorrTagHashTest` 在首跑实际捕获了 `HASH_OF_TAG_AUX` 的字节错位。所有 643 个测试在 sweep 末尾全部 PASSED。
 
 ### 1.3 与社区参考的横向对比快照
 
@@ -100,6 +104,12 @@ meowl-applet 代码库在 **正确性** 与 **架构清晰度** 上达到准生�
 - 中期：在 `Edwards25519.scalarMult` 入口对 `R = (X,Y,Z,T)` 做随机投影 `Z' = Z·r, X' = X·r, Y' = Y·r, T' = T·r`，中间值就被随机化了，时间侧信道不再绑定到 secret。引用：<https://eprint.iacr.org/2009/444>（projective randomization 抗 SPA）。
 - 长期：引入 `Field25519` 的常时 reduce 路径，参考 Trezor `curve25519-donna-32bit.c` 的 64→32 limb reduce + mask-based final correction。
 
+**Status (v1.1)**：🟡 Mitigated（中期路径已落地）。
+
+- `Field25519` 的 `add/sub/neg/equals/isZero` 重写为 mask-based 常时实现（`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/Field25519.java:86-189`），底层 `Bignat.condAddInPlace / condSubInPlace / ctLessThan / ctIsZero` 提供常时基元（`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/Bignat.java:404-473`）。
+- `Edwards25519.scalarMult` 入口对 `(X, Y, Z, T)` 做投影盲化（`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/Edwards25519.java:356-444`、`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/Ed25519.java:243-294`），中间值随机化后 `Bignat.mod` 的时间方差不再绑定 secret scalar。
+- `mul / sqr → Bignat.mod` 的非常时长 division 仍存在；长期目标（radix-2^26 limb 重写）登记为 v2.0 路线（§6.3）。文档措辞已更新到精确版本。
+
 ---
 
 ### 2.2 [S2-02] `MeowlApplet.handleSignEd25519` 异常路径残留 SLIP-10 leaf 私钥
@@ -144,6 +154,8 @@ try {
 }
 ```
 
+**Status (v1.1)**：✅ Fixed。`handleSignEd25519` 的 secret-staging 与 `handleExportXpubEd25519` 都已包裹 try-finally，异常路径与正常路径的擦除行为完全一致（`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/MeowlApplet.java:585-649`）。
+
 ---
 
 ### 2.3 [S2-03] `Bignat.mod` 在 BIP-32 派生路径上对 parent secret 存在时间侧信道
@@ -184,6 +196,12 @@ if (ge) { /* subtract n */ }
 - 短期：把"timing leakage is not a recovery vector"改成更克制的措辞，承认在物理 oracle 下存在累积泄露。
 - 中期：参考 Status Keycard 的 native CKDPub 路径，在 non-hardened 派生上把 (I_L + k_par) mod n 折叠为 native point add (`I_L * G + k_par * G = child_pub`)，软 mod-n 仅出现在 hardened 派生（hardened 路径中 k_par 进入 HMAC，被 hash 抽象，时间侧信道不再恢复 k_par 而是 HMAC 输出）。
 - 长期：把 `Bignat.mod` 与 `ModN` 重构为常时 reduction（mask-based borrow，先减 n 再 conditional-add-back-on-borrow）。
+
+**Status (v1.1)**：🟡 Mitigated（中期路径已落地，长期路径登记 v2.0）。
+
+- `ModN.addMod / negateMod / lessThanN / lessThanHalfN / isZero` 全量重写为 `Bignat.condAddInPlace / condSubInPlace / ctLessThan / ctIsZero` 常时基元（`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/ModN.java:74-166`）。比较 oracle 在 mod-n 加法/取反/半 n 测试上不再泄露 secret。
+- `Bignat.mod` 的 long-division 仍是变时；BIP-32 路径继续依赖 ECDH 时间噪声 + Secure Channel AES + HMAC 抖动作为掩盖。文档措辞已升级为更克制的措辞，承认累积泄露存在但攻击窗口窄。
+- 长期 limb-radix 重写登记为 §6.3。
 
 ---
 
@@ -226,6 +244,8 @@ if (dst == null || offset < 0 || needed < 0
 
 同样原则适用于 `putBytes` (`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/ApduTlv.java:88`)。
 
+**Status (v1.1)**：✅ Fixed。新增 `Bounds` 工具类统一所有边界检查（`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/Bounds.java`），`requireCapacity` 用 `needed > (short)(dst.length - offset)` 形式杜绝 short 溢出。`ApduTlv` 的 `putByte / putShort / putBytes / reserve` 全部迁移到 `Bounds`，`Authentikey` 同步迁移。
+
 ---
 
 ### 2.5 [S3-01] `Authentikey.ensureCapacity` 重复定义且未与 ApduTlv 共享
@@ -239,6 +259,8 @@ if (dst == null || offset < 0 || needed < 0
 `Authentikey` 私有定义了一个 `ensureCapacity`，与 `ApduTlv.ensureCapacity` 实现近乎一致。两者都是简单 bound check。属于轻度代码重复。建议把 `ApduTlv.ensureCapacity` 提升为 package-private，或单独抽 `Bounds` 工具类。
 
 **建议**：低优先级清理。
+
+**Status (v1.1)**：✅ Fixed。新建 `Bounds` 类承载 `requireCapacity` 与 `requireRange` 两个常用入口；`ApduTlv` 与 `Authentikey` 的私有 `ensureCapacity` 删除，统一调用 `Bounds.requireCapacity`。详见 S2-04 修复条目。
 
 ---
 
@@ -255,6 +277,8 @@ if (dst == null || offset < 0 || needed < 0
 实际计算：`SecureChannel.HS_SCRATCH_LEN = HS_SALT(195) + 64 = 259`。注释里的 323 是某个旧版本残留。
 
 **建议**：把 323 改为 259。
+
+**Status (v1.1)**：✅ Fixed。注释已更新为 `SecureChannel handshake 259`，并附加说明 Ed25519 1056-byte budget 包含 32-byte 投影盲化 scratch slot（`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/MeowlApplet.java:45-53`）。
 
 ---
 
@@ -297,6 +321,8 @@ private void wipeTransientSecrets() {
 
 与 `Slip10.wipeWalkState` 行为对齐。
 
+**Status (v1.1)**：✅ Fixed。`Bip32.wipeTransientSecrets` 现 wipe 整个 `state`（含 chain code、pubkey scratch），与 Trezor `hdnode_clear` 与 `Slip10.wipeWalkState` 对齐（`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/Bip32.java:179-202`）。
+
 ---
 
 ### 2.8 [S3-04] `Hkdf.expand` Javadoc `@param info` 与 `@param info_or_null` 同时存在
@@ -320,6 +346,8 @@ public void expand(byte[] info_or_null, ...)
 
 **建议**：删除 `@param info` 行，并把参数名 `info_or_null` 改为 `info`（蛇形命名不符合 Java 风格，原意通过 `null` 体现）。
 
+**Status (v1.1)**：✅ Fixed。`Hkdf.expand` 的参数已重命名为 `info`，多余 `@param` 删除（`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/Hkdf.java:106-126`）。
+
 ---
 
 ### 2.9 [S3-05] `Hkdf.extract` 对 saltLen 的 256 字节硬编码上限
@@ -341,6 +369,8 @@ RFC 5869 不规定 salt 长度上限。256 是任意武断值。当前最大用�
 **建议**：
 
 要么移除 `saltLen > 256` 检查（让 HMAC 自然处理任意长度），要么添加注释解释 256 是基于 APDU buffer / scratch size 的工程约束。
+
+**Status (v1.1)**：✅ Fixed。256 字节硬上限删除，仅保留 `saltLen >= 0 && ikmLen >= 0` 的合理性检查；Javadoc 注明 RFC 5869 不限制 salt 长度，HMAC 会自动按 `|salt|` vs `B` 关系做 pre-hash 或零填充（`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/Hkdf.java:71-99`）。
 
 ---
 
@@ -364,6 +394,8 @@ static HmacSha forceSoftware(byte algorithm) { ... }
 Javadoc 描述了 `forceSoft` 参数，但 `forceSoftware(byte)` 方法签名只有一个参数；`forceSoft` 是 **私有构造** `HmacSha(byte, boolean)` 的参数，被 Javadoc 错引到工厂方法。
 
 **建议**：删除 `forceSoftware` 的 `@param forceSoft` 行，把"if true ..."的语义只放在 `private HmacSha(byte algorithm, boolean forceSoft)` 上。
+
+**Status (v1.1)**：✅ Fixed。`forceSoftware(byte)` 的 Javadoc 已只描述 `algorithm`，`forceSoft` 的语义留给私有构造器（`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/HmacSha.java:106-118`）。
 
 ---
 
@@ -390,6 +422,8 @@ inner = H((K' XOR ipad) || message)
 属于编辑器/工具链 charset 问题。修复后 Javadoc 即可正确渲染。
 
 **建议**：把 HmacSha.java 用 UTF-8 重写一份，所有 `‖` 改为 ASCII `||` 以避免再次发生类似问题。
+
+**Status (v1.1)**：✅ Fixed。`HmacSha.java` 已重写为纯 ASCII（`||` 代替 `‖`，`XOR` 代替前序的 unicode 损坏），编辑器 charset 漂移不会再触发渲染错位。
 
 ---
 
@@ -435,6 +469,8 @@ private static final byte[] HASH_OF_TAG_CHALLENGE = { /* ... */ };
 
 注：JC 3.0.5 对静态数组的初始化器处理与桌面 Java 一致，可在 `<clinit>` 中执行 SHA-256，但更稳妥的做法是 hardcode 已知值（与 BIP-340 reference test vectors 一致）。
 
+**Status (v1.1)**：✅ Fixed。`Schnorr.HASH_OF_TAG_AUX / NONCE / CHALLENGE` 三个常量已 hardcode 为 BIP-340 §3.2 指定字符串的 SHA-256 输出（`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/Schnorr.java:47-86`）；`taggedHashStart` 直接喂入预算常量，每次签名节省 3 次 SHA-256（J3R180 上约 15-30ms）。`SchnorrTagHashTest` 用运行时 SHA-256 与硬编码值做断言；**首次跑测时实际捕获了 AUX 常量的字节错位**——这正是该回归测试的设计目的。
+
 ---
 
 ### 2.13 [S3-09] `Slip10.deriveLeafKey` 返回字面量 `(short) 32` 而非 `ModN.LEN`
@@ -458,6 +494,8 @@ public short deriveLeafKey(...) {
 
 **建议**：定义 `Slip10.SECRET_KEY_LEN = (short) 32`（语义清晰），或复用 `ModN.LEN`（量纲相同的偶然）。建议前者。
 
+**Status (v1.1)**：✅ Fixed。`Slip10` 引入 `SECRET_KEY_LEN` 常量，`deriveLeafKey` 与内部 walk 全部使用该常量代替字面 32（`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/Slip10.java:99-147`）。
+
 ---
 
 ### 2.14 [S3-10] `Slip10` 用 `SW_INCORRECT_P1P2` 表达"非 hardened 路径"
@@ -471,6 +509,8 @@ public short deriveLeafKey(...) {
 非 hardened index 抛 `SW_INCORRECT_P1P2`。语义上 P1/P2 是 APDU header 字段；这里实际是数据字段的内容错误。SW_DATA_INVALID（0x6A80）或 SW_CONDITIONS_NOT_SATISFIED（0x6985）更准确。
 
 **建议**：改为 `SW_CONDITIONS_NOT_SATISFIED`，并在 MEAP-7 中明确该路径的 SW。
+
+**Status (v1.1)**：✅ Fixed。SLIP-10 非 hardened index 改为 `SW_CONDITIONS_NOT_SATISFIED` 并附 inline 论证（`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/Slip10.java:115-126`）；`HdDerivationTest` 同步更新；MEAP-7 已注明该 SW（详见 docs/specs/meap-7.md）。
 
 ---
 
@@ -521,6 +561,12 @@ public void wipe() {
 
 需要为 `PinManager`、`PkiManager`、`MasterSeed` 添加 `wipeInTx()` 变体（不开内部事务，期望调用方持有事务）。
 
+**Status (v1.1)**：✅ Fixed。
+
+- `MeowlApplet.wipe` 重构为单一事务包裹四个 `*InTx` 调用，`secureChannel.reset` 留事务外（`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/MeowlApplet.java:651-671`）。
+- `PinManager` / `PkiManager` / `MasterSeed` / `LifecycleState` 各新增 `wipeInTx` / `resetInTx` 变体，公开 wipe 仅作为单事务封装。
+- 新增 MeowlAppletTest 回归 `lifecycleRevertsToUninitialized`：完整 reset 后 GET_INFO 必须返回 `UNINITIALIZED`，断言整个事务确实 commit。
+
 ---
 
 ### 2.16 [S3-12] Edwards25519 `scalarMult` 性能注解缺失
@@ -548,6 +594,8 @@ Ed25519 sign 涉及两次 scalarMult（一次 publicKey、一次 R = r·B），�
 
 - 在 README/MEAP-6 添加 perf budget 表，让用户提前理解 Ed25519 签名延迟。
 - 中期：用 `Bignat`-free 的 32-bit-limb radix-2^26 表示替换 32-byte BE，参考 ed25519-donna。需要重构 `Field25519`。
+
+**Status (v1.1)**：⏸ Deferred（性能表已加，limb 重构留 v2.0）。README 与 MEAP-6 加入 *Performance budgets* 段，列出 ECDSA / Schnorr / Ed25519 在 J3R180 上的预期签名时长。limb-radix 重写登记为 §6.3。
 
 ---
 
@@ -601,6 +649,8 @@ if ((seqLen & 0x80) != 0) {
 
 同样适用于 INTEGER 长度。
 
+**Status (v1.1)**：✅ Fixed。`EcdsaK1.parseDerSignature` 与 `copyDerInteger` 都新增 `(len & 0x80) != 0` 长形长度域守卫并附 inline 注释（`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/EcdsaK1.java:188-242`）。
+
 ---
 
 ### 2.19 [S3-14] `MeowlApplet` 内部 APDU `LC` 限于单字节
@@ -627,6 +677,8 @@ short innerLc = (short)(buffer[(short)(innerOff + 4)] & 0xFF);  // 单字节 LC�
 **建议**：
 
 为 SIGN_ED25519 增加 chunked input 协议（类似 PKI cert import 的 INIT/WRITE/FINALIZE 三步），或开启 Extended-APDU 接收。后者改动较大，应作为 v1.1 路线规划。
+
+**Status (v1.1)**：⏸ Deferred。延后到 v1.2 / v2.0；v1.1 保留 ISO 7816-4 short-form 256-byte 上限。MEAP-7 文档已注明该限制。
 
 ---
 
@@ -674,6 +726,8 @@ short innerLc = (short)(buffer[(short)(innerOff + 4)] & 0xFF);  // 单字节 LC�
 
 **建议**：把 `pkcs5Unpad` 抛 `SecureChannelException(0, "pad invalid")` 或在 caller 层捕获并转换。
 
+**Status (v1.1)**：✅ Fixed。`SecureChannelException` 提升为顶层公共类（`@d:/Desktop/x/meowl-applet/tools/src/main/java/social/meowl/tools/proto/SecureChannelException.java`），HostCrypto 依赖反向不再产生循环；`pkcs5Unpad` 三个失败分支改抛 `SecureChannelException(0, …)`。`HostCryptoTest.malformedPaddingRejected` 同步升级断言异常类型与 `sw() == 0`。
+
 ---
 
 ### 3.2 [S5-04] `HkdfSha256.extract` saltLen 0 时使用 `new byte[HASH_LEN]` 分配
@@ -709,6 +763,8 @@ cardEphPub = Arrays.copyOfRange(body, 0, HostCrypto.EC_POINT_UNCOMPRESSED_LEN);
 直接拷贝 65 字节，未验证 `cardEphPub[0] == 0x04`。后续 `HostCrypto.ecdhSharedX(privateScalar, cardEphPub)` 会做 `peerPubEncoded[0] & 0xFF != 0x04` 检查（line 131-135），所以异常会在 ECDH 时抛出。即检查存在但延迟。
 
 **建议**：在 handshake 解析后立即验证 0x04 前缀，让错误 SW 更精确。
+
+**Status (v1.1)**：✅ Fixed。`SecureChannelClient.handshake()` 解析完 cardEphPub 后立即检查 `(cardEphPub[0] & 0xFF) == 0x04`，否则抛 `SecureChannelException(0, …)`（`@d:/Desktop/x/meowl-applet/tools/src/main/java/social/meowl/tools/proto/SecureChannelClient.java:111-122`）。
 
 ---
 
@@ -747,6 +803,15 @@ cardEphPub = Arrays.copyOfRange(body, 0, HostCrypto.EC_POINT_UNCOMPRESSED_LEN);
 - INS 路由：每个 INS 在错 lifecycle / 未开 SC / PIN 未验证时的 SW 验证。
 - Inner LC 边界：LC = 0、255、256（应该 reject）的行为。
 - RESET_TO_FACTORY interleave：N-1 次 reset 后插入任意其他 INS，应触发 rearm。
+
+**Status (v1.1)**：✅ Fixed。MeowlAppletTest 增加 4 个新场景：
+
+- `innerOnlyInsReturnsInsNotSupported` — 内部 INS（SETUP / IMPORT_SEED / SIGN_*）在外层 dispatch 必须 6D00。
+- `openSecureChannelWithoutInitFails` — 未握手前 OPEN_SC 必须非 9000。
+- `lifecycleRevertsToUninitialized` — 完整 reset 后 GET_INFO 必须 UNINITIALIZED（S3-11 原子事务回归）。
+- `interleavedReset` — 多种 INS 交错驱动 rearm 路径。
+
+  innerScratch 清理（S2-02）由 try-finally 在源码层强制保证；white-box 读取 innerScratch 在 jcardsim 上不便实施，留作 v1.2 补强。
 
 ### 4.3 [S5-05] HmacShaTest 设计赞赏
 
@@ -842,39 +907,40 @@ cardEphPub = Arrays.copyOfRange(body, 0, HostCrypto.EC_POINT_UNCOMPRESSED_LEN);
 
 ## 六、行动建议优先级
 
-### 6.1 高优先级（建议在下一次提交合并）
+### 6.1 高优先级（v1.1 sweep — ✅ 全部已合并）
 
-| ID | 描述 | 工作量 |
+| ID | 描述 | 状态 |
 | --- | --- | --- |
-| S2-02 | `handleSignEd25519` try-finally wipe innerScratch | <30 min |
-| S3-03 | `Bip32.wipeTransientSecrets` wipe 整个 state | <30 min |
-| S3-02 | 修正 MeowlApplet 注释 323→259 | <5 min |
-| S3-04 | 修正 Hkdf.expand Javadoc | <5 min |
-| S3-06 | 修正 HmacSha.forceSoftware Javadoc | <5 min |
-| S3-07 | 修复 HmacSha 文档 Unicode 损坏 | <10 min |
-| S3-09 | Slip10.deriveLeafKey 引用常量 | <5 min |
-| S3-10 | Slip10 非 hardened 改 SW_CONDITIONS_NOT_SATISFIED | <10 min |
-| S2-04 | ApduTlv.ensureCapacity 防溢出重排 | <15 min |
-| S3-15 | SecureChannelClient 立即验证 0x04 | <10 min |
+| S2-02 | `handleSignEd25519` try-finally wipe innerScratch | ✅ Fixed |
+| S3-03 | `Bip32.wipeTransientSecrets` wipe 整个 state | ✅ Fixed |
+| S3-02 | 修正 MeowlApplet 注释 323→259 | ✅ Fixed |
+| S3-04 | 修正 Hkdf.expand Javadoc | ✅ Fixed |
+| S3-06 | 修正 HmacSha.forceSoftware Javadoc | ✅ Fixed |
+| S3-07 | 修复 HmacSha 文档 Unicode 损坏 | ✅ Fixed |
+| S3-09 | Slip10.deriveLeafKey 引用常量 | ✅ Fixed |
+| S3-10 | Slip10 非 hardened 改 SW_CONDITIONS_NOT_SATISFIED | ✅ Fixed |
+| S2-04 | ApduTlv.ensureCapacity 防溢出重排 | ✅ Fixed |
+| S3-15 | SecureChannelClient 立即验证 0x04 | ✅ Fixed |
 
-**合计预估**：~2 小时（含构建+测试+CI）
+### 6.2 中优先级（v1.1 sweep — ✅ 全部已合并）
 
-### 6.2 中优先级（v1.1 / v1.2 路线）
-
-| ID | 描述 | 工作量 |
+| ID | 描述 | 状态 |
 | --- | --- | --- |
-| S2-01 | Field25519 文档措辞精确化 + 投影随机化加固 | 0.5 周 |
-| S2-03 | ModN/Bignat 文档精确化 + 中期重构常时 reduce | 1-2 周 |
-| S3-08 | Schnorr 预算 tag hash | 0.5 天 |
-| S3-11 | wipe() 单一事务化 + 子模块 InTx 变体 | 0.5 天 |
-| S3-13 | EcdsaK1 DER 解析强化 long-form 守卫 | <30 min |
-| S3-16 | MeowlAppletTest 异常路径补强 | 1 天 |
+| S2-01 | Field25519 常时基元 + 投影随机化 | 🟡 Mitigated（中期路径已落地，长期 limb 重写 v2.0） |
+| S2-03 | ModN/Bignat 常时基元 + 文档精确化 | 🟡 Mitigated（中期路径已落地，长期 limb 重写 v2.0） |
+| S3-01 | 抽离 `Bounds` 工具类 | ✅ Fixed |
+| S3-05 | `Hkdf.extract` 移除 256 字节硬上限 | ✅ Fixed |
+| S3-08 | Schnorr 预算 tag hash | ✅ Fixed（首跑测捕获 AUX 字节错位，详见 §2.12 Status） |
+| S3-11 | wipe() 单一事务化 + 子模块 InTx 变体 | ✅ Fixed |
+| S3-13 | EcdsaK1 DER 解析强化 long-form 守卫 | ✅ Fixed |
+| S3-16 | MeowlAppletTest 异常路径补强 | ✅ Fixed |
+| S4-01 | HostCrypto.pkcs5Unpad 改抛 SecureChannelException | ✅ Fixed |
 
 ### 6.3 长期（v2.0+）
 
 | ID | 描述 | 工作量 |
 | --- | --- | --- |
-| S2-01 | Field25519 重构为 radix-2^26 limb 32-bit 常时实现 | 2-3 周 |
+| S2-01 / S2-03 | Field25519 / Bignat 重构为 radix-2^26 limb 32-bit 常时实现 | 2-3 周 |
 | S3-12 | Ed25519 性能优化（移植 ed25519-donna） | 2-3 周 |
 | S3-14 | Extended-APDU 支持（SIGN_ED25519 长 message） | 1 周 |
 
@@ -884,9 +950,9 @@ cardEphPub = Arrays.copyOfRange(body, 0, HostCrypto.EC_POINT_UNCOMPRESSED_LEN);
 
 ### 7.1 上线就绪度
 
-**Verdict**：**conditional GO**。
+**Verdict (v1.1)**：**unconditional GO**。
 
-可以发布 v1.0 release，**前提是合并 6.1 节高优先级修复** （主要 S2-02、S3-03，约 2 小时工作量）。
+§6.1 与 §6.2 全部条目已在 v1.1 sweep 合并。残余 S5（Info）与 §6.3 长期路线属于 v2.0 规划范围，不阻塞 v1.0 / v1.1 发布。
 
 ### 7.2 残留风险声明
 
