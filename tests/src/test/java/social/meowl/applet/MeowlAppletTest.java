@@ -40,6 +40,12 @@ class MeowlAppletTest {
     private static final int INS_GET_INFO = Constants.INS_GET_INFO & 0xFF;
     private static final int INS_GET_AUTHENTIKEY = Constants.INS_GET_AUTHENTIKEY & 0xFF;
     private static final int INS_RESET_TO_FACTORY = Constants.INS_RESET_TO_FACTORY & 0xFF;
+    private static final int INS_OPEN_SC = Constants.INS_OPEN_SECURE_CHANNEL & 0xFF;
+    private static final int INS_SETUP = Constants.INS_SETUP & 0xFF;
+    private static final int INS_SIGN_ECDSA_K1 = Constants.INS_SIGN_ECDSA_K1 & 0xFF;
+    private static final int INS_SIGN_SCHNORR_K1 = Constants.INS_SIGN_SCHNORR_K1 & 0xFF;
+    private static final int INS_SIGN_ED25519 = Constants.INS_SIGN_ED25519 & 0xFF;
+    private static final int INS_IMPORT_SEED = Constants.INS_IMPORT_SEED & 0xFF;
 
     private CardSimulator simulator;
 
@@ -67,6 +73,45 @@ class MeowlAppletTest {
         void unknownInsIs6D00() {
             ResponseAPDU resp = send(CLA, 0xFE, 0x00, 0x00, null);
             assertEquals(0x6D00, resp.getSW());
+        }
+
+        @Test
+        @DisplayName(
+                "inner-only INS dispatched on the outer surface returns 6D00 — never leaks PIN /"
+                        + " seed handlers without a Secure Channel")
+        void innerOnlyInsReturnsInsNotSupported() {
+            // SETUP / IMPORT_SEED / SIGN_xxx must only be reachable through OPEN_SECURE_CHANNEL.
+            // The outer-frame switch must reject them with 6D00 even though the underlying handler
+            // exists, since the handler is gated on a live SC session and the dispatcher does not
+            // route there. Audit S3-16: regression coverage for that gating.
+            int[] innerOnlyIns = {
+                INS_SETUP, INS_IMPORT_SEED, INS_SIGN_ECDSA_K1, INS_SIGN_SCHNORR_K1, INS_SIGN_ED25519
+            };
+            for (int ins : innerOnlyIns) {
+                ResponseAPDU resp = send(CLA, ins, 0x00, 0x00, null);
+                assertEquals(
+                        0x6D00,
+                        resp.getSW(),
+                        "outer-frame dispatch must reject inner-only INS=0x%02X with 6D00"
+                                .formatted(ins));
+            }
+        }
+
+        @Test
+        @DisplayName(
+                "OPEN_SECURE_CHANNEL without a prior INIT handshake fails before dispatch — no SC"
+                        + " state on a fresh card")
+        void openSecureChannelWithoutInitFails() {
+            // Sending OPEN_SC immediately after select() must not crash and must not dispatch any
+            // inner handler. The applet's secure-channel layer rejects with a non-9000 SW. Audit
+            // S3-16: the test is defensive against silent fall-through to dispatchInner with stale
+            // session keys.
+            byte[] bogusEnvelope = new byte[16 + 16 + 16]; // IV || one-block CT || MAC
+            ResponseAPDU resp = send(CLA, INS_OPEN_SC, 0x00, 0x00, bogusEnvelope);
+            assertTrue(
+                    resp.getSW() != 0x9000,
+                    "OPEN_SC without prior handshake must not return 9000 (got 0x%04X)"
+                            .formatted(resp.getSW()));
         }
     }
 
@@ -214,6 +259,48 @@ class MeowlAppletTest {
             }
             byte[] after = send(CLA, INS_GET_AUTHENTIKEY, 0x00, 0x00, null).getData();
             assertArrayEquals(before, after, "authentikey must survive reset-to-factory");
+        }
+
+        @Test
+        @DisplayName(
+                "lifecycle reverts to UNINITIALIZED after a complete reset (audit S3-11 atomic"
+                        + " wipe regression)")
+        void lifecycleRevertsToUninitialized() {
+            // Audit S3-11: every persistent wipe runs inside a single beginTransaction so a torn
+            // power-off cannot leave the card with a half-wiped lifecycle. The post-condition that
+            // observably verifies the success path is "after the fourth invocation, GET_INFO
+            // reports UNINITIALIZED" — the same state a fresh install would expose. A regression
+            // that forgot to reset the lifecycle (or that ran the four wipes outside the same
+            // transaction and ate an exception in the middle) would land the card in a different
+            // bucket here.
+            for (int i = 0; i < 4; i++) {
+                send(CLA, INS_RESET_TO_FACTORY, 0x00, 0x00, null);
+            }
+            Map<Integer, byte[]> tlv =
+                    parseTlv(send(CLA, INS_GET_INFO, 0x00, 0x00, null).getData());
+            byte[] state = tlv.get(Constants.TAG_LIFECYCLE_STATE & 0xFF);
+            assertEquals(1, state.length);
+            assertEquals(LifecycleState.UNINITIALIZED, state[0]);
+        }
+
+        @Test
+        @DisplayName("RESET_TO_FACTORY interleaved with multiple distinct INS rearms cleanly")
+        void interleavedReset() {
+            // Audit S3-16: drive the rearm path with a variety of INS values, including the inner-
+            // only ones (which return 6D00 but still rearm) and one that returns 9000. The counter
+            // must restart at RESET_REQUIRED_INVOCATIONS each time a non-RESET INS comes through.
+            int[] interleaveIns = {INS_GET_INFO, INS_GET_AUTHENTIKEY, INS_SETUP, INS_SIGN_ECDSA_K1};
+            for (int ins : interleaveIns) {
+                send(CLA, INS_RESET_TO_FACTORY, 0x00, 0x00, null); // 0x6FA3
+                send(CLA, INS_RESET_TO_FACTORY, 0x00, 0x00, null); // 0x6FA2
+                send(CLA, ins, 0x00, 0x00, null); // rearm regardless of SW
+                int sw = send(CLA, INS_RESET_TO_FACTORY, 0x00, 0x00, null).getSW();
+                assertEquals(
+                        0x6FA3,
+                        sw,
+                        "after non-RESET INS=0x%02X the counter must restart from %d invocations"
+                                .formatted(ins, 4));
+            }
         }
     }
 
