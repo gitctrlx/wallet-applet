@@ -159,17 +159,17 @@ public final class MasterSeed {
                 || (short) (outOff + Constants.SEED_GENERATED_LEN) > (short) outBuf.length) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        // ALG_TRNG (since JC 3.0.5) draws directly from physical entropy and is the canonical
-        // choice for seed material; fall back to ALG_KEYGENERATION on cards whose TRNG class is
-        // restricted (key-material-only accelerators).
+        // Per MEAP-5 §GENERATE_SEED: prefer ALG_KEYGENERATION (universally available on JC 3.0.4+
+        // and explicitly designed for cryptographic key material); fall back to ALG_TRNG only on
+        // cards that restrict the keygen class.
         javacard.security.RandomData random;
         try {
             random =
-                    javacard.security.RandomData.getInstance(javacard.security.RandomData.ALG_TRNG);
-        } catch (Exception e) {
-            random =
                     javacard.security.RandomData.getInstance(
                             javacard.security.RandomData.ALG_KEYGENERATION);
+        } catch (Exception e) {
+            random =
+                    javacard.security.RandomData.getInstance(javacard.security.RandomData.ALG_TRNG);
         }
         // Resample until the BIP-32 master k passes the parse256(I_L) ∈ (0, n) check. The bound
         // is below 2⁻¹²⁷ per draw so the loop terminates in a single iteration with overwhelming

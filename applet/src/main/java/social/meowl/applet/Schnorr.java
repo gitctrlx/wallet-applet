@@ -145,14 +145,13 @@ public final class Schnorr {
         this.bip32 = bip32;
         try {
             this.sha256 = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
-            // Match the RNG fallback chain used by MasterSeed: ALG_TRNG is the canonical strong-
-            // entropy class (since JC 3.0.5); fall back to ALG_KEYGENERATION on cards whose TRNG
-            // class is restricted (key-material-only accelerators).
+            // Per MEAP-6 §Schnorr: aux randomness is drawn from the same RNG class chosen by
+            // MasterSeed — ALG_KEYGENERATION first (universal on JC 3.0.4+), ALG_TRNG fallback.
             RandomData candidate;
             try {
-                candidate = RandomData.getInstance(RandomData.ALG_TRNG);
-            } catch (Exception e) {
                 candidate = RandomData.getInstance(RandomData.ALG_KEYGENERATION);
+            } catch (Exception e) {
+                candidate = RandomData.getInstance(RandomData.ALG_TRNG);
             }
             this.rng = candidate;
         } catch (Exception e) {
