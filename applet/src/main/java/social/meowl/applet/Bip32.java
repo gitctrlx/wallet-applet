@@ -87,16 +87,29 @@ public final class Bip32 {
                                     (short) (HASH_LEN * 8),
                                     false);
             this.scalarMult = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY, false);
-            // EEPROM-backed scalar key — TRANSIENT_DESELECT variants of EC private keys are
-            // not universally supported (e.g. older JCardSim builds), so we use the persistent
-            // form. The key value is rewritten on every derivation and is cleared by the
-            // wipe path; no long-lived secret is ever stored here.
-            this.scalarKey =
-                    (ECPrivateKey)
-                            KeyBuilder.buildKey(
-                                    KeyBuilder.TYPE_EC_FP_PRIVATE,
-                                    KeyBuilder.LENGTH_EC_FP_256,
-                                    false);
+            // Prefer the RAM-backed transient flavour so the derived leaf scalar never touches
+            // EEPROM (audit C-2.02: even a clearKey() does not necessarily wipe EEPROM cells
+            // on every silicon, leaving a residue an attacker with physical access could
+            // recover). Fall back to the persistent flavour only on cards that refuse the
+            // transient form (some pre-3.0.5 JC silicon, and a small number of recent cards
+            // that restrict TRANSIENT_DESELECT to symmetric keys).
+            ECPrivateKey scalarKey;
+            try {
+                scalarKey =
+                        (ECPrivateKey)
+                                KeyBuilder.buildKey(
+                                        KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT,
+                                        KeyBuilder.LENGTH_EC_FP_256,
+                                        false);
+            } catch (javacard.security.CryptoException e) {
+                scalarKey =
+                        (ECPrivateKey)
+                                KeyBuilder.buildKey(
+                                        KeyBuilder.TYPE_EC_FP_PRIVATE,
+                                        KeyBuilder.LENGTH_EC_FP_256,
+                                        false);
+            }
+            this.scalarKey = scalarKey;
             Secp256k1.setCurveParameters(this.scalarKey);
         } catch (Exception e) {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);

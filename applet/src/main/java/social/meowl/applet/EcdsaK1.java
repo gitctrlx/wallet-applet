@@ -68,15 +68,27 @@ public final class EcdsaK1 {
         this.bip32 = bip32;
         try {
             this.ecdsa = Signature.getInstance(Signature.ALG_ECDSA_SHA_256, false);
-            // EEPROM-backed; we wipe via clearKey() at the tail of every signDigest call. JC
-            // 3.0.5 does not universally expose TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT, so the
-            // persistent flavour is the portable choice.
-            this.signKey =
-                    (ECPrivateKey)
-                            KeyBuilder.buildKey(
-                                    KeyBuilder.TYPE_EC_FP_PRIVATE,
-                                    KeyBuilder.LENGTH_EC_FP_256,
-                                    false);
+            // Prefer the RAM-backed transient flavour so the derived leaf scalar never touches
+            // EEPROM (audit C-2.02): clearKey() at the tail of signDigest only invalidates the
+            // JC platform's view, not necessarily the underlying EEPROM cells. Fall back to
+            // persistent only on silicon that refuses the transient form.
+            ECPrivateKey signKey;
+            try {
+                signKey =
+                        (ECPrivateKey)
+                                KeyBuilder.buildKey(
+                                        KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT,
+                                        KeyBuilder.LENGTH_EC_FP_256,
+                                        false);
+            } catch (javacard.security.CryptoException e) {
+                signKey =
+                        (ECPrivateKey)
+                                KeyBuilder.buildKey(
+                                        KeyBuilder.TYPE_EC_FP_PRIVATE,
+                                        KeyBuilder.LENGTH_EC_FP_256,
+                                        false);
+            }
+            this.signKey = signKey;
         } catch (Exception e) {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
             throw new RuntimeException(); // unreachable
