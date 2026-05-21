@@ -39,6 +39,7 @@ class CommandTreeTest {
         assertTrue(sub.containsKey("reset"));
         assertTrue(sub.containsKey("replay"));
         assertTrue(sub.containsKey("gp"));
+        assertTrue(sub.containsKey("sc"));
     }
 
     @Test
@@ -51,6 +52,17 @@ class CommandTreeTest {
         assertTrue(sub.containsKey("list"));
         assertTrue(sub.containsKey("install"));
         assertTrue(sub.containsKey("uninstall"));
+    }
+
+    @Test
+    @DisplayName("the sc subtree exposes handshake / send")
+    void scSubtree() {
+        CommandLine root = MeowlCli.commandLine();
+        CommandLine sc = root.getSubcommands().get("sc");
+        assertNotNull(sc);
+        Map<String, CommandLine> sub = sc.getSubcommands();
+        assertTrue(sub.containsKey("handshake"));
+        assertTrue(sub.containsKey("send"));
     }
 
     @Test

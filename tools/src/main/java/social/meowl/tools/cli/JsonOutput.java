@@ -8,7 +8,6 @@ import com.fasterxml.jackson.jr.ob.JSON;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.UncheckedIOException;
-import java.util.Map;
 
 /**
  * Tiny output formatter shared by every subcommand that supports {@code --json}.
@@ -40,6 +39,10 @@ public final class JsonOutput {
      * Convenience: build a JSON map from alternating {@code (key, value)} pairs and write it to
      * {@code out}. Strongly typed callers should prefer constructing a record + {@link
      * #write(PrintStream, Object)}; this overload is for ad-hoc inline outputs.
+     *
+     * <p>Insertion order is preserved (the underlying serialiser walks a {@link
+     * java.util.LinkedHashMap LinkedHashMap}), so callers can deliberately order keys to keep the
+     * output stable across runs and easy to read.
      */
     public static void writeMap(PrintStream out, Object... keyValuePairs) {
         if ((keyValuePairs.length & 1) != 0) {
@@ -49,6 +52,8 @@ public final class JsonOutput {
         for (int i = 0; i < keyValuePairs.length; i += 2) {
             map.put((String) keyValuePairs[i], keyValuePairs[i + 1]);
         }
-        write(out, Map.copyOf(map));
+        // Map.copyOf() does NOT preserve insertion order, so we hand the LinkedHashMap directly
+        // to jackson-jr; the map is constructed locally and never mutated after this point.
+        write(out, map);
     }
 }

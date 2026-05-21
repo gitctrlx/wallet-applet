@@ -65,6 +65,12 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
     testImplementation(libs.apdu4j.core) // MockBIBO for replay tests
     testImplementation(libs.bouncycastle.prov)
+
+    // Optional integration tests against the real applet running in JCardSim. Tools'
+    // SecureChannelClient is verified end-to-end here against the same applet that ships in
+    // the CAP — no separate "host-only" reference implementation is allowed to drift.
+    testImplementation(libs.jcardsim)
+    testImplementation(project(":applet"))
 }
 
 application {
