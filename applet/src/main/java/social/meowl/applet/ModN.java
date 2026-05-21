@@ -5,7 +5,7 @@
 package social.meowl.applet;
 
 /**
- * Constant-size modular arithmetic over the secp256k1 group order {@code n}.
+ * Constant-size, <b>constant-time</b> modular arithmetic over the secp256k1 group order {@code n}.
  *
  * <p>JavaCard 3.0.5 exposes no native big-integer API, so the handful of mod-{@code n} operations
  * the applet needs (BIP-32 reduction and ECDSA low-{@code s} normalisation) have to be implemented
@@ -24,14 +24,24 @@ package social.meowl.applet;
  * reduced sum to enforce that rule. ECDSA signing ({@link EcdsaK1}) uses {@link #lessThanHalfN}
  * plus {@link #negateMod} to enforce the BIP-62 / EIP-2 low-{@code s} canonical form.
  *
- * <p>Algorithm for {@link #addMod}: standard add-with-carry plus a conditional one-step subtract.
- * Since both operands are guaranteed {@code < n} on call, the sum is at most {@code 2n − 2}, so a
- * single subtraction of {@code n} is sufficient to bring the result back below {@code n}. The
- * reduction branch itself depends only on a carry/compare bit derived from the public {@code I_L}
- * input (BIP-32 non-hardened derivation requires {@code k_par * G} to be returned as a public
- * output, so the sum {@code I_L + k_par mod n} need not be constant-time relative to the secret —
- * the leaked predicate is whether the unreduced sum overflowed, equivalent to comparing {@code I_L}
- * against {@code n − k_par}).
+ * <p><b>Constant-time guarantee (audit S2-03 mitigation).</b> Every operation here completes in a
+ * fixed number of byte-level steps independent of the operand values:
+ *
+ * <ul>
+ *   <li>{@link #addMod} performs an unconditional 32-byte add, an unconditional 32-byte trial
+ *       subtraction, computes the "needs reduction" predicate from the carry/borrow flags as a
+ *       mask, and uses {@link Bignat#condSubInPlace} to apply the reduction. No branch depends on
+ *       the operands.
+ *   <li>{@link #negateMod} is already branch-free.
+ *   <li>{@link #lessThanN}, {@link #lessThanHalfN} and {@link #isZero} call {@link
+ *       Bignat#ctLessThan} / {@link Bignat#ctIsZero}, both of which walk every byte
+ *       unconditionally.
+ * </ul>
+ *
+ * <p>The earlier revision of {@link #addMod} contained a branch on a carry/compare bit derived from
+ * the parent private key on the BIP-32 non-hardened path; audit S2-03 flagged this as a residual
+ * physical timing oracle in the {@code (I_L + k_par) mod n} step. The current implementation eats
+ * that side channel by always running both the add and the subtract.
  */
 public final class ModN {
 
@@ -72,6 +82,11 @@ public final class ModN {
      * Computes {@code out = (a + b) mod n}, where {@code a}, {@code b} and {@code out} are 32-byte
      * big-endian unsigned integers. The destination may alias either source range.
      *
+     * <p>The implementation is fully constant-time: both the 32-byte add and the conditional
+     * 32-byte subtract of {@code n} always run, and the decision to apply the subtract is encoded
+     * as a {@code -1}/{@code 0} mask consumed by {@link Bignat#condSubInPlace}. No branch depends
+     * on the operands.
+     *
      * @return {@code true} iff the result is zero (caller uses this to enforce BIP-32's "skip
      *     {@code k_i == 0}" rule)
      */
@@ -89,22 +104,19 @@ public final class ModN {
             carry = (short) ((sum >>> 8) & 0x01);
         }
 
-        // Step 2: if there was an overflow OR the result is >= n, subtract n once.
-        // Compare even when no overflow — both inputs are < n so the unreduced sum is < 2n,
-        // i.e. one subtraction of n is sufficient in all cases.
-        boolean ge = carry == 1 || !lessThan(out, outOff, SECP256K1_N, (short) 0);
-        if (ge) {
-            short borrow = 0;
-            for (short i = (short) (LEN - 1); i >= 0; i--) {
-                short diff =
-                        (short)
-                                ((out[(short) (outOff + i)] & 0xFF)
-                                        - (SECP256K1_N[i] & 0xFF)
-                                        - borrow);
-                out[(short) (outOff + i)] = (byte) diff;
-                borrow = (short) ((diff < 0) ? 1 : 0);
-            }
-        }
+        // Step 2: build the reduction mask in constant time.
+        //   We need to subtract n iff (carry == 1) OR (out >= n).
+        //     carry == 1                  -> carryMask = -1
+        //     out >= n  i.e. !(out < n)   -> notLessMask = -1
+        //   reduceMask = carryMask | notLessMask, then condSubInPlace.
+        //
+        // Both operands are < n on entry (BIP-32 guarantees this for I_L and k_par), so the
+        // unreduced sum is < 2n and a single subtraction of n is sufficient.
+        short carryMask = (short) -carry;
+        short lessMask = Bignat.ctLessThan(out, outOff, SECP256K1_N, (short) 0, LEN);
+        short reduceMask = (short) (carryMask | ~lessMask);
+        Bignat.condSubInPlace(out, outOff, SECP256K1_N, (short) 0, LEN, reduceMask);
+
         return isZero(out, outOff);
     }
 
@@ -128,54 +140,27 @@ public final class ModN {
     /**
      * Returns {@code true} iff the 32-byte big-endian operand at {@code a[off..off+32]} is strictly
      * less than the secp256k1 group order {@code n}. Used by BIP-32 to reject the
-     * (negligible-probability) case {@code parse256(I_L) ≥ n}.
+     * (negligible-probability) case {@code parse256(I_L) ≥ n}. Constant-time.
      */
     public static boolean lessThanN(byte[] a, short off) {
-        return lessThan(a, off, SECP256K1_N, (short) 0);
+        return Bignat.ctLessThan(a, off, SECP256K1_N, (short) 0, LEN) != 0;
     }
 
     /**
      * Returns {@code true} iff the 32-byte big-endian operand at {@code a[off..off+32]} is less
      * than or equal to {@code ⌊n/2⌋}. Used by {@link EcdsaK1} to test whether an ECDSA {@code s}
-     * value is in canonical (low-{@code s}) form. Equality with {@code ⌊n/2⌋} counts as low-s (per
-     * BIP-62 / EIP-2): the predicate is the negation of the "high-{@code s}" condition {@code s >
-     * ⌊n/2⌋}.
+     * value is in canonical (low-{@code s}) form. Equality with {@code ⌊n/2⌋} counts as low-{@code
+     * s} (per BIP-62 / EIP-2): the predicate is the negation of the "high-{@code s}" condition
+     * {@code s > ⌊n/2⌋}, computed as {@code !ctLessThan(halfN, a)} so the entire walk is
+     * branch-free.
      */
     public static boolean lessThanHalfN(byte[] a, short off) {
-        // a ≤ ⌊n/2⌋  ⟺  !(a > ⌊n/2⌋)  ⟺  a < ⌊n/2⌋ OR a == ⌊n/2⌋
-        return lessThan(a, off, SECP256K1_HALF_N, (short) 0)
-                || equal(a, off, SECP256K1_HALF_N, (short) 0);
+        // a ≤ halfN  ⟺  !(halfN < a)
+        return Bignat.ctLessThan(SECP256K1_HALF_N, (short) 0, a, off, LEN) == 0;
     }
 
     /** Returns {@code true} iff the 32-byte operand at {@code a[off..off+32]} is all zero. */
     public static boolean isZero(byte[] a, short off) {
-        byte acc = 0;
-        for (short i = 0; i < LEN; i++) {
-            acc |= a[(short) (off + i)];
-        }
-        return acc == 0;
-    }
-
-    private static boolean lessThan(byte[] a, short aOff, byte[] b, short bOff) {
-        for (short i = 0; i < LEN; i++) {
-            short av = (short) (a[(short) (aOff + i)] & 0xFF);
-            short bv = (short) (b[(short) (bOff + i)] & 0xFF);
-            if (av < bv) {
-                return true;
-            }
-            if (av > bv) {
-                return false;
-            }
-        }
-        return false; // equal -> not strictly less
-    }
-
-    private static boolean equal(byte[] a, short aOff, byte[] b, short bOff) {
-        for (short i = 0; i < LEN; i++) {
-            if (a[(short) (aOff + i)] != b[(short) (bOff + i)]) {
-                return false;
-            }
-        }
-        return true;
+        return Bignat.ctIsZero(a, off, LEN) != 0;
     }
 }

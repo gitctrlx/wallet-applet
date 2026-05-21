@@ -35,11 +35,23 @@ import javacard.framework.Util;
  * <p>All operands are big-endian (most-significant byte at the lowest offset). All methods are
  * static and operate on caller-supplied buffers; this class holds no state of its own.
  *
- * <p><b>Performance note:</b> the operations here are deliberately not constant-time. The applet
- * uses {@link Bignat} only for material that is either already public after the call (Schnorr
- * {@code R.x}, {@code s}) or is mixed with sufficient randomness ({@code k}) that timing leakage is
- * not a recovery vector. Secret scalars are still loaded into hardware EC keys for the actual
- * elliptic-curve operations; {@link Bignat} only handles their numeric combinations.
+ * <p><b>Timing model.</b> The bulk-arithmetic kernels here ({@link #add}, {@link #sub}, {@link
+ * #mult}, {@link #mod}, {@link #lessThan}, {@link #isZero}) are not constant-time: {@code mod}
+ * walks a schoolbook long-division ladder whose iteration count depends on the operand magnitude,
+ * and the comparison helpers short-circuit on the first differing byte. They MUST therefore only be
+ * invoked on either (a) public material, (b) material that has already been mixed with sufficient
+ * randomness that the timing fan-out reveals no secret bits (e.g. the Schnorr blinded-nonce
+ * kernel), or (c) inside the constant-time {@link Edwards25519#scalarMult} loop where every
+ * iteration multiplies and reduces a randomised projective coordinate (audit S2-01 / S2-03
+ * mitigation: {@link Edwards25519#randomizeProjective}).
+ *
+ * <p>For the modular-arithmetic wrappers that DO need constant-time semantics — the final
+ * conditional-subtract that brings the result of {@code a + b mod n} back into {@code [0, n)}, and
+ * the {@code a < n} / {@code a == 0} predicates exposed by {@link ModN} and {@link Field25519} —
+ * this class also exposes a small set of mask-based helpers: {@link #condSubInPlace}, {@link
+ * #condAddInPlace}, {@link #ctLessThan} and {@link #ctIsZero}. They follow the libsodium /
+ * fiat-crypto pattern of "always do the work, mask the result", trading a small constant-factor for
+ * the elimination of data-dependent branches on the reduction step.
  */
 public final class Bignat {
 
@@ -383,5 +395,80 @@ public final class Bignat {
                 akku++;
             }
         }
+    }
+
+    /**
+     * Constant-time in-place subtract: {@code if (mask == -1) x -= y; else no-op}. {@code x} and
+     * {@code y} are equal-length big-endian unsigned integers.
+     */
+    public static void condSubInPlace(
+            byte[] x, short xOff, byte[] y, short yOff, short size, short mask) {
+        short borrow = 0;
+        for (short i = (short) (size - 1); i >= 0; i--) {
+            short yi = (short) ((y[(short) (yOff + i)] & DIGIT_MASK) & mask);
+            short diff = (short) ((x[(short) (xOff + i)] & DIGIT_MASK) - yi - borrow);
+            x[(short) (xOff + i)] = (byte) diff;
+            borrow = (short) ((diff >>> 15) & 1);
+        }
+    }
+
+    /**
+     * Constant-time in-place add: {@code if (mask == -1) x += y; else no-op}. {@code x} and {@code
+     * y} are equal-length big-endian unsigned integers.
+     */
+    public static void condAddInPlace(
+            byte[] x, short xOff, byte[] y, short yOff, short size, short mask) {
+        short carry = 0;
+        for (short i = (short) (size - 1); i >= 0; i--) {
+            short yi = (short) ((y[(short) (yOff + i)] & DIGIT_MASK) & mask);
+            short sum = (short) ((x[(short) (xOff + i)] & DIGIT_MASK) + yi + carry);
+            x[(short) (xOff + i)] = (byte) sum;
+            carry = (short) ((sum >>> DIGIT_LEN) & 1);
+        }
+    }
+
+    /**
+     * Constant-time strict less-than test on two equal-length big-endian unsigned integers. Returns
+     * {@code -1} (0xFFFF) iff {@code x < y}; returns {@code 0} otherwise. The full
+     * trial-subtraction always runs to completion: every byte is read in MSB-to-LSB order
+     * regardless of where the operands first differ.
+     */
+    public static short ctLessThan(byte[] x, short xOff, byte[] y, short yOff, short size) {
+        short borrow = 0;
+        for (short i = (short) (size - 1); i >= 0; i--) {
+            short diff =
+                    (short)
+                            ((x[(short) (xOff + i)] & DIGIT_MASK)
+                                    - (y[(short) (yOff + i)] & DIGIT_MASK)
+                                    - borrow);
+            borrow = (short) ((diff >>> 15) & 1);
+        }
+        return (short) -borrow;
+    }
+
+    /**
+     * Constant-time {@code x == 0} predicate. Reads every byte and returns {@code -1} iff the
+     * buffer is all zero, {@code 0} otherwise. The implementation deliberately avoids any local of
+     * type {@code int} because the J3R180 JavaCard converter rejects 32-bit locals (see {@link
+     * Bignat} class Javadoc and audit S2-01 follow-up).
+     */
+    public static short ctIsZero(byte[] x, short xOff, short size) {
+        // Accumulate the byte-wise OR in a short. Each contribution is an unsigned byte (range
+        // [0, 0xFF]) so the running OR stays in the same range; sign-extension is impossible.
+        short acc = 0;
+        for (short i = 0; i < size; i++) {
+            acc |= (short) (x[(short) (xOff + i)] & DIGIT_MASK);
+        }
+        // Map `acc` -> {-1, 0} mask without leaving the short domain: the JavaCard 3.0.5 converter
+        // rejects intermediate int-typed sub-expressions, so every step is explicitly narrowed.
+        // Recipe:
+        //   1. `(short) -acc` is the two's-complement negation in 16-bit. Bit 15 is set iff
+        //      `acc != 0` (the only short that equals its own negation modulo 2^16 is 0).
+        //   2. `(short) (acc | -acc)` keeps bit 15 set iff `acc != 0`.
+        //   3. `>>> 15 & 1` extracts that bit as 0 or 1.
+        //   4. Subtract 1 to land on the {-1, 0} mask convention used elsewhere in this class.
+        short orNeg = (short) (acc | (short) -acc);
+        short nonZero = (short) ((orNeg >>> 15) & 1);
+        return (short) (nonZero - 1);
     }
 }

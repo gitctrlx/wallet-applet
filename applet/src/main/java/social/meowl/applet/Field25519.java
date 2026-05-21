@@ -28,12 +28,24 @@ import javacard.framework.Util;
  * big-endian for consistency with the rest of the applet ({@link Bignat}, {@link Bip32}, {@link
  * Schnorr}). The endianness flip happens once, at the {@link Ed25519} wire boundary.
  *
- * <p><b>Constant-time note:</b> the operations here branch on operand magnitude (e.g. the
- * compare-and-subtract in {@link #add}). The exponent in {@link #inv} is the public modulus {@code
- * p − 2}, so the square-and-multiply schedule itself is constant-time. The compare-and- subtract
- * leaks at most one bit per call, which is the same leakage the Bitcoin-side primitives already
- * emit; the threat model (a screenless secure-element attached over PCSC) does not admit
- * fine-grained timing attacks on this layer.
+ * <p><b>Timing model (audit S2-01 mitigation).</b> The additive helpers — {@link #add}, {@link
+ * #sub}, {@link #neg} — are fully constant-time: they always run both the unconditional 32-byte
+ * addition / subtraction <em>and</em> the conditional reduction (subtract {@code p}) or correction
+ * (add {@code p}), with the reduction step driven by a {@code -1}/{@code 0} mask derived from the
+ * carry/borrow flag through {@link Bignat#condSubInPlace} / {@link Bignat#condAddInPlace}. The
+ * inversion exponent {@code p − 2} is a public constant so the square-and-multiply schedule in
+ * {@link #inv} is data-independent at the high level.
+ *
+ * <p>The multiplicative kernels {@link #mul} and {@link #sqr} still pass through {@link
+ * Bignat#mod}, which is a variable-time schoolbook long-division and therefore <b>not</b>
+ * constant-time on its own. The defence against that residual side channel lives one level up, in
+ * {@link Edwards25519#randomizeProjective}: every {@link Edwards25519#scalarMult} entry blinds the
+ * projective coordinates {@code (X, Y, Z, T)} of the input point with a fresh random non-zero field
+ * element {@code r}. Because the affine projection {@code (X/Z, Y/Z)} is invariant under {@code (X,
+ * Y, Z, T) ↦ (rX, rY, rZ, rT)}, the output is unchanged but every intermediate field element fed
+ * into {@link Bignat#mod} during the 256-iteration scalar ladder is statistically decorrelated from
+ * the secret scalar across calls. This is the SPA defence recommended by Coron (CHES 1999,
+ * projective coordinate randomisation).
  */
 public final class Field25519 {
 
@@ -81,9 +93,9 @@ public final class Field25519 {
         dst[(short) (dstOff + LEN - 1)] = (byte) 0x01;
     }
 
-    /** Returns {@code true} iff {@code a == 0} in canonical form. */
+    /** Returns {@code true} iff {@code a == 0} in canonical form. Constant-time. */
     public static boolean isZero(byte[] a, short aOff) {
-        return Bignat.isZero(a, aOff, LEN);
+        return Bignat.ctIsZero(a, aOff, LEN) != 0;
     }
 
     /** Returns {@code true} iff bit 0 of canonical {@code a} is set (i.e. {@code a} is odd). */
@@ -91,20 +103,22 @@ public final class Field25519 {
         return (a[(short) (aOff + LEN - 1)] & 0x01) != 0;
     }
 
-    /** Returns {@code true} iff {@code a == b} in canonical form. */
+    /**
+     * Returns {@code true} iff {@code a == b} in canonical form. Constant-time: XOR-accumulates
+     * every byte pair and only inspects the result once at the end.
+     */
     public static boolean equals(byte[] a, short aOff, byte[] b, short bOff) {
+        short acc = 0;
         for (short i = 0; i < LEN; i++) {
-            if (a[(short) (aOff + i)] != b[(short) (bOff + i)]) {
-                return false;
-            }
+            acc |= (short) ((a[(short) (aOff + i)] ^ b[(short) (bOff + i)]) & 0xFF);
         }
-        return true;
+        return acc == 0;
     }
 
     /**
      * {@code out ← (a + b) mod p}. Inputs in {@code [0, p)}. {@code out} may alias {@code a} or
      * {@code b}; the loop reads both operand bytes before writing the destination byte at the same
-     * index so any aliasing pattern is safe.
+     * index so any aliasing pattern is safe. Constant-time.
      */
     public static void add(byte[] a, short aOff, byte[] b, short bOff, byte[] out, short outOff) {
         short carry = 0;
@@ -115,15 +129,16 @@ public final class Field25519 {
             out[(short) (outOff + i)] = (byte) s;
             carry = (short) ((s >> 8) & 1);
         }
-        // Result is now in [0, 2p). Reduce: if carry || result ≥ p, subtract p.
-        if (carry == 1 || !Bignat.lessThan(out, outOff, FIELD_P, (short) 0, LEN)) {
-            Bignat.sub(out, outOff, FIELD_P, (short) 0, LEN);
-        }
+        // Result is in [0, 2p). Reduce: subtract p iff (carry == 1) OR (out >= p).
+        short carryMask = (short) -carry;
+        short lessMask = Bignat.ctLessThan(out, outOff, FIELD_P, (short) 0, LEN);
+        short reduceMask = (short) (carryMask | ~lessMask);
+        Bignat.condSubInPlace(out, outOff, FIELD_P, (short) 0, LEN, reduceMask);
     }
 
     /**
      * {@code out ← (a − b) mod p}. Inputs in {@code [0, p)}. {@code out} may alias either input;
-     * the loop reads {@code a[i]} and {@code b[i]} before writing {@code out[i]}.
+     * the loop reads {@code a[i]} and {@code b[i]} before writing {@code out[i]}. Constant-time.
      */
     public static void sub(byte[] a, short aOff, byte[] b, short bOff, byte[] out, short outOff) {
         short borrow = 0;
@@ -134,20 +149,19 @@ public final class Field25519 {
             out[(short) (outOff + i)] = (byte) d;
             borrow = (short) ((d >> 8) & 1);
         }
-        // borrow == 1 iff a < b; bring back into [0, p) by adding p.
-        if (borrow == 1) {
-            Bignat.add(out, outOff, FIELD_P, (short) 0, LEN);
-        }
+        // borrow == 1 iff a < b; bring back into [0, p) by unconditionally running condAdd with
+        // a borrow-derived mask. The branch is gone.
+        short addMask = (short) -borrow;
+        Bignat.condAddInPlace(out, outOff, FIELD_P, (short) 0, LEN, addMask);
     }
 
-    /** {@code out ← (−a) mod p}. {@code out} may alias {@code a}. */
+    /**
+     * {@code out ← (−a) mod p}. {@code out} may alias {@code a}. Constant-time: always evaluates
+     * the {@code p − a} subtraction and uses a mask to drive the {@code a == 0} corner case to
+     * {@code out = 0} without branching.
+     */
     public static void neg(byte[] a, short aOff, byte[] out, short outOff) {
-        // Special-case zero so the canonical representative stays 0 rather than p.
-        if (Bignat.isZero(a, aOff, LEN)) {
-            zero(out, outOff);
-            return;
-        }
-        // p − a, computed in a single backward pass so out may alias a.
+        // Unconditional p - a. When a == 0 this writes p into out; the mask below corrects it.
         short borrow = 0;
         for (short i = (short) (LEN - 1); i >= 0; i--) {
             short pi = (short) (FIELD_P[i] & 0xFF);
@@ -156,6 +170,10 @@ public final class Field25519 {
             out[(short) (outOff + i)] = (byte) d;
             borrow = (short) ((d >> 8) & 1);
         }
+        // If a was zero, out now holds p — subtract p (mask = -1) to canonicalise to 0. If a was
+        // non-zero, mask = 0 leaves out untouched.
+        short zeroMask = Bignat.ctIsZero(a, aOff, LEN);
+        Bignat.condSubInPlace(out, outOff, FIELD_P, (short) 0, LEN, zeroMask);
     }
 
     /**
