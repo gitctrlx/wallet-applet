@@ -1,0 +1,171 @@
+<!--
+SPDX-FileCopyrightText: 2026 meowl.social contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
+# `meowl` — host-side CLI for the meowl-applet
+
+A modern picocli command tree that wraps every host-side workflow you need while building, debugging or operating the meowl-applet:
+
+| Surface | Verb | Purpose |
+| --- | --- | --- |
+| Identity / lifecycle | `info` | Pretty-prints `GET_INFO`'s TLV blob (protocol/applet versions, lifecycle state, capabilities, authentikey). |
+| | `authentikey` | Returns the 33-byte compressed authentikey public key. |
+| | `select` | Issues a SELECT BY DF NAME and prints the FCI bytes. |
+| | `reset --confirm` | Drives `RESET_TO_FACTORY` to completion. |
+| Raw APDU | `apdu <hex>` | Transmits an arbitrary hex APDU (optionally with `--no-select`). |
+| | `replay <dump> <hex>` | Replays a previously captured `--dump` session against `MockBIBO` — no card required. |
+| GlobalPlatform | `gp list` | Enumerate installed packages, applets and security domains. |
+| | `gp install <cap>` | Install (or replace) a CAP file with the GP default test keys. |
+| | `gp uninstall [--aid HEX]` | Delete an applet (and, by default, its package). |
+| Secure Channel | `sc handshake` | One-shot MEAP-2 handshake with authentikey-signature verification. |
+| | `sc send <inner-hex>` | Open an SC and send one inner APDU through the encrypted envelope. |
+| Interactive | `shell` | Persistent REPL with one PC/SC connection and an optional SC session. |
+
+## Build / run
+
+The CLI lives in the `:tools` Gradle subproject of the meowl-applet repository.
+
+```bash
+# Run with arguments straight from Gradle:
+./gradlew :tools:run -q --args="info"
+./gradlew :tools:run -q --args="apdu 80010000"
+./gradlew :tools:run -q --args="sc handshake"
+./gradlew :tools:run -q --args="shell"
+
+# Or build a launcher script (works after `installDist`):
+./gradlew :tools:installDist
+./tools/build/install/meowl/bin/meowl --help
+```
+
+The launcher uses the JDK 25 toolchain Gradle resolves automatically (foojay).
+
+## Global options
+
+Every subcommand inherits the same mixin via picocli:
+
+| Flag | Description |
+| --- | --- |
+| `-r, --reader=NAME` | Match the PC/SC reader by substring; falls back to `$MEOWL_READER`. |
+| `--reader-ignore=NAME` | Skip readers whose name contains this substring; falls back to `$MEOWL_READER_IGNORE`. |
+| `--protocol=PROTO` | PC/SC protocol; default `T=1`. |
+| `--exclusive` | Acquire the reader exclusively. |
+| `-v, --verbose` | Trace every APDU at SLF4J `TRACE` level. |
+| `--dump=FILE` | Append every APDU exchange to `FILE` in the apdu4j `MockBIBO` replay format. |
+| `--json` | Emit machine-readable JSON output (where the subcommand supports it). |
+| `-h, --help` / `-V, --version` | Standard. |
+
+## Typical workflows
+
+### Provision a new card
+
+```bash
+# 1. Build the CAP and install it onto the card with the default GP keys.
+./gradlew :applet:buildCap
+./gradlew :tools:run -q --args="gp install applet/build/cap/meowl-applet.cap"
+
+# 2. Sanity-check the install.
+./gradlew :tools:run -q --args="info"
+
+# 3. Hand the card to the user, who will SETUP from their wallet app.
+```
+
+### Debug a single APDU
+
+```bash
+# Plain APDU (no Secure Channel). The CLI auto-selects the meowl applet first.
+./gradlew :tools:run -q --args="apdu 80010000"
+
+# Bypass the auto-select if you are talking to the GP card manager:
+./gradlew :tools:run -q --args="apdu 00A4040000 --no-select"
+```
+
+### Capture a session for offline replay
+
+```bash
+./gradlew :tools:run -q --args="--dump session.dump info"
+./gradlew :tools:run -q --args="--dump session.dump authentikey"
+
+# Later, replay the same exchanges with no card present:
+./gradlew :tools:run -q --args="replay session.dump 80010000"
+```
+
+### Reach an inner-band INS through the Secure Channel
+
+```bash
+# One-shot: open SC and send EXPORT_PKI_PUBKEY (inner INS 0x30).
+./gradlew :tools:run -q --args="sc send 80300000"
+
+# Many-shot: enter the shell, handshake once, then iterate.
+./gradlew :tools:run -q --args="shell"
+meowl> sc handshake
+meowl[sc]> sc send 80300000
+meowl[sc]> sc send 8021000404123456   # VERIFY_PIN
+meowl[sc]> exit
+```
+
+### JSON output for scripting
+
+```bash
+./gradlew :tools:run -q --args="info --json"
+# {
+#   "protocol_version": "1.0",
+#   "applet_version": "0.1",
+#   "lifecycle": { "code": 0, "name": "UNINITIALIZED" },
+#   "capabilities": { "bits": "0x00FF", "flags": [...] },
+#   "authentikey": "0x02..."
+# }
+```
+
+The Rust SDK's integration tests can shell out to `meowl info --json` and parse the result without re-implementing any APDU framing.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success. |
+| `1` | Generic error (`USAGE`-class issues, refused destructive operations). |
+| `2` | Picocli usage error (unknown option, missing argument, malformed input). |
+| `3` | Card-layer I/O failure (no reader, card removed, PC/SC error). |
+| `4` | Protocol failure (the card returned a non-9000 status word in a context where success was asserted). |
+
+Run with `-v` to see the underlying stack trace.
+
+## GraalVM native image (optional)
+
+The `picocli-codegen` annotation processor already emits reflection / resource descriptors under `META-INF/native-image/social.meowl/meowl/`. Building a native binary is a future addition — the current Gradle wiring keeps the option open without forcing GraalVM on every contributor:
+
+```bash
+# When the GraalVM Buildtools plugin lands in tools/build.gradle.kts:
+./gradlew :tools:nativeCompile
+./tools/build/native/nativeCompile/meowl info
+```
+
+## Architecture at a glance
+
+```
+tools/src/main/java/social/meowl/tools/
+├── Main.java                     ── one-line entry: System.exit(MeowlCli.commandLine().execute(args))
+├── core/                         ── pure helpers (Hex, Tlv, MeowlInsn, MeowlSw, MeowlAid)
+├── transport/                    ── apdu4j BIBO stack + ReaderPreferences + visitor wrapper
+├── proto/                        ── MEAP-2 host client (HkdfSha256, HostCrypto, SecureChannelClient)
+├── gp/                           ── in-process GlobalPlatformPro (GpFacade)
+├── shell/                        ── stateful REPL engine (ShellSession)
+└── cli/                          ── picocli command tree (MeowlCli + 13 subcommands)
+```
+
+Test pyramid:
+
+| Layer | Tests | Speed |
+| --- | --- | --- |
+| `core/` & helpers | strict hex / TLV / INS / SW / AID round-trips | <100 ms |
+| `proto/` | RFC 5869 vectors, AES / ECDH round-trips, JCardSim integration | ~1 s |
+| `cli/` | picocli registration, JSON output, exit-code mapping | <100 ms |
+| `shell/` | MockBIBO-driven dispatcher tests | <100 ms |
+| `transport/` | MockBIBO decorator / dump-replay / PrintStream layering | <100 ms |
+
+Total: 253 tests, <2 s end-to-end on a warm JVM.
+
+## License
+
+AGPL-3.0-or-later. See [LICENSE](../LICENSE).

@@ -33,11 +33,25 @@ sha256sum -c sha256sums.txt
 # Verify the SLSA build provenance (requires gh ≥ 2.49)
 gh attestation verify meowl-applet.cap --repo qntx/meowl-applet
 
-# Install onto a card you own using GlobalPlatformPro
-gp --install meowl-applet.cap
+# Install onto a card you own using the bundled `meowl` CLI
+./gradlew :tools:run --args="gp install meowl-applet.cap"
 ```
 
 > The default AID prefix `F0` lives in the ISO/IEC 7816-5 *proprietary* range — fine for development. For production deployments register your own RID per ISO/IEC 7816-5.
+
+## Host-side CLI (`meowl`)
+
+The `:tools` subproject ships a picocli-based CLI that wraps every host-side workflow you need while building, debugging or operating the meowl-applet — APDU pass-through, GlobalPlatform install / uninstall / list, MEAP-2 Secure Channel client and an interactive JLine shell.
+
+```bash
+./gradlew :tools:run -q --args="--help"           # full command listing
+./gradlew :tools:run -q --args="info"             # GET_INFO TLV pretty-print
+./gradlew :tools:run -q --args="info --json"      # machine-readable for scripts
+./gradlew :tools:run -q --args="sc handshake"     # MEAP-2 Secure Channel diagnostics
+./gradlew :tools:run -q --args="shell"            # interactive REPL with persistent SC session
+```
+
+See [`tools/README.md`](./tools/README.md) for the complete command surface, exit-code policy and JSON-output schema.
 
 ## License
 
