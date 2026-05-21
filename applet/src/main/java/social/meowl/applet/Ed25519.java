@@ -19,8 +19,8 @@ import javacard.security.MessageDigest;
  * <p>Wire contract: input is {@code [SLIP-10 leaf priv(32), message(*)]} — the message is hashed
  * inside the algorithm so the card never parses payloads (MEAP-6 hash-only invariant). Output is
  * {@code R(32) ‖ S(32)} in RFC 8032 §5.1.2 little-endian compressed form. All intermediate state
- * lives in a single {@link JCSystem#CLEAR_ON_DESELECT} scratch and is wiped by a {@code finally}
- * in {@link #sign} so a subsequent same-session call cannot observe stale secrets.
+ * lives in a single {@link JCSystem#CLEAR_ON_DESELECT} scratch and is wiped by a {@code finally} in
+ * {@link #sign} so a subsequent same-session call cannot observe stale secrets.
  */
 public final class Ed25519 {
 

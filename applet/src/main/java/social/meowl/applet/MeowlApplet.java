@@ -15,10 +15,10 @@ import javacard.framework.Util;
  * Entry point of the meowl multi-chain hardware-wallet applet — a thin router that delegates every
  * cryptographic and business primitive to a single-purpose companion class in this package.
  *
- * <p>Outer INS surface (reachable on a freshly-installed card, no Secure Channel required):
- * {@code GET_INFO}, {@code GET_AUTHENTIKEY}, {@code RESET_TO_FACTORY}, {@code INIT_SECURE_CHANNEL},
- * {@code OPEN_SECURE_CHANNEL}. Every other INS — PIN, PKI, seed, signing — is reachable only
- * through {@code OPEN_SECURE_CHANNEL} and is dispatched by {@link #dispatchInner}.
+ * <p>Outer INS surface (reachable on a freshly-installed card, no Secure Channel required): {@code
+ * GET_INFO}, {@code GET_AUTHENTIKEY}, {@code RESET_TO_FACTORY}, {@code INIT_SECURE_CHANNEL}, {@code
+ * OPEN_SECURE_CHANNEL}. Every other INS — PIN, PKI, seed, signing — is reachable only through
+ * {@code OPEN_SECURE_CHANNEL} and is dispatched by {@link #dispatchInner}.
  */
 public final class MeowlApplet extends Applet implements WipeTrigger {
 
@@ -46,8 +46,8 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
      * Size of the per-applet shared transient scratch buffer, sized to the largest of the four
      * mutually-exclusive consumers (single-threaded APDU dispatch keeps them from overlapping):
      * Ed25519 1024, Schnorr 386, SecureChannel handshake 323, EcdsaK1 168. Sharing one buffer
-     * versus four cuts ~877 bytes of transient RAM — the difference between fitting and not
-     * fitting on cards with a ~3 KB user-RAM budget (notably J3R180).
+     * versus four cuts ~877 bytes of transient RAM — the difference between fitting and not fitting
+     * on cards with a ~3 KB user-RAM budget (notably J3R180).
      */
     private static final short SHARED_SCRATCH_LEN = (short) 1024;
 

@@ -5,10 +5,9 @@
 package social.meowl.applet;
 
 /**
- * Constant-time byte-array equality. Use this for MAC, signature and authenticator tag
- * verification (or any equality check where one side is secret); {@link
- * javacard.framework.Util#arrayCompare} is left-to-right ternary and leaks the position of the
- * first mismatch through timing.
+ * Constant-time byte-array equality. Use this for MAC, signature and authenticator tag verification
+ * (or any equality check where one side is secret); {@link javacard.framework.Util#arrayCompare} is
+ * left-to-right ternary and leaks the position of the first mismatch through timing.
  */
 public final class ConstantTime {
 

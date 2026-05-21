@@ -24,10 +24,10 @@ import javacard.framework.Util;
  *       JCSystem#beginTransaction()} block around it; see the method-level javadoc for the
  *       rationale.
  *   <li>{@link #verifyPin(byte[], short, short)} returns the post-attempt try counter via the
- *       status word — success raises {@code 9000}, failure raises {@code 0x63Cn}
- *       per ISO 7816-4 (with the 4-bit retry count in the low nibble). A length-policy violation
- *       returns {@link Constants#SW_WRONG_LENGTH} and does <em>not</em> consume a retry; it is a
- *       protocol error on the host side, not a guess.
+ *       status word — success raises {@code 9000}, failure raises {@code 0x63Cn} per ISO 7816-4
+ *       (with the 4-bit retry count in the low nibble). A length-policy violation returns {@link
+ *       Constants#SW_WRONG_LENGTH} and does <em>not</em> consume a retry; it is a protocol error on
+ *       the host side, not a guess.
  *   <li>{@link #changePin(byte[], short, short, byte[], short, short)} requires the caller to first
  *       {@code verifyPin} successfully; we additionally verify the old PIN inside the call to avoid
  *       relying on a stale validated flag in case of concurrent commands.
@@ -55,8 +55,8 @@ public final class PinManager {
      * Pre-allocated scratch used by {@link #wipe()} to drive a known-pattern write through both
      * {@link OwnerPIN} cells before discarding their references (audit H-1.16). Sized at {@link
      * Constants#PUK_MAX_LEN} so the same buffer covers both PIN and PUK updates without an
-     * out-of-bounds read on the PUK call. Lives in {@link JCSystem#CLEAR_ON_DESELECT} memory because
-     * its lifetime is bounded by a single APDU.
+     * out-of-bounds read on the PUK call. Lives in {@link JCSystem#CLEAR_ON_DESELECT} memory
+     * because its lifetime is bounded by a single APDU.
      */
     private final byte[] scrub;
 

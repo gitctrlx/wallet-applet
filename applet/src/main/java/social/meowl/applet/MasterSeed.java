@@ -11,8 +11,8 @@ import javacard.framework.Util;
 /**
  * Persistent master-seed storage and HD derivation root.
  *
- * <p>The raw BIP-39 seed is never retained: on import the card computes the two HMAC-SHA-512
- * chains once and persists only the resulting master keying material:
+ * <p>The raw BIP-39 seed is never retained: on import the card computes the two HMAC-SHA-512 chains
+ * once and persists only the resulting master keying material:
  *
  * <pre>
  *   bip32Master  = HMAC-SHA-512("Bitcoin seed", seed)   // 64 bytes, k(32) || c(32)
@@ -20,8 +20,8 @@ import javacard.framework.Util;
  * </pre>
  *
  * <p>Lifecycle: {@link #importSeed} for a host-supplied seed, {@link #generateSeed} for a
- * card-internal CSPRNG seed (the only path on which raw seed bytes ever leave the card), and
- * {@link #wipe} as the reset-to-factory hook.
+ * card-internal CSPRNG seed (the only path on which raw seed bytes ever leave the card), and {@link
+ * #wipe} as the reset-to-factory hook.
  */
 public final class MasterSeed {
 

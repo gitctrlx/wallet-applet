@@ -10,9 +10,9 @@ import javacard.security.MessageDigest;
 import javacard.security.RandomData;
 
 /**
- * BIP-340 Schnorr signing primitive on secp256k1. JavaCard 3.0.5 ships no native BIP-340; only
- * ECDH scalar multiplication is platform-provided ({@code d' · G}, {@code k' · G}). Tagged
- * hashing, parity testing and modular arithmetic are implemented in software on top of {@link
+ * BIP-340 Schnorr signing primitive on secp256k1. JavaCard 3.0.5 ships no native BIP-340; only ECDH
+ * scalar multiplication is platform-provided ({@code d' · G}, {@code k' · G}). Tagged hashing,
+ * parity testing and modular arithmetic are implemented in software on top of {@link
  * MessageDigest#ALG_SHA_256} and {@link Bignat}.
  *
  * <p>Algorithm — <a
