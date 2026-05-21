@@ -111,6 +111,48 @@ class SecureChannelClientIT {
     }
 
     @Test
+    @DisplayName("oversize inner APDU is rejected before transmit (audit H-1.05)")
+    void oversizeInnerRejected() throws BIBOException {
+        SecureChannelClient sc = new SecureChannelClient(bibo, fetchAuthentikey());
+        sc.handshake();
+
+        // Inner payload large enough to push LC over 255 bytes:
+        // padded ciphertext = ceil((5 + 230 + 1) / 16) * 16 = 240, envelope = 16 + 240 + 16 = 272.
+        byte[] huge = new byte[235];
+        huge[0] = (byte) 0x80;
+        huge[1] = 0x30;
+        huge[4] = (byte) 230;
+
+        SecureChannelClient.SecureChannelException ex =
+                assertThrows(
+                        SecureChannelClient.SecureChannelException.class, () -> sc.sendInner(huge));
+        assertTrue(
+                ex.getMessage().toLowerCase().contains("short-form"),
+                "expected short-form-cap error, got: " + ex.getMessage());
+    }
+
+    @Test
+    @DisplayName(
+            "session is invalidated after a card-side failure; further sendInner fails fast "
+                    + "(audit H-1.12)")
+    void sessionInvalidatedOnCardFailure() throws BIBOException {
+        SecureChannelClient sc = new SecureChannelClient(bibo, fetchAuthentikey());
+        sc.handshake();
+
+        // First call: send an INS the inner dispatcher does not implement (0x7F is unallocated).
+        // The applet's dispatchInner switch returns SW_INS_NOT_SUPPORTED, which OPEN_SC wraps
+        // and re-emits with an outer non-9000 SW — exercising the host invalidate() path.
+        byte[] inner = new byte[] {(byte) 0x80, 0x7F, 0x00, 0x00, 0x00};
+        assertThrows(SecureChannelClient.SecureChannelException.class, () -> sc.sendInner(inner));
+
+        // Second call: must fail fast with IllegalStateException rather than encrypting under
+        // stale keys and producing a confusing chain of MAC mismatches.
+        IllegalStateException invalid =
+                assertThrows(IllegalStateException.class, () -> sc.sendInner(inner));
+        assertTrue(invalid.getMessage().toLowerCase().contains("invalidated"));
+    }
+
+    @Test
     @DisplayName("two handshakes in a row produce different ephemeral pubkeys (forward secrecy)")
     void successiveHandshakesDifferent() throws BIBOException {
         byte[] authentikey = fetchAuthentikey();

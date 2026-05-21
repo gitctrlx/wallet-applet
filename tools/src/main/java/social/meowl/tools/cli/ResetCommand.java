@@ -98,11 +98,23 @@ public final class ResetCommand implements Callable<Integer> {
                                     MeowlInsn.RESET_TO_FACTORY.value() & 0xFF,
                                     0,
                                     0));
-            sequence[i] = resp.getSW();
+            int sw = resp.getSW();
+            sequence[i] = sw;
+            // Validate the response is one of the countdown SWs (0x6FA0..0x6FAF). Without this
+            // check a non-meowl applet would silently return e.g. 6D00 four times and the only
+            // way to notice would be the final-SW assertion below — but that catches the
+            // *value*, not the *kind*. (Audit H-3.01.)
+            if ((sw & 0xFFF0) != MeowlSw.RESET_COUNTDOWN_BASE) {
+                throw new ProtocolException(
+                        sw,
+                        "RESET_TO_FACTORY step "
+                                + (i + 1)
+                                + " returned %04X, expected a 6FAx countdown".formatted(sw));
+            }
         }
         // Last step must report the wipe-complete sentinel (0x6FA0).
         int last = sequence[sequence.length - 1];
-        if ((last & 0xFFF0) != MeowlSw.RESET_COUNTDOWN_BASE || (last & 0x000F) != 0) {
+        if ((last & 0x000F) != 0) {
             throw new ProtocolException(last, "RESET_TO_FACTORY did not complete the wipe");
         }
         return sequence;

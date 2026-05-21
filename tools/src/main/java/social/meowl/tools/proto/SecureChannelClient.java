@@ -62,6 +62,8 @@ public final class SecureChannelClient {
     private byte[] cardEphPub;
     private byte[] handshakeSignature;
     private long inboundCounter;
+    private long lastOutboundCounter;
+    private boolean invalidated;
 
     /**
      * @param bibo the underlying APDU transport (typically a decorated PC/SC channel)
@@ -143,6 +145,12 @@ public final class SecureChannelClient {
         kMac = Arrays.copyOfRange(okm, HostCrypto.AES_KEY_LEN, HostCrypto.AES_KEY_LEN * 2);
         ivBase = Arrays.copyOfRange(okm, HostCrypto.AES_KEY_LEN * 2, HKDF_OKM_LEN);
         inboundCounter = 0L;
+        // outboundCounter starts at 0 on the card and is incremented to 1 before the first
+        // wrap, so the first IV we expect on inbound (host-side outbound from the card) has
+        // counter = 1. The strict-greater monotonicity check requires lastOutboundCounter
+        // to start at 0 (anything > 0 passes).
+        lastOutboundCounter = 0L;
+        invalidated = false;
 
         return new Handshake(cardEphPub.clone(), handshakeSignature.clone(), ivBase.clone());
     }
@@ -164,6 +172,18 @@ public final class SecureChannelClient {
         byte[] ciphertext = HostCrypto.aesCbcEncrypt(kEnc, iv, innerApdu);
 
         int lc = iv.length + ciphertext.length + HostCrypto.MAC_LEN;
+        // MEAP-2 envelopes ride short-form APDUs; if lc would exceed the single-byte LC
+        // field, the host's MAC input (which packs lc into a single byte below) would diverge
+        // from what the card observes on the wire and the envelope would be silently
+        // rejected with an obscure MAC mismatch. Reject explicitly so callers get an
+        // actionable error. (Audit H-1.05.)
+        if (lc > 0xFF) {
+            throw new SecureChannelException(
+                    0,
+                    "Envelope too large for short-form APDU: LC = "
+                            + lc
+                            + " bytes (max 255). Reduce the inner APDU size.");
+        }
         byte[] header = {(byte) CLA_MEOWL, (byte) INS_OPEN_SC, 0x00, 0x00, (byte) lc};
         byte[] mac = HostCrypto.hmacSha256Truncated(kMac, header, iv, ciphertext);
 
@@ -171,6 +191,10 @@ public final class SecureChannelClient {
         ResponseAPDU resp =
                 bibo.transmit(new CommandAPDU(CLA_MEOWL, INS_OPEN_SC, 0x00, 0x00, envelope));
         if (resp.getSW() != 0x9000) {
+            // The card has already torn down its session on its end; mirror that on the host
+            // so a subsequent sendInner() fails fast rather than encrypting under stale keys.
+            // (Audit H-1.12.)
+            invalidate();
             throw new SecureChannelException(
                     resp.getSW(),
                     "OPEN_SECURE_CHANNEL rejected by card (SW=0x%04X)".formatted(resp.getSW()));
@@ -225,9 +249,31 @@ public final class SecureChannelClient {
     }
 
     private void requireSession() {
+        if (invalidated) {
+            throw new IllegalStateException(
+                    "Secure Channel session has been invalidated by a prior cryptographic"
+                            + " failure — call handshake() again to open a fresh session");
+        }
         if (kEnc == null) {
             throw new IllegalStateException("no Secure Channel session — call handshake() first");
         }
+    }
+
+    /**
+     * Wipes the host-side session keys and marks the session invalidated; subsequent {@link
+     * #sendInner} calls will fail fast with {@link IllegalStateException}. Called whenever a
+     * cryptographic check on the inbound or outbound side fails — the card has already torn down
+     * its end at that point, so any further attempt to send under the current keys would only
+     * produce a confusing chain of MAC mismatches.
+     */
+    private void invalidate() {
+        if (kEnc != null) Arrays.fill(kEnc, (byte) 0);
+        if (kMac != null) Arrays.fill(kMac, (byte) 0);
+        if (ivBase != null) Arrays.fill(ivBase, (byte) 0);
+        kEnc = null;
+        kMac = null;
+        ivBase = null;
+        invalidated = true;
     }
 
     /**
@@ -264,9 +310,43 @@ public final class SecureChannelClient {
                 HostCrypto.hmacSha256Truncated(
                         kMac, new byte[] {OUTBOUND_DIRECTION_TAG}, iv, ciphertext);
         if (!constantTimeEquals(mac, expected)) {
+            invalidate();
             throw new SecureChannelException(0, "outbound envelope MAC mismatch");
         }
+
+        // Defense in depth (audit M-1.13): the outbound counter packed into IV ⊕ IV_base must
+        // be strictly greater than the previously observed one. The MAC check above already
+        // gates this on integrity, but a compromised silicon that re-used a counter would
+        // slip past — so we mirror the card's strict-greater rule on the host side too.
+        long observed = extractOutboundCounter(iv, ivBase);
+        if (Long.compareUnsigned(observed, lastOutboundCounter) <= 0) {
+            invalidate();
+            throw new SecureChannelException(
+                    0,
+                    "outbound IV counter regressed: observed "
+                            + Long.toUnsignedString(observed)
+                            + " <= last "
+                            + Long.toUnsignedString(lastOutboundCounter));
+        }
+        lastOutboundCounter = observed;
+
         return HostCrypto.aesCbcDecrypt(kEnc, iv, ciphertext);
+    }
+
+    /**
+     * Recovers the 64-bit outbound counter packed into the low 8 bytes of an outbound IV. The card
+     * constructs the IV as {@code IV_base XOR counter} where {@code counter} occupies the low 8
+     * bytes of a 16-byte buffer (high 8 bytes zero); XOR-ing with {@code IV_base} reverses the
+     * mask.
+     */
+    private static long extractOutboundCounter(byte[] iv, byte[] ivBase) {
+        long counter = 0L;
+        for (int i = 0; i < 8; i++) {
+            int byteIndex = HostCrypto.AES_BLOCK_LEN - 8 + i;
+            int unmasked = (iv[byteIndex] & 0xFF) ^ (ivBase[byteIndex] & 0xFF);
+            counter = (counter << 8) | unmasked;
+        }
+        return counter;
     }
 
     /**
