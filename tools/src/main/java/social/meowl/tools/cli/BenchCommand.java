@@ -1,0 +1,354 @@
+/*
+ * SPDX-FileCopyrightText: 2026 meowl.social contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+package social.meowl.tools.cli;
+
+import apdu4j.core.APDUBIBO;
+import apdu4j.core.BIBOException;
+import apdu4j.core.CommandAPDU;
+import apdu4j.core.ResponseAPDU;
+import java.io.PrintStream;
+import java.security.SecureRandom;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.concurrent.Callable;
+import picocli.CommandLine.Command;
+import picocli.CommandLine.Mixin;
+import picocli.CommandLine.Option;
+import picocli.CommandLine.ParentCommand;
+import social.meowl.tools.core.MeowlInsn;
+import social.meowl.tools.core.MeowlSw;
+import social.meowl.tools.proto.SecureChannelClient;
+import social.meowl.tools.transport.CardTransport;
+
+/**
+ * {@code meowl bench} — measures p50 / p95 / p99 wall-clock latency of the applet's main signing
+ * and HD-walk paths on a real card.
+ *
+ * <p>The benchmark assumes the card is already in the {@code SEEDED} lifecycle state. It runs a
+ * fresh Secure Channel handshake, performs a {@code VERIFY_PIN} with the supplied PIN, and then
+ * times each operation with {@link #warmup} warm-up iterations followed by {@link #samples} timed
+ * iterations.
+ *
+ * <p>Pre-conditions for this command to succeed on a fresh card:
+ *
+ * <ol>
+ *   <li>The CAP is installed (see {@code meowl gp install}).
+ *   <li>{@code SETUP} has been run with the PIN this command is using (see {@code meowl sc send}
+ *       for the encoded SETUP APDU, or use the {@code meowl shell} REPL).
+ *   <li>{@code IMPORT_SEED} or {@code GENERATE_SEED} has been run, putting the card in {@code
+ *       SEEDED}.
+ * </ol>
+ *
+ * <p>Output format: one line per benchmarked operation, formatted identically to {@code
+ * BenchmarkSuite} for easy side-by-side comparison between simulator and silicon. With {@code
+ * --json}, emits a structured object suitable for piping into a regression harness.
+ */
+@Command(
+        name = "bench",
+        mixinStandardHelpOptions = true,
+        description =
+                "Measures p50/p95/p99 latency of sign + HD-walk paths on a real card. Card"
+                        + " must be SEEDED + PIN-validated.")
+public final class BenchCommand implements Callable<Integer> {
+
+    @ParentCommand private MeowlCli parent;
+
+    @Mixin public AidOption aid = new AidOption();
+
+    @Option(
+            names = {"-p", "--pin"},
+            required = true,
+            paramLabel = "PIN",
+            description = "User PIN to authenticate before benchmarking (4-32 ASCII bytes).")
+    public String pin;
+
+    @Option(
+            names = "--warmup",
+            paramLabel = "N",
+            description = "Warm-up iterations per operation (default: ${DEFAULT-VALUE}).",
+            defaultValue = "5")
+    public int warmup;
+
+    @Option(
+            names = "--samples",
+            paramLabel = "N",
+            description = "Timed iterations per operation (default: ${DEFAULT-VALUE}).",
+            defaultValue = "30")
+    public int samples;
+
+    @Option(
+            names = "--include",
+            paramLabel = "OP[,OP...]",
+            description =
+                    "Comma-separated subset of {ecdsa,schnorr,ed25519,xpub-k1,xpub-ed25519,sc}."
+                            + " Default: all.",
+            split = ",")
+    public String[] include;
+
+    private static final SecureRandom RANDOM = new SecureRandom();
+
+    /** secp256k1 BIP-44: m/44'/0'/0'/0/0 — Bitcoin first receive. */
+    private static final int[] PATH_K1 = {
+        0x8000002C, 0x80000000, 0x80000000, 0x00000000, 0x00000000
+    };
+
+    /** Ed25519 SLIP-44: m/44'/501'/0'/0' — Solana account 0. */
+    private static final int[] PATH_ED25519 = {
+        0x8000002C, 0x800001F5, 0x80000000, 0x80000000
+    };
+
+    @Override
+    public Integer call() {
+        Map<String, Stats> results =
+                CardTransport.run(parent.globalOptions.toReaderPreferences(), this::runOnCard);
+        if (parent.globalOptions.json) {
+            JsonOutput.write(System.out, toJsonModel(results));
+        } else {
+            renderText(System.out, results);
+        }
+        return 0;
+    }
+
+    private Map<String, Stats> runOnCard(APDUBIBO bibo) throws BIBOException {
+        MeowlSession.select(bibo, aid.bytes());
+
+        ResponseAPDU akResp =
+                bibo.transmit(
+                        new CommandAPDU(
+                                SecureChannelClient.CLA_MEOWL,
+                                MeowlInsn.GET_AUTHENTIKEY.value() & 0xFF,
+                                0,
+                                0));
+        if (!MeowlSw.isSuccess(akResp.getSW())) {
+            throw new ProtocolException(
+                    akResp.getSW(), "GET_AUTHENTIKEY failed during bench setup");
+        }
+
+        SecureChannelClient sc = new SecureChannelClient(bibo, akResp.getData());
+        sc.handshake();
+        verifyPin(sc, pin.getBytes());
+
+        Map<String, Stats> out = new LinkedHashMap<>();
+        if (shouldRun("ecdsa")) {
+            byte[] payload = signPayloadK1();
+            out.put(
+                    "SIGN_ECDSA_K1",
+                    benchOp(() -> sendInner(sc, MeowlInsn.SIGN_ECDSA_K1.value(), payload)));
+        }
+        if (shouldRun("schnorr")) {
+            byte[] payload = signPayloadK1();
+            out.put(
+                    "SIGN_SCHNORR_K1",
+                    benchOp(() -> sendInner(sc, MeowlInsn.SIGN_SCHNORR_K1.value(), payload)));
+        }
+        if (shouldRun("ed25519")) {
+            byte[] payload = signPayloadEd25519();
+            out.put(
+                    "SIGN_ED25519",
+                    benchOp(() -> sendInner(sc, MeowlInsn.SIGN_ED25519.value(), payload)));
+        }
+        if (shouldRun("xpub-k1")) {
+            byte[] payload = exportXpubPayload((byte) 0x00, PATH_K1);
+            out.put(
+                    "EXPORT_XPUB_K1",
+                    benchOp(() -> sendInner(sc, MeowlInsn.EXPORT_XPUB.value(), payload)));
+        }
+        if (shouldRun("xpub-ed25519")) {
+            byte[] payload = exportXpubPayload((byte) 0x01, PATH_ED25519);
+            out.put(
+                    "EXPORT_XPUB_ED25519",
+                    benchOp(() -> sendInner(sc, MeowlInsn.EXPORT_XPUB.value(), payload)));
+        }
+        if (shouldRun("sc")) {
+            // For OPEN_SECURE_CHANNEL we re-handshake on every iteration. The closure captures
+            // `bibo` and creates a fresh client / new ECDH ephemerals each call.
+            out.put(
+                    "OPEN_SECURE_CHANNEL",
+                    benchOp(() -> reHandshake(bibo, akResp.getData())));
+        }
+        return out;
+    }
+
+    private boolean shouldRun(String name) {
+        if (include == null || include.length == 0) {
+            return true;
+        }
+        for (String s : include) {
+            if (s.equalsIgnoreCase(name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void verifyPin(SecureChannelClient sc, byte[] pinBytes) throws BIBOException {
+        byte[] inner = innerApdu(MeowlInsn.VERIFY_PIN.value(), (byte) 0, (byte) 0, pinBytes);
+        sc.sendInner(inner);
+    }
+
+    @FunctionalInterface
+    private interface ThrowingRunnable {
+        void run() throws Exception;
+    }
+
+    private Stats benchOp(ThrowingRunnable op) {
+        try {
+            for (int i = 0; i < warmup; i++) {
+                op.run();
+            }
+            long[] nanos = new long[samples];
+            for (int i = 0; i < samples; i++) {
+                long start = System.nanoTime();
+                op.run();
+                nanos[i] = System.nanoTime() - start;
+            }
+            return Stats.from(nanos);
+        } catch (Exception e) {
+            throw new RuntimeException("benchmark op failed", e);
+        }
+    }
+
+    private static byte[] sendInner(SecureChannelClient sc, byte ins, byte[] data)
+            throws BIBOException {
+        return sc.sendInner(innerApdu(ins, (byte) 0, (byte) 0, data));
+    }
+
+    private static void reHandshake(APDUBIBO bibo, byte[] authentikey) throws BIBOException {
+        SecureChannelClient sc = new SecureChannelClient(bibo, authentikey);
+        sc.handshake();
+    }
+
+    private static byte[] innerApdu(byte ins, byte p1, byte p2, byte[] data) {
+        byte[] out = new byte[5 + data.length];
+        out[0] = (byte) 0x80;
+        out[1] = ins;
+        out[2] = p1;
+        out[3] = p2;
+        out[4] = (byte) data.length;
+        System.arraycopy(data, 0, out, 5, data.length);
+        return out;
+    }
+
+    private static byte[] signPayloadK1() {
+        // depth(1) ‖ path(20) ‖ digest(32)  for m/44'/0'/0'/0/0
+        byte[] out = new byte[1 + 4 * PATH_K1.length + 32];
+        out[0] = (byte) PATH_K1.length;
+        for (int i = 0; i < PATH_K1.length; i++) {
+            encodeUint32BE(out, 1 + 4 * i, PATH_K1[i] & 0xFFFFFFFFL);
+        }
+        byte[] digest = new byte[32];
+        RANDOM.nextBytes(digest);
+        System.arraycopy(digest, 0, out, 1 + 4 * PATH_K1.length, 32);
+        return out;
+    }
+
+    private static byte[] signPayloadEd25519() {
+        // depth(1) ‖ path(16) ‖ message(32)  for m/44'/501'/0'/0'
+        byte[] out = new byte[1 + 4 * PATH_ED25519.length + 32];
+        out[0] = (byte) PATH_ED25519.length;
+        for (int i = 0; i < PATH_ED25519.length; i++) {
+            encodeUint32BE(out, 1 + 4 * i, PATH_ED25519[i] & 0xFFFFFFFFL);
+        }
+        byte[] msg = new byte[32];
+        RANDOM.nextBytes(msg);
+        System.arraycopy(msg, 0, out, 1 + 4 * PATH_ED25519.length, 32);
+        return out;
+    }
+
+    private static byte[] exportXpubPayload(byte curveId, int[] path) {
+        byte[] out = new byte[2 + 4 * path.length];
+        out[0] = curveId;
+        out[1] = (byte) path.length;
+        for (int i = 0; i < path.length; i++) {
+            encodeUint32BE(out, 2 + 4 * i, path[i] & 0xFFFFFFFFL);
+        }
+        return out;
+    }
+
+    private static void encodeUint32BE(byte[] dst, int off, long val) {
+        dst[off] = (byte) ((val >>> 24) & 0xFF);
+        dst[off + 1] = (byte) ((val >>> 16) & 0xFF);
+        dst[off + 2] = (byte) ((val >>> 8) & 0xFF);
+        dst[off + 3] = (byte) (val & 0xFF);
+    }
+
+    private static void renderText(PrintStream out, Map<String, Stats> results) {
+        out.printf(
+                "%-22s %5s %8s %8s %8s %8s %8s %8s %8s%n",
+                "operation", "n", "p50_ms", "p95_ms", "p99_ms", "mean_ms", "stddev", "min_ms",
+                "max_ms");
+        out.println("---------------------- ----- -------- -------- -------- -------- "
+                + "-------- -------- --------");
+        for (var e : results.entrySet()) {
+            Stats s = e.getValue();
+            out.printf(
+                    "%-22s %5d %8.1f %8.1f %8.1f %8.1f %8.1f %8.1f %8.1f%n",
+                    e.getKey(),
+                    s.n,
+                    s.p50Ms,
+                    s.p95Ms,
+                    s.p99Ms,
+                    s.meanMs,
+                    s.stddevMs,
+                    s.minMs,
+                    s.maxMs);
+        }
+    }
+
+    private static Map<String, Object> toJsonModel(Map<String, Stats> results) {
+        Map<String, Object> root = new LinkedHashMap<>();
+        for (var e : results.entrySet()) {
+            Stats s = e.getValue();
+            Map<String, Object> obj = new LinkedHashMap<>();
+            obj.put("n", s.n);
+            obj.put("p50_ms", s.p50Ms);
+            obj.put("p95_ms", s.p95Ms);
+            obj.put("p99_ms", s.p99Ms);
+            obj.put("mean_ms", s.meanMs);
+            obj.put("stddev_ms", s.stddevMs);
+            obj.put("min_ms", s.minMs);
+            obj.put("max_ms", s.maxMs);
+            root.put(e.getKey(), obj);
+        }
+        return root;
+    }
+
+    /** Latency distribution for a single operation. */
+    public record Stats(
+            int n,
+            double p50Ms,
+            double p95Ms,
+            double p99Ms,
+            double meanMs,
+            double stddevMs,
+            double minMs,
+            double maxMs) {
+
+        static Stats from(long[] nanos) {
+            long[] sorted = nanos.clone();
+            Arrays.sort(sorted);
+            long sum = 0;
+            for (long v : sorted) sum += v;
+            double mean = sum / (double) sorted.length;
+            double sqSum = 0;
+            for (long v : sorted) {
+                double d = v - mean;
+                sqSum += d * d;
+            }
+            double stddev = Math.sqrt(sqSum / sorted.length);
+            return new Stats(
+                    sorted.length,
+                    sorted[(int) (sorted.length * 0.50)] / 1_000_000.0,
+                    sorted[(int) (sorted.length * 0.95)] / 1_000_000.0,
+                    sorted[Math.min(sorted.length - 1, (int) (sorted.length * 0.99))]
+                            / 1_000_000.0,
+                    mean / 1_000_000.0,
+                    stddev / 1_000_000.0,
+                    sorted[0] / 1_000_000.0,
+                    sorted[sorted.length - 1] / 1_000_000.0);
+        }
+    }
+}

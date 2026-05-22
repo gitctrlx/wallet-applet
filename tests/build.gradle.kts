@@ -44,4 +44,8 @@ tasks.test {
         showStandardStreams = true
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
+    // Forward selected -D properties to the forked test JVM. The benchmark suite
+    // (BenchmarkSuite.java) is gated by `@EnabledIfSystemProperty(named="bench")`
+    // so it stays inert in normal CI but runs on demand with `-Dbench=true`.
+    System.getProperty("bench")?.let { systemProperty("bench", it) }
 }
