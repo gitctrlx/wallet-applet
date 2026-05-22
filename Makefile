@@ -20,7 +20,7 @@ GRADLE_FLAGS ?= --no-daemon
 
 # Default target — the verification gate the user asked for: enforces the
 # Spotless format contract, then runs the full applet test suite.
-all: check test
+all: ci
 
 # Print a short summary of every public target.
 help:
