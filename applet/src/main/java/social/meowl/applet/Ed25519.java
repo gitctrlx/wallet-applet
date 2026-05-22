@@ -259,25 +259,30 @@ public final class Ed25519 {
      *
      * <p>The blind is sampled by drawing 32 random bytes, clearing the top bit (so the result is
      * less than {@code 2²⁵⁵}, comfortably below {@code p = 2²⁵⁵ − 19} with probability {@code 1 −
-     * 19/2²⁵⁵ ≈ 1 − 2⁻²⁵⁰}), and re-rolling on the {@code r == 0} corner case. The resulting blind
-     * is uniform on a set of size {@code 2²⁵⁵ − 19 + ε} which is statistically indistinguishable
-     * from uniform on {@code [1, p)}, and the rejection-sampling loop runs at most twice with
-     * overwhelming probability.
+     * 19/2²⁵⁵ ≈ 1 − 2⁻²⁵⁰}), and re-rolling on both the {@code r ≥ p} and {@code r == 0} corner
+     * cases. The resulting blind is uniform on {@code [1, p)} by construction, and the rejection-
+     * sampling loop terminates after one draw with probability {@code 1 − 20/2²⁵⁵}.
+     *
+     * <p>Audit F-32: the previous implementation used {@code do { ... if (r ≥ p) continue; } while
+     * (r == 0)} where {@code continue} jumped to the {@code while} condition instead of the loop
+     * top. When {@code r ∈ [p, 2²⁵⁵)} (~2⁻²⁵¹ probability), the loop exited with the out-of-range
+     * blind, violating the {@code [1, p)} contract. Rewritten with a single {@code while (true)}
+     * body so both rejection branches actually iterate.
      */
     private void blindBasePoint() {
-        do {
+        while (true) {
             rng.nextBytes(scratch, BLIND_FE_OFF, BLIND_FE_LEN);
-            // Clear the high bit so the candidate is in [0, 2^255), strictly below 2p.
             scratch[BLIND_FE_OFF] &= (byte) 0x7F;
-            // Reject anything >= p (≈ 19/2^255 of the draws). This branch leaks at most "rng
-            // produced a near-p value", which is publicly known to be statistically rare and
-            // carries no secret information.
             if (Bignat.ctLessThan(
                             scratch, BLIND_FE_OFF, Field25519.FIELD_P, (short) 0, BLIND_FE_LEN)
                     == 0) {
                 continue;
             }
-        } while (Bignat.ctIsZero(scratch, BLIND_FE_OFF, BLIND_FE_LEN) != 0);
+            if (Bignat.ctIsZero(scratch, BLIND_FE_OFF, BLIND_FE_LEN) != 0) {
+                continue;
+            }
+            break;
+        }
         Edwards25519.randomizeProjective(
                 scratch, BASE_PT_OFF, scratch, BLIND_FE_OFF, scratch, WORK_OFF);
     }
