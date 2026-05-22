@@ -14,34 +14,33 @@ import javacard.security.MessageDigest;
  * <p>JavaCard 3.0.4 silicon exposes EC scalar multiplication only for short Weierstrass curves;
  * Ed25519's native group is twisted Edwards. The signing pipeline therefore routes the two scalar
  * multiplications ({@code A = s·G} and {@code R = r·G}) through {@link Wei25519} — the
- * Weierstrass-form expression of curve25519 — using {@link EcPoint} on top of
- * {@link javacard.security.KeyAgreement#ALG_EC_SVDP_DH_PLAIN_XY}, then maps each affine Wei25519
- * result back to RFC 8032 §5.1.2 little-endian compressed form via
- * {@link Wei25519#encodeEdwards}.
+ * Weierstrass-form expression of curve25519 — using {@link EcPoint} on top of {@link
+ * javacard.security.KeyAgreement#ALG_EC_SVDP_DH_PLAIN_XY}, then maps each affine Wei25519 result
+ * back to RFC 8032 §5.1.2 little-endian compressed form via {@link Wei25519#encodeEdwards}.
  *
  * <h2>Cofactor handling — the {@code s/8 · G + 8 · result} trick</h2>
  *
  * <p>The clamped Ed25519 private scalar {@code s} occupies bits 254..3 of a 256-bit integer, so
- * {@code 2²⁵⁴ ≤ s < 2²⁵⁵}. {@link Wei25519}'s prime subgroup order
- * {@code ℓ = 2²⁵² + …} is materially smaller; {@link javacard.security.ECPrivateKey#setS} rejects
- * any scalar {@code ≥ r}. Clamping guarantees {@code s ≡ 0 (mod 8)}, so the identity
+ * {@code 2²⁵⁴ ≤ s < 2²⁵⁵}. {@link Wei25519}'s prime subgroup order {@code ℓ = 2²⁵² + …} is
+ * materially smaller; {@link javacard.security.ECPrivateKey#setS} rejects any scalar {@code ≥ r}.
+ * Clamping guarantees {@code s ≡ 0 (mod 8)}, so the identity
  *
  * <pre>
  *   s · G = (s / 8) · (8 · G)
  * </pre>
  *
- * <p>lets the pipeline compute the EC product in two coprocessor calls: first
- * {@code (s/8) · G}, then multiply that intermediate by the constant {@link #EIGHT}. Both scalars
- * are below {@code ℓ}, so the hardware accepts every step. This is the same workaround dufkan's
- * JCEd25519 uses on every JC card with a 256-bit short Weierstrass engine — see
- * {@code JCEd25519.generateKeypair}'s {@code shiftRight(3)} / {@code multiplication(eight)} dance.
+ * <p>lets the pipeline compute the EC product in two coprocessor calls: first {@code (s/8) · G},
+ * then multiply that intermediate by the constant {@link #EIGHT}. Both scalars are below {@code ℓ},
+ * so the hardware accepts every step. This is the same workaround dufkan's JCEd25519 uses on every
+ * JC card with a 256-bit short Weierstrass engine — see {@code JCEd25519.generateKeypair}'s {@code
+ * shiftRight(3)} / {@code multiplication(eight)} dance.
  *
  * <h2>Wire contract</h2>
  *
  * <p>Input: {@code [SLIP-10 leaf priv(32), message(*)]}; the message is hashed internally so the
- * card never parses payloads (MEAP-6 hash-only invariant). Output: {@code R(32) ‖ S(32)} in
- * RFC 8032 §5.1.2 little-endian compressed form. Every intermediate lives in a shared transient
- * scratch wiped by a {@code finally} on every code path.
+ * card never parses payloads (MEAP-6 hash-only invariant). Output: {@code R(32) ‖ S(32)} in RFC
+ * 8032 §5.1.2 little-endian compressed form. Every intermediate lives in a shared transient scratch
+ * wiped by a {@code finally} on every code path.
  *
  * <h2>Scratch layout</h2>
  *
@@ -71,8 +70,13 @@ public final class Ed25519 {
     /** Length of the encoded signature {@code R ‖ S}. */
     public static final short SIGNATURE_LEN = (short) 64;
 
-    /** Total scratch footprint required by the pipeline. */
-    public static final short SCRATCH_LEN = (short) 577;
+    /**
+     * Total scratch footprint required by the pipeline: {@code WORK_OFF (321) + Wei25519 encode
+     * scratch (288) = 609} bytes. The compiler rejects forward references between the two static
+     * constants on a JC-targeted converter; keep the value materialised here and sanity-checked
+     * against the {@code WORK_OFF} declaration below.
+     */
+    public static final short SCRATCH_LEN = (short) (321 + Wei25519.ENCODE_SCRATCH_LEN);
 
     private static final short SHA512_LEN = (short) 64;
     private static final short SCALAR_LEN = (short) 32;
@@ -87,7 +91,9 @@ public final class Ed25519 {
     private static final short WEI_PT_OFF = (short) 256;
     private static final short WORK_OFF = (short) 321;
 
-    /** 32-byte big-endian constant {@code 8}; used to lift {@code (s/8) · G} back to {@code s · G}. */
+    /**
+     * 32-byte big-endian constant {@code 8}; used to lift {@code (s/8) · G} back to {@code s · G}.
+     */
     private static final byte[] EIGHT = {
         (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00,
         (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00,
@@ -101,14 +107,17 @@ public final class Ed25519 {
 
     private final MessageDigest sha512;
     private final EcPoint ec;
+    private final Fp25519Inv inv;
     private final Barrett barrettL;
     private final byte[] scratch;
 
     /**
      * @param sharedScratch singleton transient scratch (≥ {@link #SCRATCH_LEN} bytes) allocated by
      *     {@link MeowlApplet}.
+     * @param sharedInv shared RSA-NOPAD modular inverter (one per applet); safe to share since APDU
+     *     dispatch is single-threaded.
      */
-    public Ed25519(byte[] sharedScratch) {
+    public Ed25519(byte[] sharedScratch, Fp25519Inv sharedInv) {
         if ((short) sharedScratch.length < SCRATCH_LEN) {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
@@ -130,6 +139,7 @@ public final class Ed25519 {
                         (short) 0,
                         Wei25519.POINT_UNCOMPRESSED_LEN,
                         (short) 256);
+        this.inv = sharedInv;
         this.barrettL = new Barrett(Wei25519.L, (short) 0, Wei25519.MU_L, (short) 0);
         this.scratch = sharedScratch;
     }
@@ -143,7 +153,7 @@ public final class Ed25519 {
         try {
             expandPrivateKey(skBuf, skOff);
             scalarMultByPrivateScalar(S_OUT_OFF);
-            Wei25519.encodeEdwards(scratch, WEI_PT_OFF, outBuf, outOff, scratch, WORK_OFF);
+            Wei25519.encodeEdwards(scratch, WEI_PT_OFF, outBuf, outOff, inv, scratch, WORK_OFF);
             return PUBLIC_KEY_LEN;
         } finally {
             wipeScratch();
@@ -172,7 +182,7 @@ public final class Ed25519 {
 
             // 2-3. A_wei = s · G_wei (via the s/8 + 8 trick); A_ed = encodeEdwards(A_wei).
             scalarMultByPrivateScalar(S_OUT_OFF);
-            Wei25519.encodeEdwards(scratch, WEI_PT_OFF, scratch, A_ED_OFF, scratch, WORK_OFF);
+            Wei25519.encodeEdwards(scratch, WEI_PT_OFF, scratch, A_ED_OFF, inv, scratch, WORK_OFF);
 
             // 4. r = SHA-512(prefix || msg) mod ℓ. The SHA-512 input contains the secret RFC 8032
             //    prefix, so the 64-byte dividend fed to Barrett is SECRET. Reverse LE → BE then
@@ -186,7 +196,7 @@ public final class Ed25519 {
             // 5. R_wei = r · G_wei. r is already < ℓ so a single multiplyG suffices.
             ec.multiplyG(scratch, R_BE_OFF, SCALAR_LEN, scratch, WEI_PT_OFF);
             // 6. R_ed = encodeEdwards(R_wei).
-            Wei25519.encodeEdwards(scratch, WEI_PT_OFF, scratch, R_ED_OFF, scratch, WORK_OFF);
+            Wei25519.encodeEdwards(scratch, WEI_PT_OFF, scratch, R_ED_OFF, inv, scratch, WORK_OFF);
 
             // 7. k = SHA-512(R_ed || A_ed || msg) mod ℓ.
             sha512.reset();
@@ -200,12 +210,7 @@ public final class Ed25519 {
             //    constant-time then add r and conditionally subtract ℓ.
             BigNat.mult(scratch, K_BE_OFF, scratch, S_BE_OFF, SCALAR_LEN, scratch, HASH_OFF);
             barrettL.reduce(
-                    scratch,
-                    HASH_OFF,
-                    scratch,
-                    WORK_OFF,
-                    scratch,
-                    (short) (HASH_OFF + SCALAR_LEN));
+                    scratch, HASH_OFF, scratch, WORK_OFF, scratch, (short) (HASH_OFF + SCALAR_LEN));
             BigNat.copy(scratch, R_BE_OFF, scratch, S_OUT_OFF, SCALAR_LEN);
             boolean carry =
                     BigNat.add(
@@ -234,8 +239,8 @@ public final class Ed25519 {
     }
 
     /**
-     * Computes {@code s · G_wei} into {@code scratch[WEI_PT_OFF..+65]} using the
-     * {@code (s/8) · G + 8 · result} cofactor trick.
+     * Computes {@code s · G_wei} into {@code scratch[WEI_PT_OFF..+65]} using the {@code (s/8) · G +
+     * 8 · result} cofactor trick.
      *
      * @param tmpScalarOff a 32-byte scratch slot the routine borrows for {@code s/8}; the caller
      *     MUST treat it as clobbered until the next overwrite.
@@ -243,15 +248,13 @@ public final class Ed25519 {
     private void scalarMultByPrivateScalar(short tmpScalarOff) {
         copyShiftRight3(scratch, S_BE_OFF, scratch, tmpScalarOff);
         ec.multiplyG(scratch, tmpScalarOff, SCALAR_LEN, scratch, WEI_PT_OFF);
-        ec.multiplyPoint(
-                EIGHT, (short) 0, SCALAR_LEN, scratch, WEI_PT_OFF, scratch, WEI_PT_OFF);
+        ec.multiplyPoint(EIGHT, (short) 0, SCALAR_LEN, scratch, WEI_PT_OFF, scratch, WEI_PT_OFF);
     }
 
     /**
      * Populates {@code S_BE} with the clamped private scalar (big-endian) and leaves the RFC 8032
-     * prefix at {@code HASH[32..64]}. The clamped LE scalar at {@code HASH[0..32]} is zeroed
-     * after the reversal so downstream {@code sha512.doFinal} calls can reuse the head of the
-     * hash slot.
+     * prefix at {@code HASH[32..64]}. The clamped LE scalar at {@code HASH[0..32]} is zeroed after
+     * the reversal so downstream {@code sha512.doFinal} calls can reuse the head of the hash slot.
      */
     private void expandPrivateKey(byte[] skBuf, short skOff) {
         sha512.reset();
@@ -267,9 +270,9 @@ public final class Ed25519 {
 
     /**
      * {@code dst[..32] ← src[..32] >> 3}. Big-endian byte-by-byte right shift by 3 bits, carrying
-     * the bits that fall out of each byte's bottom into the top of the next byte. The clamping
-     * step in {@link #expandPrivateKey} guarantees the bottom 3 bits of {@code src} are zero, so
-     * {@code dst} is the exact integer quotient.
+     * the bits that fall out of each byte's bottom into the top of the next byte. The clamping step
+     * in {@link #expandPrivateKey} guarantees the bottom 3 bits of {@code src} are zero, so {@code
+     * dst} is the exact integer quotient.
      */
     private static void copyShiftRight3(byte[] src, short srcOff, byte[] dst, short dstOff) {
         short carry = 0;

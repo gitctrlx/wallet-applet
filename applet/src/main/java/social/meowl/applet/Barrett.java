@@ -9,11 +9,11 @@ import javacard.framework.Util;
 /**
  * Constant-time Barrett reduction of a 512-bit dividend modulo a 256-bit modulus.
  *
- * <p>Each instance binds a specific modulus {@code m} and its pre-computed Barrett constant
- * {@code μ = ⌊2⁵¹² / m⌋}. The per-call cost is one 33×33 multiply, one 33×32 truncated multiply
- * and three constant-time 33-byte conditional subtracts — strictly data-independent in the byte
- * schedule. Replaces the v1 trio {@code Barrett}/{@code BarrettN}/{@code BarrettL}; one class with
- * one well-tested kernel suffices for every 256-bit modulus the applet reduces against.
+ * <p>Each instance binds a specific modulus {@code m} and its pre-computed Barrett constant {@code
+ * μ = ⌊2⁵¹² / m⌋}. The per-call cost is one 33×33 multiply, one 33×32 truncated multiply and three
+ * constant-time 33-byte conditional subtracts — strictly data-independent in the byte schedule.
+ * Replaces the v1 trio {@code Barrett}/{@code BarrettN}/{@code BarrettL}; one class with one
+ * well-tested kernel suffices for every 256-bit modulus the applet reduces against.
  *
  * <h2>Algorithm</h2>
  *
@@ -61,8 +61,8 @@ public final class Barrett {
     public static final short DIVIDEND_LEN = 64;
 
     /**
-     * Byte length of the Barrett constant μ — one byte wider than the modulus to absorb
-     * {@code 2⁵¹² / m > 2²⁵⁶} for m near {@code 2²⁵⁶}.
+     * Byte length of the Barrett constant μ — one byte wider than the modulus to absorb {@code 2⁵¹²
+     * / m > 2²⁵⁶} for m near {@code 2²⁵⁶}.
      */
     public static final short MU_LEN = 33;
 
@@ -125,22 +125,20 @@ public final class Barrett {
                 scratch,
                 (short) (scOff + R_OFF),
                 EXT_LEN);
-        BigNat.sub(
-                scratch, (short) (scOff + R_OFF), scratch, (short) (scOff + R2_OFF), EXT_LEN);
+        BigNat.sub(scratch, (short) (scOff + R_OFF), scratch, (short) (scOff + R2_OFF), EXT_LEN);
 
         condSub33(scratch, (short) (scOff + R_OFF));
         condSub33(scratch, (short) (scOff + R_OFF));
         condSub33(scratch, (short) (scOff + R_OFF));
 
-        Util.arrayCopyNonAtomic(
-                scratch, (short) (scOff + R_OFF + 1), dst, dstOff, MODULUS_LEN);
+        Util.arrayCopyNonAtomic(scratch, (short) (scOff + R_OFF + 1), dst, dstOff, MODULUS_LEN);
     }
 
     /**
-     * Schoolbook unsigned multiply writing only the bottom {@code outSize} bytes of the
-     * {@code xSize + ySize}-byte product. Columns whose contribution falls entirely outside the
-     * requested window are skipped, with carries propagated correctly into the kept window. Used
-     * for step 5 of Barrett where only the low 33 bytes of {@code q3 · m} are needed.
+     * Schoolbook unsigned multiply writing only the bottom {@code outSize} bytes of the {@code
+     * xSize + ySize}-byte product. Columns whose contribution falls entirely outside the requested
+     * window are skipped, with carries propagated correctly into the kept window. Used for step 5
+     * of Barrett where only the low 33 bytes of {@code q3 · m} are needed.
      */
     private static void multTruncLo(
             byte[] x,
@@ -183,14 +181,14 @@ public final class Barrett {
     }
 
     /**
-     * Constant-time conditional subtraction of a 32-byte modulus (zero-extended to 33 bytes) from
-     * a 33-byte accumulator: if {@code r ≥ (0x00 ‖ m)} replace with {@code r − m}, otherwise leave
+     * Constant-time conditional subtraction of a 32-byte modulus (zero-extended to 33 bytes) from a
+     * 33-byte accumulator: if {@code r ≥ (0x00 ‖ m)} replace with {@code r − m}, otherwise leave
      * unchanged. Implements one iteration of step 7 of Barrett's algorithm.
      *
-     * <p>Strategy: trial subtract runs unconditionally byte-wise. The borrow out of the top byte
-     * is exactly the bit saying "we underflowed". That bit is sign-extended to a 16-bit mask and
-     * fed to a mask-driven byte-wise add-back of {@code m}; when the mask is zero the add is a
-     * no-op, when the mask is all-ones the add cancels the trial subtract exactly.
+     * <p>Strategy: trial subtract runs unconditionally byte-wise. The borrow out of the top byte is
+     * exactly the bit saying "we underflowed". That bit is sign-extended to a 16-bit mask and fed
+     * to a mask-driven byte-wise add-back of {@code m}; when the mask is zero the add is a no-op,
+     * when the mask is all-ones the add cancels the trial subtract exactly.
      */
     private void condSub33(byte[] r, short rOff) {
         short borrow = 0;

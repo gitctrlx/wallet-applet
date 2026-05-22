@@ -85,7 +85,8 @@ class BigNatTest {
                 boolean borrow = BigNat.sub(aCopy, (short) 0, b, (short) 0, LEN);
 
                 BigInteger diff = bigInt(a).subtract(bigInt(b));
-                BigInteger wrap = diff.add(BigInteger.ONE.shiftLeft(256)).mod(BigInteger.ONE.shiftLeft(256));
+                BigInteger wrap =
+                        diff.add(BigInteger.ONE.shiftLeft(256)).mod(BigInteger.ONE.shiftLeft(256));
                 boolean expectedBorrow = diff.signum() < 0;
 
                 assertEquals(expectedBorrow, borrow, "borrow flag mismatch");
@@ -129,7 +130,8 @@ class BigNatTest {
             RNG.nextBytes(y);
             byte[] product = new byte[65];
 
-            BigNat.multAsymmetric(x, (short) 0, (short) 33, y, (short) 0, (short) 32, product, (short) 0);
+            BigNat.multAsymmetric(
+                    x, (short) 0, (short) 33, y, (short) 0, (short) 32, product, (short) 0);
 
             BigInteger expected = new BigInteger(1, x).multiply(new BigInteger(1, y));
             byte[] expectedBytes = new byte[65];
@@ -189,7 +191,8 @@ class BigNatTest {
             byte[] subbed = x.clone();
             BigNat.condSubInPlace(subbed, (short) 0, y, (short) 0, LEN, (short) -1);
             BigInteger expected = bigInt(x).subtract(bigInt(y));
-            BigInteger wrap = expected.add(BigInteger.ONE.shiftLeft(256)).mod(BigInteger.ONE.shiftLeft(256));
+            BigInteger wrap =
+                    expected.add(BigInteger.ONE.shiftLeft(256)).mod(BigInteger.ONE.shiftLeft(256));
             assertArrayEquals(beBytes(wrap), subbed);
 
             byte[] untouched = x.clone();
@@ -213,7 +216,9 @@ class BigNatTest {
         }
 
         @Test
-        @DisplayName("condNegateInPlace with mask -1 produces (m − a); zero corner is masked back to zero by neg")
+        @DisplayName(
+                "condNegateInPlace with mask -1 produces (m − a); zero corner is masked back to"
+                        + " zero by neg")
         void condNegate() {
             byte[] m = Secp256k1Curve.N;
             for (int i = 0; i < 20; i++) {
@@ -240,8 +245,11 @@ class BigNatTest {
     class ModAddSub {
 
         @ParameterizedTest
-        @ValueSource(strings = {"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141",
-                "7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFED"})
+        @ValueSource(
+                strings = {
+                    "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141",
+                    "7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFED"
+                })
         @DisplayName("modAdd matches (a + b) mod m for 50 random pairs")
         void modAddMatchesOracle(String hex) {
             BigInteger m = new BigInteger(hex, 16);
@@ -250,14 +258,26 @@ class BigNatTest {
                 BigInteger a = new BigInteger(255, RNG).mod(m);
                 BigInteger b = new BigInteger(255, RNG).mod(m);
                 byte[] out = new byte[LEN];
-                BigNat.modAdd(beBytes(a), (short) 0, beBytes(b), (short) 0, mBytes, (short) 0, out, (short) 0, LEN);
+                BigNat.modAdd(
+                        beBytes(a),
+                        (short) 0,
+                        beBytes(b),
+                        (short) 0,
+                        mBytes,
+                        (short) 0,
+                        out,
+                        (short) 0,
+                        LEN);
                 assertArrayEquals(beBytes(a.add(b).mod(m)), out);
             }
         }
 
         @ParameterizedTest
-        @ValueSource(strings = {"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141",
-                "7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFED"})
+        @ValueSource(
+                strings = {
+                    "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141",
+                    "7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFED"
+                })
         @DisplayName("modSub matches (a − b) mod m for 50 random pairs")
         void modSubMatchesOracle(String hex) {
             BigInteger m = new BigInteger(hex, 16);
@@ -266,7 +286,16 @@ class BigNatTest {
                 BigInteger a = new BigInteger(255, RNG).mod(m);
                 BigInteger b = new BigInteger(255, RNG).mod(m);
                 byte[] out = new byte[LEN];
-                BigNat.modSub(beBytes(a), (short) 0, beBytes(b), (short) 0, mBytes, (short) 0, out, (short) 0, LEN);
+                BigNat.modSub(
+                        beBytes(a),
+                        (short) 0,
+                        beBytes(b),
+                        (short) 0,
+                        mBytes,
+                        (short) 0,
+                        out,
+                        (short) 0,
+                        LEN);
                 assertArrayEquals(beBytes(a.subtract(b).mod(m)), out);
             }
         }

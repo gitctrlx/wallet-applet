@@ -11,17 +11,17 @@ import javacard.framework.Util;
  *
  * <p>Used by {@link Wei25519} to perform the Edwards ↔ Weierstrass isomorphism after the hardware
  * EC coprocessor returns an affine Wei25519 point. The v1 {@code Field25519} class was the inner
- * loop of the software Edwards group law; in v2 only the encoding transformation lives here, so
- * the API is smaller. Scalar arithmetic ({@link #add}, {@link #sub}, {@link #neg}) delegates to
- * {@link BigNat}; multiplicative arithmetic ({@link #mul}, {@link #sqr}) uses schoolbook plus a
+ * loop of the software Edwards group law; in v2 only the encoding transformation lives here, so the
+ * API is smaller. Scalar arithmetic ({@link #add}, {@link #sub}, {@link #neg}) delegates to {@link
+ * BigNat}; multiplicative arithmetic ({@link #mul}, {@link #sqr}) uses schoolbook plus a
  * constant-time pseudo-Mersenne reducer that runs under 10 ms on J3R180 silicon. Modular inversion
  * is delegated to {@link Fp25519Inv} so the RSA dependency stays explicit.
  *
  * <h2>Representation</h2>
  *
- * <p>Every field element is a {@link #LEN}-byte big-endian unsigned integer in canonical
- * {@code [0, p)} form. Values arriving as raw schoolbook products MUST be canonicalised via
- * {@link #reducePseudoMersenne} before being fed back into the additive API.
+ * <p>Every field element is a {@link #LEN}-byte big-endian unsigned integer in canonical {@code [0,
+ * p)} form. Values arriving as raw schoolbook products MUST be canonicalised via {@link
+ * #reducePseudoMersenne} before being fed back into the additive API.
  *
  * <h2>Timing model</h2>
  *
@@ -93,8 +93,8 @@ public final class Fp25519 {
     }
 
     /**
-     * {@code out ← (−a) mod p}. Output may alias {@code a}. Constant-time: always runs {@code p
-     * − a}; the {@code a == 0} corner case is masked back to {@code 0}.
+     * {@code out ← (−a) mod p}. Output may alias {@code a}. Constant-time: always runs {@code p −
+     * a}; the {@code a == 0} corner case is masked back to {@code 0}.
      */
     public static void neg(byte[] a, short aOff, byte[] out, short outOff) {
         short borrow = 0;
@@ -167,8 +167,8 @@ public final class Fp25519 {
      * Constant-time pseudo-Mersenne reduction: writes {@code x mod p} to {@code dst[..32]} given
      * the 64-byte big-endian product {@code x ∈ [0, 2⁵¹²)} at {@code x[xOff..]}.
      *
-     * <p>Folds using {@code 2²⁵⁶ ≡ 38 (mod p)}. Splits {@code x = x_hi · 2²⁵⁶ + x_lo} so
-     * {@code x ≡ 38·x_hi + x_lo (mod p)}. Four passes, each constant-time:
+     * <p>Folds using {@code 2²⁵⁶ ≡ 38 (mod p)}. Splits {@code x = x_hi · 2²⁵⁶ + x_lo} so {@code x ≡
+     * 38·x_hi + x_lo (mod p)}. Four passes, each constant-time:
      *
      * <ol>
      *   <li>{@code r := (38·x_hi + x_lo) mod 2²⁵⁶}, capturing 6-bit carry {@code c₁ ∈ [0, 39]}.

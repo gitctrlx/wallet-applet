@@ -25,10 +25,10 @@ import javacard.framework.Util;
  *       fed public material (host-provided lengths, recovered public points).
  *   <li><b>Constant-time</b>: every {@code ct*} / {@code cond*} primitive walks every byte
  *       unconditionally and uses a mask-driven select between two computed values.
- *   <li><b>Schedule-independent</b>: {@link #add}, {@link #sub}, {@link #mult},
- *       {@link #multAsymmetric}, {@link #addLowerHalfCt}, {@link #modAdd}, {@link #modSub}. The
- *       byte-level loop count is fixed by the {@code size} arguments alone; values flowing through
- *       the carry / borrow chain are data-dependent but the work pattern is not. Safe on secrets.
+ *   <li><b>Schedule-independent</b>: {@link #add}, {@link #sub}, {@link #mult}, {@link
+ *       #multAsymmetric}, {@link #addLowerHalfCt}, {@link #modAdd}, {@link #modSub}. The byte-level
+ *       loop count is fixed by the {@code size} arguments alone; values flowing through the carry /
+ *       borrow chain are data-dependent but the work pattern is not. Safe on secrets.
  * </ul>
  *
  * <p>Variable-time modular reduction is intentionally absent — use {@link Barrett} (constant-time,
@@ -99,9 +99,9 @@ public final class BigNat {
      * {@code x[xOff..xOff + 2·halfSize] += zeroExtend(y[yOff..yOff + halfSize])}.
      *
      * <p>The lower half performs a real byte-wise add; the upper half walks every byte propagating
-     * the carry unconditionally rather than breaking out as soon as it settles. Used by
-     * {@link Schnorr} to fold the ephemeral nonce {@code k} into the 64-byte {@code e·d} product
-     * without exposing the carry-stop position of the secret sum.
+     * the carry unconditionally rather than breaking out as soon as it settles. Used by {@link
+     * Schnorr} to fold the ephemeral nonce {@code k} into the 64-byte {@code e·d} product without
+     * exposing the carry-stop position of the secret sum.
      */
     public static void addLowerHalfCt(byte[] x, short xOff, byte[] y, short yOff, short halfSize) {
         short carry = 0;
@@ -125,8 +125,8 @@ public final class BigNat {
      * Schoolbook unsigned multiplication: {@code z[zOff..zOff + 2·size] = x · y} for equal-width
      * operands. The destination is fully overwritten and MUST NOT alias either source.
      *
-     * <p>For 32-byte operands this is 1024 byte-multiplies. On 32 MHz JC silicon this runs under
-     * 10 ms — comparable to a native ECDH on small scalars.
+     * <p>For 32-byte operands this is 1024 byte-multiplies. On 32 MHz JC silicon this runs under 10
+     * ms — comparable to a native ECDH on small scalars.
      */
     public static void mult(
             byte[] x, short xOff, byte[] y, short yOff, short size, byte[] z, short zOff) {
@@ -137,8 +137,8 @@ public final class BigNat {
      * Schoolbook unsigned multiplication of unequal-width operands: {@code z[zOff..zOff + xSize +
      * ySize] = x · y}. Used by {@link Barrett} for its 33×33 and 33×32 intermediates.
      *
-     * <p>The destination MUST NOT alias either source. Schedule-independent over the operand
-     * bytes: every {@code (i, j)} cell is visited regardless of byte values.
+     * <p>The destination MUST NOT alias either source. Schedule-independent over the operand bytes:
+     * every {@code (i, j)} cell is visited regardless of byte values.
      */
     public static void multAsymmetric(
             byte[] x,
@@ -233,8 +233,8 @@ public final class BigNat {
 
     /**
      * Constant-time equality. XOR-accumulates every byte pair and only inspects the result once at
-     * the end. Use for MAC tags, authenticator output, and signature equality checks where one
-     * side is secret.
+     * the end. Use for MAC tags, authenticator output, and signature equality checks where one side
+     * is secret.
      */
     public static boolean ctEquals(byte[] x, short xOff, byte[] y, short yOff, short size) {
         byte diff = 0;
@@ -292,8 +292,8 @@ public final class BigNat {
      * subtraction is always computed; only the per-byte write is mask-selected, so wall-clock is
      * independent of {@code mask}.
      *
-     * <p>Caller MUST ensure {@code 0 ≤ a < m} on entry; the result inherits that invariant. Used
-     * by {@link Schnorr} to flip the secret-derived nonce on the y-parity bit, and by ECDSA's
+     * <p>Caller MUST ensure {@code 0 ≤ a < m} on entry; the result inherits that invariant. Used by
+     * {@link Schnorr} to flip the secret-derived nonce on the y-parity bit, and by ECDSA's
      * low-{@code s} normalisation.
      */
     public static void condNegateInPlace(
@@ -345,8 +345,8 @@ public final class BigNat {
      * Constant-time modular subtract: {@code out ← (a − b) mod m}. Inputs MUST be in {@code [0,
      * m)}; destination may alias either source.
      *
-     * <p>Runs an unconditional byte-wise subtract; if the result underflowed, a mask-driven add
-     * of {@code m} restores it into {@code [0, m)}.
+     * <p>Runs an unconditional byte-wise subtract; if the result underflowed, a mask-driven add of
+     * {@code m} restores it into {@code [0, m)}.
      */
     public static void modSub(
             byte[] a,

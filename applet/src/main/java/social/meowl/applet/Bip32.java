@@ -9,8 +9,8 @@ import javacard.framework.JCSystem;
 import javacard.framework.Util;
 
 /**
- * BIP-32 hierarchical deterministic key derivation for secp256k1 ({@code CKDpriv} per
- * <a href="https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki">BIP-32</a>):
+ * BIP-32 hierarchical deterministic key derivation for secp256k1 ({@code CKDpriv} per <a
+ * href="https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki">BIP-32</a>):
  *
  * <pre>
  *   hardened (i ≥ 2³¹):
@@ -23,11 +23,10 @@ import javacard.framework.Util;
  *   require parse256(I_L) < n  AND  k_i != 0
  * </pre>
  *
- * <p>The non-hardened branch and the public-key export path both rely on a shared
- * {@link EcPoint} engine bound to secp256k1; the same engine is reused by {@link Schnorr}, so a
- * single scalar-mult fixture lives at applet-install time. Intermediate state lives in a
- * {@code CLEAR_ON_DESELECT} scratch so secrets vanish on deselect even if a caller forgets to
- * wipe.
+ * <p>The non-hardened branch and the public-key export path both rely on a shared {@link EcPoint}
+ * engine bound to secp256k1; the same engine is reused by {@link Schnorr}, so a single scalar-mult
+ * fixture lives at applet-install time. Intermediate state lives in a {@code CLEAR_ON_DESELECT}
+ * scratch so secrets vanish on deselect even if a caller forgets to wipe.
  */
 public final class Bip32 {
 
@@ -109,8 +108,8 @@ public final class Bip32 {
 
     /**
      * Secret-exposing variant of {@link #derivePath}: writes the 32-byte big-endian leaf scalar to
-     * {@code outBuf[outOff..+32]}. Caller MUST wipe the destination as soon as the scalar has
-     * been consumed so it does not linger past the signing primitive's own scope.
+     * {@code outBuf[outOff..+32]}. Caller MUST wipe the destination as soon as the scalar has been
+     * consumed so it does not linger past the signing primitive's own scope.
      *
      * @return {@link Constants#EC_SCALAR_LEN}
      */
@@ -132,8 +131,8 @@ public final class Bip32 {
     }
 
     /**
-     * Uncompressed encoding {@code 0x04 ‖ x ‖ y} of {@code scalar · G}. Exposed for {@link
-     * Schnorr} which needs the {@code y}-coordinate parity.
+     * Uncompressed encoding {@code 0x04 ‖ x ‖ y} of {@code scalar · G}. Exposed for {@link Schnorr}
+     * which needs the {@code y}-coordinate parity.
      *
      * @return {@link Constants#EC_POINT_UNCOMPRESSED_LEN}
      */
@@ -142,8 +141,8 @@ public final class Bip32 {
     }
 
     /**
-     * Walks the BIP-32 chain from the master to the leaf, leaving the leaf scalar in
-     * {@code state[STATE_K_OFF..+32]} and the chain code in {@code state[STATE_C_OFF..+32]}.
+     * Walks the BIP-32 chain from the master to the leaf, leaving the leaf scalar in {@code
+     * state[STATE_K_OFF..+32]} and the chain code in {@code state[STATE_C_OFF..+32]}.
      */
     private void walkPathToLeaf(byte[] pathBuf, short pathOff, short depth) {
         if (depth < 0 || depth > Constants.HD_MAX_DEPTH) {
@@ -158,9 +157,9 @@ public final class Bip32 {
     }
 
     /**
-     * Wipes every BIP-32 walk-state slot: the leaf scalar, the chain code (defence-in-depth —
-     * chain code + parent pubkey derives all siblings), the last HMAC-SHA-512 output, the
-     * uncompressed pubkey scratch, and the {@link EcPoint}'s {@code scalarKey} cell.
+     * Wipes every BIP-32 walk-state slot: the leaf scalar, the chain code (defence-in-depth — chain
+     * code + parent pubkey derives all siblings), the last HMAC-SHA-512 output, the uncompressed
+     * pubkey scratch, and the {@link EcPoint}'s {@code scalarKey} cell.
      */
     private void wipeTransientSecrets() {
         Util.arrayFillNonAtomic(state, (short) 0, STATE_LEN, (byte) 0);
@@ -170,12 +169,12 @@ public final class Bip32 {
     /**
      * One iteration of {@code CKDpriv}: state.{k,c} → state.{k,c}.
      *
-     * <p>BIP-32 §"Specification: Key derivation" states that if {@code parse256(I_L) ≥ n} or
-     * {@code k_i == 0}, the resulting key is invalid and the caller should proceed with the next
-     * value for {@code i} (probability {@code < 2⁻¹²⁷}, unreachable in practice). We raise
-     * {@link Constants#SW_CONDITIONS_NOT_SATISFIED} rather than auto-retrying so the applet
-     * never silently changes the path the host requested — matching the behaviour of Trezor's
-     * {@code hdnode_private_ckd} and libsecp256k1's {@code secp256k1_ec_seckey_tweak_add}.
+     * <p>BIP-32 §"Specification: Key derivation" states that if {@code parse256(I_L) ≥ n} or {@code
+     * k_i == 0}, the resulting key is invalid and the caller should proceed with the next value for
+     * {@code i} (probability {@code < 2⁻¹²⁷}, unreachable in practice). We raise {@link
+     * Constants#SW_CONDITIONS_NOT_SATISFIED} rather than auto-retrying so the applet never silently
+     * changes the path the host requested — matching the behaviour of Trezor's {@code
+     * hdnode_private_ckd} and libsecp256k1's {@code secp256k1_ec_seckey_tweak_add}.
      */
     private void ckdPriv(byte[] pathBuf, short idxOff) {
         boolean hardened = (pathBuf[idxOff] & HARDENED_MASK) != 0;

@@ -11,11 +11,11 @@ import javacard.security.ECKey;
  * Curve parameters and Edwards-25519 bijection for the Weierstrass form of curve25519.
  *
  * <p>Wei25519 is the short Weierstrass-form expression of curve25519 — same underlying group as
- * Edwards-25519, just a different parametrisation. Because JavaCard 3.0.4 silicon exposes EC
- * scalar multiplication only for short Weierstrass curves ({@link
- * javacard.security.KeyAgreement#ALG_EC_SVDP_DH_PLAIN_XY}), routing Ed25519 through Wei25519 is
- * the only way to get hardware EC acceleration on the standard EdDSA wire format. The dispatcher
- * lives in {@link Ed25519}.
+ * Edwards-25519, just a different parametrisation. Because JavaCard 3.0.4 silicon exposes EC scalar
+ * multiplication only for short Weierstrass curves ({@link
+ * javacard.security.KeyAgreement#ALG_EC_SVDP_DH_PLAIN_XY}), routing Ed25519 through Wei25519 is the
+ * only way to get hardware EC acceleration on the standard EdDSA wire format. The dispatcher lives
+ * in {@link Ed25519}.
  *
  * <h2>Edwards ↔ Weierstrass bijection</h2>
  *
@@ -35,12 +35,12 @@ import javacard.security.ECKey;
  * three modular multiplications per encode; with the {@link Fp25519Inv} RSA path each inversion is
  * ~56 ms on J3R180, so the full encode completes in ~150 ms.
  *
- * <p>Curve parameters reproduce the values published in
- * <a href="https://github.com/OpenCryptoProject/JCMathLib/blob/master/applet/src/main/java/opencrypto/jcmathlib/curves/Wei25519.java">JCMathLib
- * Wei25519</a>; the bijection constants are reproduced from
- * <a href="https://github.com/dufkan/JCEd25519/blob/master/applet/src/main/java/jced25519/Consts.java">JCEd25519
- * Consts</a> (both MIT-licensed). Independent derivation from the public math (BoringSSL's
- * {@code ed25519_to_curve25519}) yields the same values.
+ * <p>Curve parameters reproduce the values published in <a
+ * href="https://github.com/OpenCryptoProject/JCMathLib/blob/master/applet/src/main/java/opencrypto/jcmathlib/curves/Wei25519.java">JCMathLib
+ * Wei25519</a>; the bijection constants are reproduced from <a
+ * href="https://github.com/dufkan/JCEd25519/blob/master/applet/src/main/java/jced25519/Consts.java">JCEd25519
+ * Consts</a> (both MIT-licensed). Independent derivation from the public math (BoringSSL's {@code
+ * ed25519_to_curve25519}) yields the same values.
  */
 public final class Wei25519 {
 
@@ -80,30 +80,79 @@ public final class Wei25519 {
     /** Wei25519 base point in uncompressed form {@code 0x04 ‖ Gx ‖ Gy}, 65 bytes big-endian. */
     public static final byte[] G = {
         (byte) 0x04,
-        (byte) 0x2a, (byte) 0xaa, (byte) 0xaa, (byte) 0xaa,
-        (byte) 0xaa, (byte) 0xaa, (byte) 0xaa, (byte) 0xaa,
-        (byte) 0xaa, (byte) 0xaa, (byte) 0xaa, (byte) 0xaa,
-        (byte) 0xaa, (byte) 0xaa, (byte) 0xaa, (byte) 0xaa,
-        (byte) 0xaa, (byte) 0xaa, (byte) 0xaa, (byte) 0xaa,
-        (byte) 0xaa, (byte) 0xaa, (byte) 0xaa, (byte) 0xaa,
-        (byte) 0xaa, (byte) 0xaa, (byte) 0xaa, (byte) 0xaa,
-        (byte) 0xaa, (byte) 0xad, (byte) 0x24, (byte) 0x5a,
-        (byte) 0x20, (byte) 0xae, (byte) 0x19, (byte) 0xa1,
-        (byte) 0xb8, (byte) 0xa0, (byte) 0x86, (byte) 0xb4,
-        (byte) 0xe0, (byte) 0x1e, (byte) 0xdd, (byte) 0x2c,
-        (byte) 0x77, (byte) 0x48, (byte) 0xd1, (byte) 0x4c,
-        (byte) 0x92, (byte) 0x3d, (byte) 0x4d, (byte) 0x7e,
-        (byte) 0x6d, (byte) 0x7c, (byte) 0x61, (byte) 0xb2,
-        (byte) 0x29, (byte) 0xe9, (byte) 0xc5, (byte) 0xa2,
-        (byte) 0x7e, (byte) 0xce, (byte) 0xd3, (byte) 0xd9,
+        (byte) 0x2a,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xaa,
+        (byte) 0xad,
+        (byte) 0x24,
+        (byte) 0x5a,
+        (byte) 0x20,
+        (byte) 0xae,
+        (byte) 0x19,
+        (byte) 0xa1,
+        (byte) 0xb8,
+        (byte) 0xa0,
+        (byte) 0x86,
+        (byte) 0xb4,
+        (byte) 0xe0,
+        (byte) 0x1e,
+        (byte) 0xdd,
+        (byte) 0x2c,
+        (byte) 0x77,
+        (byte) 0x48,
+        (byte) 0xd1,
+        (byte) 0x4c,
+        (byte) 0x92,
+        (byte) 0x3d,
+        (byte) 0x4d,
+        (byte) 0x7e,
+        (byte) 0x6d,
+        (byte) 0x7c,
+        (byte) 0x61,
+        (byte) 0xb2,
+        (byte) 0x29,
+        (byte) 0xe9,
+        (byte) 0xc5,
+        (byte) 0xa2,
+        (byte) 0x7e,
+        (byte) 0xce,
+        (byte) 0xd3,
+        (byte) 0xd9,
     };
 
     /**
      * Ed25519 prime subgroup order {@code ℓ = 2²⁵² + 27742317777372353535851937790883648493}.
      *
      * <p>This is the order {@link javacard.security.ECPrivateKey#setR} is fed for both Wei25519
-     * scalar mult and Ed25519 signing; the cofactor {@code h = 8} is supplied separately via
-     * {@link javacard.security.ECPrivateKey#setK}.
+     * scalar mult and Ed25519 signing. The native key cofactor is forced to {@code 1}; Ed25519
+     * cofactor handling is performed explicitly by {@link Ed25519}'s {@code s/8} and {@code *8}
+     * scalar-multiplication sequence.
      */
     public static final byte[] L = {
         (byte) 0x10, (byte) 0x00, (byte) 0x00, (byte) 0x00,
@@ -160,8 +209,8 @@ public final class Wei25519 {
     };
 
     /**
-     * Scratch slot layout (caller-supplied workspace for {@link #encodeEdwards}). Total =
-     * {@value #ENCODE_SCRATCH_LEN} bytes.
+     * Scratch slot layout (caller-supplied workspace for {@link #encodeEdwards}). Total = {@value
+     * #ENCODE_SCRATCH_LEN} bytes.
      *
      * <pre>
      *   [  0..32)  U_OFF       — u = X_wei − a/3   (Fp25519 element)
@@ -169,10 +218,10 @@ public final class Wei25519 {
      *   [ 64..96)  XED_OFF     — x_ed              (Fp25519 element)
      *   [ 96..128) NUM_OFF     — (u − 1)           (Fp25519 element)
      *   [128..160) DEN_OFF     — (u + 1)⁻¹         (Fp25519 element)
-     *   [160..256) INV_SCRATCH — workspace for Fp25519Inv (96 bytes)
+     *   [160..288) INV_SCRATCH — RSA-NOPAD workspace for Fp25519Inv (128 bytes)
      * </pre>
      */
-    public static final short ENCODE_SCRATCH_LEN = (short) 256;
+    public static final short ENCODE_SCRATCH_LEN = (short) 288;
 
     private static final short U_OFF = (short) 0;
     private static final short YINV_OFF = (short) 32;
@@ -190,7 +239,7 @@ public final class Wei25519 {
         key.setB(B, (short) 0, Fp25519.LEN);
         key.setR(L, (short) 0, Fp25519.LEN);
         key.setG(G, (short) 0, POINT_UNCOMPRESSED_LEN);
-        key.setK(COFACTOR);
+        key.setK((short) 1);
     }
 
     /**
@@ -200,6 +249,7 @@ public final class Wei25519 {
      * @param weiOff start offset within {@code wei}.
      * @param out destination buffer for the 32-byte LE-compressed Ed25519 encoding.
      * @param outOff start offset within {@code out}.
+     * @param inv shared modular inverter (RSA-NOPAD accelerated).
      * @param scratch caller-supplied workspace, at least {@link #ENCODE_SCRATCH_LEN} bytes.
      * @param scratchOff start offset within {@code scratch}.
      */
@@ -208,6 +258,7 @@ public final class Wei25519 {
             short weiOff,
             byte[] out,
             short outOff,
+            Fp25519Inv inv,
             byte[] scratch,
             short scratchOff) {
 
@@ -225,14 +276,14 @@ public final class Wei25519 {
         Fp25519.sub(wei, xWeiOff, A_DIV_3, (short) 0, scratch, uOff);
 
         // x_ed = c · u · Y_wei⁻¹ (mod p)
-        Fp25519Inv.inv(wei, yWeiOff, scratch, yInvOff, scratch, invScrOff);
+        inv.inv(wei, yWeiOff, scratch, yInvOff, scratch, invScrOff);
         Fp25519.mul(scratch, uOff, EDWARDS_C, (short) 0, scratch, xEdOff, scratch, invScrOff);
         Fp25519.mul(scratch, xEdOff, scratch, yInvOff, scratch, xEdOff, scratch, invScrOff);
 
         // y_ed = (u − 1) · (u + 1)⁻¹ (mod p)
         Fp25519.decrement(scratch, uOff, scratch, numOff);
         Fp25519.increment(scratch, uOff, scratch, denOff);
-        Fp25519Inv.inv(scratch, denOff, scratch, denOff, scratch, invScrOff);
+        inv.inv(scratch, denOff, scratch, denOff, scratch, invScrOff);
         Fp25519.mul(scratch, numOff, scratch, denOff, scratch, denOff, scratch, invScrOff);
 
         // Output: y_ed as little-endian + parity(x_ed) packed into bit 7 of byte 31.

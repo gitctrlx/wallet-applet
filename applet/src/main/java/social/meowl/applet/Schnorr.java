@@ -12,10 +12,9 @@ import javacard.security.RandomData;
 /**
  * BIP-340 Schnorr signing primitive on secp256k1.
  *
- * <p>Tagged hashing, parity testing and modular arithmetic run in software on top of
- * {@link MessageDigest#ALG_SHA_256}, {@link BigNat} and {@link Barrett}; the two scalar
- * multiplications are delegated to the hardware EC coprocessor via the shared
- * {@link Bip32#secp256k1()} engine.
+ * <p>Tagged hashing, parity testing and modular arithmetic run in software on top of {@link
+ * MessageDigest#ALG_SHA_256}, {@link BigNat} and {@link Barrett}; the two scalar multiplications
+ * are delegated to the hardware EC coprocessor via the shared {@link Bip32#secp256k1()} engine.
  *
  * <p>Algorithm — <a
  * href="https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki#default-signing">BIP-340
@@ -34,14 +33,14 @@ import javacard.security.RandomData;
  *
  * <p>Both parity flips ({@code d} and {@code k}) use {@link BigNat#condNegateInPlace} — the
  * conditional negation is mask-driven so the wall-clock is independent of the y-parity bit. This
- * closes audit finding A-01 (variable-time {@code y(R)} flip leaking the nonce parity bit through
- * a per-signature timing oracle).
+ * closes audit finding A-01 (variable-time {@code y(R)} flip leaking the nonce parity bit through a
+ * per-signature timing oracle).
  *
  * <p>Tagged hashing follows BIP-340 §3.2: {@code SHA256(SHA256(tag) ‖ SHA256(tag) ‖ msg)}. The
- * three {@code SHA256(tag)} values are precomputed as {@link #HASH_OF_TAG_AUX} /
- * {@link #HASH_OF_TAG_NONCE} / {@link #HASH_OF_TAG_CHALLENGE} so they cost no SHA-256 invocation
- * at sign time. Every secret intermediate lives in a 354-byte CLEAR_ON_DESELECT scratch wiped by
- * a {@code finally} on every code path.
+ * three {@code SHA256(tag)} values are precomputed as {@link #HASH_OF_TAG_AUX} / {@link
+ * #HASH_OF_TAG_NONCE} / {@link #HASH_OF_TAG_CHALLENGE} so they cost no SHA-256 invocation at sign
+ * time. Every secret intermediate lives in a 354-byte CLEAR_ON_DESELECT scratch wiped by a {@code
+ * finally} on every code path.
  */
 public final class Schnorr {
 
@@ -113,9 +112,9 @@ public final class Schnorr {
     private final byte[] scratch;
 
     /**
-     * @param sharedScratch the singleton transient scratch (≥ {@link #SCRATCH_LEN} bytes)
-     *     allocated by {@link MeowlApplet}. Reused by every signing INS and the
-     *     {@link SecureChannel} handshake since APDU dispatch is single-threaded.
+     * @param sharedScratch the singleton transient scratch (≥ {@link #SCRATCH_LEN} bytes) allocated
+     *     by {@link MeowlApplet}. Reused by every signing INS and the {@link SecureChannel}
+     *     handshake since APDU dispatch is single-threaded.
      */
     public Schnorr(Bip32 bip32, byte[] sharedScratch) {
         if ((short) sharedScratch.length < SCRATCH_LEN) {
@@ -141,8 +140,8 @@ public final class Schnorr {
 
     /**
      * Signs the 32-byte {@code digest} under the secp256k1 leaf key derived at {@code
-     * pathBuf[pathOff..pathOff + 4·depth]} per BIP-340, writing {@code bytes(R) ‖ s} to
-     * {@code outBuf}.
+     * pathBuf[pathOff..pathOff + 4·depth]} per BIP-340, writing {@code bytes(R) ‖ s} to {@code
+     * outBuf}.
      *
      * @return {@link Constants#SIG_LEN_R_S}
      */
@@ -251,8 +250,8 @@ public final class Schnorr {
     }
 
     /**
-     * Initialises the SHA-256 state for a tagged-hash by feeding {@code SHA256(tag)} twice from
-     * one of the precomputed constants. Caller continues with {@code update} / {@code doFinal}.
+     * Initialises the SHA-256 state for a tagged-hash by feeding {@code SHA256(tag)} twice from one
+     * of the precomputed constants. Caller continues with {@code update} / {@code doFinal}.
      */
     private void taggedHashStart(byte[] tagHash) {
         sha256.reset();

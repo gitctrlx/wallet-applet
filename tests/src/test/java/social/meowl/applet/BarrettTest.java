@@ -12,10 +12,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Differential test for {@link Barrett} against the secp256k1 group order {@code n} and the
- * Ed25519 prime subgroup order {@code ℓ}. Replaces the v1 {@code BarrettN} / {@code BarrettL}
- * fixture trio with a single shared kernel pinned by 200+ random reductions per modulus plus the
- * boundary cases {@code 0}, {@code m − 1}, {@code 2m − 1} and {@code 2⁵¹² − 1}.
+ * Differential test for {@link Barrett} against the secp256k1 group order {@code n} and the Ed25519
+ * prime subgroup order {@code ℓ}. Replaces the v1 {@code BarrettN} / {@code BarrettL} fixture trio
+ * with a single shared kernel pinned by 200+ random reductions per modulus plus the boundary cases
+ * {@code 0}, {@code m − 1}, {@code 2m − 1} and {@code 2⁵¹² − 1}.
  */
 class BarrettTest {
 
@@ -47,8 +47,7 @@ class BarrettTest {
     @Test
     @DisplayName("Barrett mod n: 200 random 512-bit dividends + boundary cases")
     void modSecp256k1Order() {
-        Barrett reducer =
-                new Barrett(Secp256k1Curve.N, (short) 0, Secp256k1Curve.MU_N, (short) 0);
+        Barrett reducer = new Barrett(Secp256k1Curve.N, (short) 0, Secp256k1Curve.MU_N, (short) 0);
         BigInteger n = new BigInteger(1, Secp256k1Curve.N);
 
         roundTrip(reducer, n, BigInteger.ZERO);

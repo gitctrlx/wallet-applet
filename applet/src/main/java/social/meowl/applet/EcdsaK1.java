@@ -13,9 +13,9 @@ import javacard.security.Signature;
 /**
  * secp256k1 ECDSA signing primitive.
  *
- * <p>Given a BIP-32 path and a 32-byte digest, derives the leaf scalar via
- * {@link Bip32#deriveLeafScalar}, signs through the JC native {@code Signature.ALG_ECDSA_SHA_256}
- * using {@link Signature#signPreComputedHash} (hash-only per MEAP-6), parses the DER signature,
+ * <p>Given a BIP-32 path and a 32-byte digest, derives the leaf scalar via {@link
+ * Bip32#deriveLeafScalar}, signs through the JC native {@code Signature.ALG_ECDSA_SHA_256} using
+ * {@link Signature#signPreComputedHash} (hash-only per MEAP-6), parses the DER signature,
  * normalises {@code s} into the low half of {@code n} per BIP-62 / EIP-2, and writes a fixed-
  * length {@code r(32) ‖ s(32)} response.
  *
@@ -52,9 +52,9 @@ public final class EcdsaK1 {
     private static final short SCRATCH_LEN = (short) (S_OFF + Constants.EC_SCALAR_LEN);
 
     /**
-     * @param sharedScratch singleton transient scratch (≥ {@link #SCRATCH_LEN} bytes) allocated
-     *     by {@link MeowlApplet}; reused by every signing INS and the {@link SecureChannel}
-     *     handshake since APDU dispatch is single-threaded.
+     * @param sharedScratch singleton transient scratch (≥ {@link #SCRATCH_LEN} bytes) allocated by
+     *     {@link MeowlApplet}; reused by every signing INS and the {@link SecureChannel} handshake
+     *     since APDU dispatch is single-threaded.
      */
     public EcdsaK1(Bip32 bip32, byte[] sharedScratch) {
         if ((short) sharedScratch.length < SCRATCH_LEN) {
@@ -90,8 +90,8 @@ public final class EcdsaK1 {
     }
 
     /**
-     * Signs the 32-byte {@code digest} under the secp256k1 key derived at
-     * {@code pathBuf[pathOff..pathOff + 4·depth]}, writing {@code r(32) ‖ s(32)} with low-{@code s}
+     * Signs the 32-byte {@code digest} under the secp256k1 key derived at {@code
+     * pathBuf[pathOff..pathOff + 4·depth]}, writing {@code r(32) ‖ s(32)} with low-{@code s}
      * normalised.
      *
      * @return {@link Constants#SIG_LEN_R_S}
@@ -128,12 +128,7 @@ public final class EcdsaK1 {
                             S_OFF,
                             Constants.EC_SCALAR_LEN);
             BigNat.condNegateInPlace(
-                    scratch,
-                    S_OFF,
-                    Secp256k1Curve.N,
-                    (short) 0,
-                    Constants.EC_SCALAR_LEN,
-                    flipMask);
+                    scratch, S_OFF, Secp256k1Curve.N, (short) 0, Constants.EC_SCALAR_LEN, flipMask);
 
             Util.arrayCopyNonAtomic(scratch, R_OFF, outBuf, outOff, Constants.EC_SCALAR_LEN);
             Util.arrayCopyNonAtomic(
@@ -181,9 +176,9 @@ public final class EcdsaK1 {
 
     /**
      * Reads one DER {@code INTEGER} starting at {@code der[cursor]} and writes its magnitude,
-     * left-padded to 32 bytes, into {@code out[outOff..+32]}. Strict minimal DER (X.690 §8.3.2):
-     * a leading {@code 0x00} sign byte is allowed only when the next byte's MSB would otherwise
-     * make the INTEGER look negative; {@code r = 0} or {@code s = 0} are rejected.
+     * left-padded to 32 bytes, into {@code out[outOff..+32]}. Strict minimal DER (X.690 §8.3.2): a
+     * leading {@code 0x00} sign byte is allowed only when the next byte's MSB would otherwise make
+     * the INTEGER look negative; {@code r = 0} or {@code s = 0} are rejected.
      *
      * @return the next cursor position after the element
      */

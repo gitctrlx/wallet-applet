@@ -335,8 +335,7 @@ public final class SecureChannel {
                 (short) (Constants.SC_BLOCK_LEN + ctLen),
                 macScratch,
                 (short) 0);
-        if (!BigNat.ctEquals(
-                macScratch, (short) 0, apduBuffer, macOffset, Constants.SC_MAC_LEN)) {
+        if (!BigNat.ctEquals(macScratch, (short) 0, apduBuffer, macOffset, Constants.SC_MAC_LEN)) {
             reset();
             ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
         }

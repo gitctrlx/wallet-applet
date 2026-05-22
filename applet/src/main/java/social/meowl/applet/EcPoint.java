@@ -12,19 +12,19 @@ import javacard.security.KeyBuilder;
 /**
  * Hardware EC scalar multiplier built on {@link KeyAgreement#ALG_EC_SVDP_DH_PLAIN_XY}.
  *
- * <p>One instance binds to one short Weierstrass curve (secp256k1, Wei25519, …) via a
- * {@link CurveSetup} closure provided at install time. The instance owns a disposable
- * {@link ECPrivateKey} (transient where the silicon supports it) into which a fresh scalar is
- * loaded for every multiplication, and a {@link KeyAgreement} engine that drives the EC
- * coprocessor. The class never retains operand or output bytes — secrets live in caller-supplied
- * buffers, wiped by the caller's {@code finally} block.
+ * <p>One instance binds to one short Weierstrass curve (secp256k1, Wei25519, …) via a {@link
+ * CurveSetup} closure provided at install time. The instance owns a disposable {@link ECPrivateKey}
+ * (transient where the silicon supports it) into which a fresh scalar is loaded for every
+ * multiplication, and a {@link KeyAgreement} engine that drives the EC coprocessor. The class never
+ * retains operand or output bytes — secrets live in caller-supplied buffers, wiped by the caller's
+ * {@code finally} block.
  *
  * <h2>Operation</h2>
  *
  * <p>{@link #multiplyG} computes {@code scalar · G} for the curve's base point, returning the
  * 65-byte uncompressed result. {@link #multiplyPoint} computes {@code scalar · P} for a caller-
- * supplied {@code P}. Both routes share the same hardware code path; the only difference is
- * whether the input point comes from the curve's static {@code G} table or from a buffer.
+ * supplied {@code P}. Both routes share the same hardware code path; the only difference is whether
+ * the input point comes from the curve's static {@code G} table or from a buffer.
  *
  * <p>The hardware EC engine is variable-time per silicon vendor practice; defence-in-depth against
  * power / EM side channels is supplied at the layer above:
@@ -58,15 +58,14 @@ public final class EcPoint {
      *
      * <p>The {@link CurveSetup} reference is kept and re-applied on every {@code multiply*}
      * invocation: a {@code TRANSIENT_DESELECT} EC private key loses its field / curve parameters
-     * across a deselect, so the engine MUST reload them per call rather than only at install
-     * time.
+     * across a deselect, so the engine MUST reload them per call rather than only at install time.
      *
-     * @param setup           applies curve parameters (p, a, b, G, r, k) onto an ECPrivateKey.
-     * @param curveParams     packed parameter array; the base point uncompressed encoding lives
-     *                        at {@code curveParams[generatorOff..generatorOff + pointLen]}.
-     * @param generatorOff    offset of the base point inside {@code curveParams}.
-     * @param pointLen        length of the uncompressed point (65 for 256-bit curves).
-     * @param keyBitLength    bit length of the curve scalar (256 for secp256k1 and Wei25519).
+     * @param setup applies curve parameters (p, a, b, G, r, k) onto an ECPrivateKey.
+     * @param curveParams packed parameter array; the base point uncompressed encoding lives at
+     *     {@code curveParams[generatorOff..generatorOff + pointLen]}.
+     * @param generatorOff offset of the base point inside {@code curveParams}.
+     * @param pointLen length of the uncompressed point (65 for 256-bit curves).
+     * @param keyBitLength bit length of the curve scalar (256 for secp256k1 and Wei25519).
      */
     public EcPoint(
             CurveSetup setup,
@@ -85,8 +84,7 @@ public final class EcPoint {
         } catch (javacard.security.CryptoException e) {
             key =
                     (ECPrivateKey)
-                            KeyBuilder.buildKey(
-                                    KeyBuilder.TYPE_EC_FP_PRIVATE, keyBitLength, false);
+                            KeyBuilder.buildKey(KeyBuilder.TYPE_EC_FP_PRIVATE, keyBitLength, false);
         }
         this.scalarKey = key;
         this.curveSetup = setup;
@@ -122,9 +120,9 @@ public final class EcPoint {
     }
 
     /**
-     * Computes {@code scalar · point} on this curve and writes the result as an uncompressed
-     * point to {@code out[outOff..outOff + 65]}. {@code point} MUST be the uncompressed encoding
-     * {@code 0x04 ‖ X ‖ Y}.
+     * Computes {@code scalar · point} on this curve and writes the result as an uncompressed point
+     * to {@code out[outOff..outOff + 65]}. {@code point} MUST be the uncompressed encoding {@code
+     * 0x04 ‖ X ‖ Y}.
      */
     public short multiplyPoint(
             byte[] scalar,

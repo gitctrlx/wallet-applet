@@ -67,7 +67,8 @@ class Fp25519Test {
             assertArrayEquals(beBytes(BigInteger.ONE), out, "increment(p) wraps to 1");
             byte[] zero = new byte[Fp25519.LEN];
             Fp25519.decrement(zero, (short) 0, out, (short) 0);
-            assertArrayEquals(beBytes(P.subtract(BigInteger.ONE)), out, "decrement(0) wraps to p − 1");
+            assertArrayEquals(
+                    beBytes(P.subtract(BigInteger.ONE)), out, "decrement(0) wraps to p − 1");
             byte[] one = new byte[Fp25519.LEN];
             one[Fp25519.LEN - 1] = 1;
             Fp25519.decrement(one, (short) 0, out, (short) 0);
@@ -87,7 +88,15 @@ class Fp25519Test {
             for (int i = 0; i < 50; i++) {
                 BigInteger a = randomFieldElement();
                 BigInteger b = randomFieldElement();
-                Fp25519.mul(beBytes(a), (short) 0, beBytes(b), (short) 0, out, (short) 0, scratch, (short) 0);
+                Fp25519.mul(
+                        beBytes(a),
+                        (short) 0,
+                        beBytes(b),
+                        (short) 0,
+                        out,
+                        (short) 0,
+                        scratch,
+                        (short) 0);
                 assertArrayEquals(beBytes(a.multiply(b).mod(P)), out);
                 Fp25519.sqr(beBytes(a), (short) 0, out, (short) 0, scratch, (short) 0);
                 assertArrayEquals(beBytes(a.modPow(BigInteger.TWO, P)), out);
@@ -97,6 +106,7 @@ class Fp25519Test {
         @Test
         @DisplayName("inv(a) · a ≡ 1 (mod p) for 20 random non-zero a")
         void inv() {
+            Fp25519Inv inverter = new Fp25519Inv();
             byte[] inv = new byte[Fp25519.LEN];
             byte[] product = new byte[Fp25519.LEN];
             byte[] mulScratch = new byte[Fp25519.MUL_SCRATCH_LEN];
@@ -106,8 +116,16 @@ class Fp25519Test {
                 do {
                     a = randomFieldElement();
                 } while (a.signum() == 0);
-                Fp25519Inv.inv(beBytes(a), (short) 0, inv, (short) 0, invScratch, (short) 0);
-                Fp25519.mul(beBytes(a), (short) 0, inv, (short) 0, product, (short) 0, mulScratch, (short) 0);
+                inverter.inv(beBytes(a), (short) 0, inv, (short) 0, invScratch, (short) 0);
+                Fp25519.mul(
+                        beBytes(a),
+                        (short) 0,
+                        inv,
+                        (short) 0,
+                        product,
+                        (short) 0,
+                        mulScratch,
+                        (short) 0);
                 byte[] one = new byte[Fp25519.LEN];
                 one[Fp25519.LEN - 1] = 1;
                 assertArrayEquals(one, product, "inv(a) · a must be canonical 1");
