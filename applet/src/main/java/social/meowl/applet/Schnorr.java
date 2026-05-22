@@ -218,6 +218,12 @@ public final class Schnorr {
             Bignat.condSubInPlace(
                     scratch, E_OFF, ModN.SECP256K1_N, (short) 0, COORD_LEN, (short) ~eLessN);
 
+            // 7b. Emit bytes(R) now. R.x is the only thing we still need from the R uncompressed
+            //     slot, and the upcoming Barrett scratch (step 8c) aliases the head of R_OFF,
+            //     overwriting the first three bytes (0x04 prefix + R.x[0..2]). Emit-then-clobber is
+            //     simpler and cheaper than carving a non-contiguous Barrett workspace.
+            Util.arrayCopyNonAtomic(scratch, (short) (R_OFF + 1), outBuf, outOff, COORD_LEN);
+
             // 8. s = (k + e·d) mod n.
             // 8a. e·d (32×32 → 64) into WORK_OFF.
             Bignat.mult(scratch, E_OFF, scratch, D_OFF, COORD_LEN, scratch, WORK_OFF);
@@ -228,17 +234,25 @@ public final class Schnorr {
             //    safe because addLowerHalfCt reads each source byte before writing the matching
             //    destination byte.
             Bignat.addLowerHalfCt(scratch, WORK_OFF, scratch, K_OFF, COORD_LEN);
-            // 8c. Reduce WORK[0..64] mod n; result lands in the trailing 32 bytes.
-            Bignat.mod(
+            // 8c. Reduce WORK[0..64] mod n into the trailing 32 bytes of WORK using constant-time
+            //     Barrett (closes audit A-16). The unreduced dividend k + e·d is a SECRET
+            //     intermediate — its bit pattern would leak the full nonce/key relationship via a
+            //     single per-signature wall-clock measurement under Bignat.mod's classical long
+            //     division. Barrett's reducer touches every byte of (x, n) the same number of
+            //     times on every call.
+            //
+            //     The 132-byte Barrett scratch reuses scratch[D_OFF..D_OFF+132]; by this point d,
+            //     t, P.x and R.x are no longer needed (steps 7-8a consumed them) and we wipe the
+            //     whole frame in the outer finally anyway, so the temporary aliasing is safe.
+            BarrettN.reduce(
                     scratch,
                     WORK_OFF,
-                    (short) (COORD_LEN * 2),
-                    ModN.SECP256K1_N,
-                    (short) 0,
-                    COORD_LEN);
+                    scratch,
+                    D_OFF,
+                    scratch,
+                    (short) (WORK_OFF + COORD_LEN));
 
-            // 9. Emit bytes(R) ‖ s.
-            Util.arrayCopyNonAtomic(scratch, (short) (R_OFF + 1), outBuf, outOff, COORD_LEN);
+            // 9. Emit s (bytes(R) was emitted at step 7b before Barrett aliased R_OFF).
             Util.arrayCopyNonAtomic(
                     scratch,
                     (short) (WORK_OFF + COORD_LEN),

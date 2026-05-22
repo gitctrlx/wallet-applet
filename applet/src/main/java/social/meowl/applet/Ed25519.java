@@ -153,11 +153,14 @@ public final class Ed25519 {
             sha512.reset();
             sha512.update(scratch, (short) (HASH_OFF + 32), (short) 32);
             sha512.doFinal(msgBuf, msgOff, msgLen, scratch, HASH_OFF);
-            //    Reverse the 64-byte LE digest into BE then reduce mod ℓ.
+            //    Reverse the 64-byte LE digest into BE then reduce mod ℓ with constant-time
+            //    Barrett (audit A-16). The SHA-512 input contains the secret RFC 8032 prefix
+            //    h[32..64] derived from the leaf key, so the unreduced 64-byte dividend is
+            //    SECRET and the wall-clock of the reduction MUST NOT leak its bit pattern.
+            //    The 132-byte Barrett scratch reuses the head of WORK_OFF — scalar-mult won't
+            //    run again until step 3 below, so the temporary aliasing is safe.
             reverseBytes(scratch, HASH_OFF, SHA512_LEN);
-            Bignat.mod(scratch, HASH_OFF, SHA512_LEN, GROUP_L, (short) 0, (short) 32);
-            Util.arrayCopyNonAtomic(
-                    scratch, (short) (HASH_OFF + 32), scratch, R_BE_OFF, (short) 32);
+            BarrettL.reduce(scratch, HASH_OFF, scratch, WORK_OFF, scratch, R_BE_OFF);
 
             // 3. R = r · B; R_enc = encode(R). Reset the base point and re-blind it so the second
             //    scalar ladder runs on a coordinate trajectory uncorrelated with the first.
@@ -168,19 +171,29 @@ public final class Ed25519 {
             Edwards25519.encodePoint(scratch, POINT_OFF, scratch, R_ENC_OFF, scratch, WORK_OFF);
 
             // 4. k = SHA-512(R_enc ‖ A_enc ‖ M) mod ℓ.
+            //    Although the SHA-512 inputs are all public (R_enc, A_enc, M), Barrett's
+            //    constant-time reducer is preferred here too — it keeps the sign path uniform,
+            //    avoids a per-call branch on "is this scalar secret-derived", and Bignat.mod
+            //    is being retired across the codebase as the variable-time long-division
+            //    kernel was a maintenance liability (audit A-16). The WORK_OFF scratch is free
+            //    again now that scalarMult / encodePoint completed in step 3.
             sha512.reset();
             sha512.update(scratch, R_ENC_OFF, (short) 32);
             sha512.update(scratch, A_ENC_OFF, (short) 32);
             sha512.doFinal(msgBuf, msgOff, msgLen, scratch, HASH_OFF);
             reverseBytes(scratch, HASH_OFF, SHA512_LEN);
-            Bignat.mod(scratch, HASH_OFF, SHA512_LEN, GROUP_L, (short) 0, (short) 32);
-            Util.arrayCopyNonAtomic(
-                    scratch, (short) (HASH_OFF + 32), scratch, K_BE_OFF, (short) 32);
+            BarrettL.reduce(scratch, HASH_OFF, scratch, WORK_OFF, scratch, K_BE_OFF);
 
             // 5. S = (r + k · s) mod ℓ.
-            //    k_times_s_64 ← k · s (full 64-byte product) in scratch[HASH_OFF..HASH_OFF+64].
+            //    k_times_s_64 ← k · s (full 64-byte product) in scratch[HASH_OFF..HASH_OFF+64];
+            //    the product is a SECRET intermediate (k mixes with the SLIP-10-derived scalar
+            //    s), so the reduction MUST be constant-time — the original Bignat.mod path
+            //    leaked the full secret S bit-by-bit through the long-division loop iteration
+            //    count. BarrettL.reduce writes the 32-byte residue directly into
+            //    scratch[HASH_OFF+32..HASH_OFF+64], matching the slot the add step below reads.
             Bignat.mult(scratch, K_BE_OFF, scratch, S_BE_OFF, (short) 32, scratch, HASH_OFF);
-            Bignat.mod(scratch, HASH_OFF, SHA512_LEN, GROUP_L, (short) 0, (short) 32);
+            BarrettL.reduce(
+                    scratch, HASH_OFF, scratch, WORK_OFF, scratch, (short) (HASH_OFF + 32));
             //    k·s mod ℓ now lives at scratch[HASH_OFF+32..HASH_OFF+64]. Add r and reduce.
             Util.arrayCopyNonAtomic(scratch, R_BE_OFF, scratch, S_OUT_BE_OFF, (short) 32);
             boolean carry =
