@@ -120,46 +120,42 @@ public final class EcdsaK1 {
             short digestOff,
             byte[] outBuf,
             short outOff) {
-        // Pull the leaf scalar into our own scratch. Bip32 wipes its internal copy on return,
-        // and we wipe scratch[SCALAR_OFF] at the tail of this method.
-        bip32.deriveLeafScalar(pathBuf, pathOff, depth, scratch, SCALAR_OFF);
-        // Load the curve parameters and the secret scalar onto the EC private key, then sign.
-        Secp256k1.setCurveParameters(signKey);
-        signKey.setS(scratch, SCALAR_OFF, ModN.LEN);
-        ecdsa.init(signKey, Signature.MODE_SIGN);
-
-        short derLen;
         try {
-            derLen =
+            // Pull the leaf scalar into our own scratch. Bip32 wipes its internal copy on return,
+            // and the outer finally clears the entire scratch buffer plus the EC private key.
+            bip32.deriveLeafScalar(pathBuf, pathOff, depth, scratch, SCALAR_OFF);
+            // Load the curve parameters and the secret scalar onto the EC private key, then sign.
+            Secp256k1.setCurveParameters(signKey);
+            signKey.setS(scratch, SCALAR_OFF, ModN.LEN);
+            ecdsa.init(signKey, Signature.MODE_SIGN);
+
+            short derLen =
                     ecdsa.signPreComputedHash(
                             digestBuf, digestOff, Constants.DIGEST_LEN, scratch, DER_OFF);
+
+            // Parse the DER signature into fixed-width r and s slots; left-pad each to 32 bytes.
+            parseDerSignature(scratch, DER_OFF, derLen);
+
+            // Low-s normalisation: if s > ⌊n/2⌋ replace s with n − s.
+            if (!ModN.lessThanHalfN(scratch, S_OFF)) {
+                ModN.negateMod(scratch, S_OFF);
+            }
+
+            // Concatenate r ‖ s into the response buffer.
+            Util.arrayCopyNonAtomic(scratch, R_OFF, outBuf, outOff, ModN.LEN);
+            Util.arrayCopyNonAtomic(scratch, S_OFF, outBuf, (short) (outOff + ModN.LEN), ModN.LEN);
+
+            return Constants.SIG_LEN_R_S;
         } finally {
-            // Whatever the signature outcome, the scalar is no longer needed.
-            Util.arrayFillNonAtomic(scratch, SCALAR_OFF, ModN.LEN, (byte) 0);
+            // Per audit F-30 the entire method body now runs inside this single try-finally so
+            // every exit path — successful return, parseDerSignature ISOException on a malformed
+            // silicon DER, or a signature-engine failure — wipes the same set of state. The
+            // SCALAR_OFF slot is the only secret in scratch; the DER and r/s slots are public
+            // post-signature material but get cleared anyway so the transient buffer carries no
+            // residue past the call boundary, matching the discipline used by Schnorr and Ed25519.
+            Util.arrayFillNonAtomic(scratch, (short) 0, SCRATCH_LEN, (byte) 0);
             signKey.clearKey();
         }
-
-        // Parse the DER signature into fixed-width r and s slots; left-pad each to 32 bytes.
-        parseDerSignature(scratch, DER_OFF, derLen);
-
-        // Low-s normalisation: if s > ⌊n/2⌋ replace s with n − s.
-        if (!ModN.lessThanHalfN(scratch, S_OFF)) {
-            ModN.negateMod(scratch, S_OFF);
-        }
-
-        // Concatenate r ‖ s into the response buffer.
-        Util.arrayCopyNonAtomic(scratch, R_OFF, outBuf, outOff, ModN.LEN);
-        Util.arrayCopyNonAtomic(scratch, S_OFF, outBuf, (short) (outOff + ModN.LEN), ModN.LEN);
-
-        // The DER buffer and the parsed r/s slots are public, but clearing them is cheap and
-        // means the transient buffer carries no residue past the call boundary.
-        Util.arrayFillNonAtomic(
-                scratch,
-                DER_OFF,
-                (short) (Constants.ECDSA_DER_MAX_LEN + ModN.LEN + ModN.LEN),
-                (byte) 0);
-
-        return Constants.SIG_LEN_R_S;
     }
 
     /**
@@ -195,7 +191,7 @@ public final class EcdsaK1 {
         // DER length field: short-form covers 0..127 in a single byte; long-form (0x81 LL ...)
         // is required for any length >= 128. JC's native ECDSA outputs at most 72 bytes of DER
         // (always < 128), so we never legitimately see long-form here. Rejecting the high bit
-        // upfront prevents an off-by-one parse against a malformed silicon output (audit S3-13).
+        // upfront prevents an off-by-one parse against a malformed silicon output (audit F-18).
         short seqLen = (short) (der[cursor++] & 0xFF);
         if ((seqLen & 0x80) != 0) {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
@@ -225,7 +221,7 @@ public final class EcdsaK1 {
         }
         // Reject DER long-form length here too; an ECDSA INTEGER over secp256k1 is at most 33
         // bytes (32 magnitude + optional leading 0x00 sign byte), so the high bit of the length
-        // octet is always clear (audit S3-13).
+        // octet is always clear (audit F-18).
         short rawLen = (short) (der[cursor++] & 0xFF);
         if ((rawLen & 0x80) != 0) {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
