@@ -25,26 +25,13 @@ import social.meowl.tools.transport.CardTransport;
 
 /**
  * {@code meowl bench} — measures p50 / p95 / p99 wall-clock latency of the applet's main signing
- * and HD-walk paths on a real card.
+ * and HD-walk paths on a real card. Assumes the card is in the {@code SEEDED} lifecycle state.
  *
- * <p>The benchmark assumes the card is already in the {@code SEEDED} lifecycle state. It runs a
- * fresh Secure Channel handshake, performs a {@code VERIFY_PIN} with the supplied PIN, and then
- * times each operation with {@link #warmup} warm-up iterations followed by {@link #samples} timed
- * iterations.
- *
- * <p>Pre-conditions for this command to succeed on a fresh card:
- *
- * <ol>
- *   <li>The CAP is installed (see {@code meowl gp install}).
- *   <li>{@code SETUP} has been run with the PIN this command is using (see {@code meowl sc send}
- *       for the encoded SETUP APDU, or use the {@code meowl shell} REPL).
- *   <li>{@code IMPORT_SEED} or {@code GENERATE_SEED} has been run, putting the card in {@code
- *       SEEDED}.
- * </ol>
- *
- * <p>Output format: one line per benchmarked operation, formatted identically to {@code
- * BenchmarkSuite} for easy side-by-side comparison between simulator and silicon. With {@code
- * --json}, emits a structured object suitable for piping into a regression harness.
+ * <p>Runs a fresh Secure Channel handshake, performs a {@code VERIFY_PIN} with the supplied PIN,
+ * then times each operation with {@link #warmup} warm-up iterations followed by {@link #samples}
+ * timed iterations. Text output mirrors {@code BenchmarkSuite} for easy side-by-side comparison
+ * between simulator and silicon; {@code --json} emits a structured object for regression
+ * harnesses.
  */
 @Command(
         name = "bench",
@@ -113,6 +100,7 @@ public final class BenchCommand implements Callable<Integer> {
     }
 
     private Map<String, Stats> runOnCard(APDUBIBO bibo) throws BIBOException {
+        long t0 = System.nanoTime();
         MeowlSession.select(bibo, aid.bytes());
 
         ResponseAPDU akResp =
@@ -130,45 +118,64 @@ public final class BenchCommand implements Callable<Integer> {
         SecureChannelClient sc = new SecureChannelClient(bibo, akResp.getData());
         sc.handshake();
         verifyPin(sc, pin.getBytes());
+        progress(
+                "setup complete in %.1fs (SELECT + GET_AUTHENTIKEY + handshake + VERIFY_PIN);"
+                        + " warmup=%d samples=%d per op",
+                (System.nanoTime() - t0) / 1e9,
+                warmup,
+                samples);
 
         Map<String, Stats> out = new LinkedHashMap<>();
         if (shouldRun("ecdsa")) {
             byte[] payload = signPayloadK1();
             out.put(
                     "SIGN_ECDSA_K1",
-                    benchOp(() -> sendInner(sc, MeowlInsn.SIGN_ECDSA_K1.value(), payload)));
+                    benchOp(
+                            "SIGN_ECDSA_K1",
+                            () -> sendInner(sc, MeowlInsn.SIGN_ECDSA_K1.value(), payload)));
         }
         if (shouldRun("schnorr")) {
             byte[] payload = signPayloadK1();
             out.put(
                     "SIGN_SCHNORR_K1",
-                    benchOp(() -> sendInner(sc, MeowlInsn.SIGN_SCHNORR_K1.value(), payload)));
+                    benchOp(
+                            "SIGN_SCHNORR_K1",
+                            () -> sendInner(sc, MeowlInsn.SIGN_SCHNORR_K1.value(), payload)));
         }
         if (shouldRun("ed25519")) {
             byte[] payload = signPayloadEd25519();
             out.put(
                     "SIGN_ED25519",
-                    benchOp(() -> sendInner(sc, MeowlInsn.SIGN_ED25519.value(), payload)));
+                    benchOp(
+                            "SIGN_ED25519",
+                            () -> sendInner(sc, MeowlInsn.SIGN_ED25519.value(), payload)));
         }
         if (shouldRun("xpub-k1")) {
             byte[] payload = exportXpubPayload((byte) 0x00, PATH_K1);
             out.put(
                     "EXPORT_XPUB_K1",
-                    benchOp(() -> sendInner(sc, MeowlInsn.EXPORT_XPUB.value(), payload)));
+                    benchOp(
+                            "EXPORT_XPUB_K1",
+                            () -> sendInner(sc, MeowlInsn.EXPORT_XPUB.value(), payload)));
         }
         if (shouldRun("xpub-ed25519")) {
             byte[] payload = exportXpubPayload((byte) 0x01, PATH_ED25519);
             out.put(
                     "EXPORT_XPUB_ED25519",
-                    benchOp(() -> sendInner(sc, MeowlInsn.EXPORT_XPUB.value(), payload)));
+                    benchOp(
+                            "EXPORT_XPUB_ED25519",
+                            () -> sendInner(sc, MeowlInsn.EXPORT_XPUB.value(), payload)));
         }
         if (shouldRun("sc")) {
             // For OPEN_SECURE_CHANNEL we re-handshake on every iteration. The closure captures
             // `bibo` and creates a fresh client / new ECDH ephemerals each call.
             out.put(
                     "OPEN_SECURE_CHANNEL",
-                    benchOp(() -> reHandshake(bibo, akResp.getData())));
+                    benchOp(
+                            "OPEN_SECURE_CHANNEL",
+                            () -> reHandshake(bibo, akResp.getData())));
         }
+        progress("bench complete; total wall %.1fs", (System.nanoTime() - t0) / 1e9);
         return out;
     }
 
@@ -194,21 +201,53 @@ public final class BenchCommand implements Callable<Integer> {
         void run() throws Exception;
     }
 
-    private Stats benchOp(ThrowingRunnable op) {
+    private Stats benchOp(String label, ThrowingRunnable op) {
         try {
+            long opStart = System.nanoTime();
+            progress("%-22s starting (warmup=%d)...", label, warmup);
+            long warmStart = System.nanoTime();
             for (int i = 0; i < warmup; i++) {
                 op.run();
             }
+            long warmNanos = System.nanoTime() - warmStart;
+            double warmupMeanMs = warmup == 0 ? 0.0 : (warmNanos / (double) warmup) / 1e6;
+            progress(
+                    "%-22s warmup done in %.1fs (mean %.0fms); now timing %d samples...",
+                    label,
+                    warmNanos / 1e9,
+                    warmupMeanMs,
+                    samples);
             long[] nanos = new long[samples];
             for (int i = 0; i < samples; i++) {
                 long start = System.nanoTime();
                 op.run();
                 nanos[i] = System.nanoTime() - start;
+                if (samples >= 10 && (i + 1) % Math.max(1, samples / 10) == 0) {
+                    progress(
+                            "%-22s   %d/%d   last=%.0fms",
+                            label, i + 1, samples, nanos[i] / 1e6);
+                }
             }
-            return Stats.from(nanos);
+            Stats stats = Stats.from(nanos);
+            progress(
+                    "%-22s done in %.1fs   p50=%.0fms   p99=%.0fms",
+                    label,
+                    (System.nanoTime() - opStart) / 1e9,
+                    stats.p50Ms,
+                    stats.p99Ms);
+            return stats;
         } catch (Exception e) {
-            throw new RuntimeException("benchmark op failed", e);
+            throw new RuntimeException("benchmark op failed: " + label, e);
         }
+    }
+
+    /** Per-op progress line on stderr. Suppressed in {@code --json} mode to keep stdout pure. */
+    private void progress(String fmt, Object... args) {
+        if (parent.globalOptions.json) {
+            return;
+        }
+        System.err.println("[bench] " + String.format(fmt, args));
+        System.err.flush();
     }
 
     private static byte[] sendInner(SecureChannelClient sc, byte ins, byte[] data)

@@ -36,6 +36,7 @@ import picocli.CommandLine.Spec;
             ResetCommand.class,
             ReplayCommand.class,
             BenchCommand.class,
+            BootstrapCommand.class,
             GpCommand.class,
             ScCommand.class,
             ShellCommand.class,

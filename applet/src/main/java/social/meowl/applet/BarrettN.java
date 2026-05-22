@@ -25,20 +25,15 @@ package social.meowl.applet;
  * 2^256}). This wider-than-modulus μ is the standard Barrett shape — the upper byte is what makes
  * the quotient estimator {@code q3} correct on inputs near the top of the range.
  *
- * <p>Verified end-to-end via {@code BarrettNTest}: 30 KAT edge cases (0, 1, n−1, n, n+1, 2^256−1,
- * 2^512−1, exactly n·k for small k, k·n − 1, etc.) plus 1 000 randomised dividends against {@link
- * java.math.BigInteger#mod}.
- *
- * <p>This class is the constant-time replacement for the variable-time {@link Bignat#mod} kernel on
- * the {@code (k + e·d) mod n} reduction inside {@link Schnorr#signDigest} (audit finding A-16,
- * delivered in PR-3).
+ * <p>Constant-time replacement for {@link Bignat#mod} on the {@code (k + e·d) mod n} reduction
+ * inside {@link Schnorr#signDigest}.
  */
 public final class BarrettN {
 
     /**
      * The secp256k1 group order {@code n}, 32 bytes big-endian. Same numerical value as {@link
-     * ModN#SECP256K1_N}; intentionally duplicated so {@code BarrettN} stays a self-contained,
-     * audit-friendly module whose constants can be diffed directly against the spec.
+     * ModN#SECP256K1_N}; intentionally duplicated so {@code BarrettN} stays a self-contained
+     * module whose constants can be diffed directly against the spec.
      */
     public static final byte[] N = {
             (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,

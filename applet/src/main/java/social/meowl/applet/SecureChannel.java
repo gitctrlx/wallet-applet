@@ -315,16 +315,12 @@ public final class SecureChannel {
         short ctOffset = (short) (ivOffset + Constants.SC_BLOCK_LEN);
         short macOffset = (short) (ctOffset + ctLen);
 
-        // Replay defense before MAC verification: reject non-monotonic IVs cheaply. IV bytes are
-        // public, so a non-constant-time compare is fine.
-        //
-        // We do NOT reset() the session on this branch (A-08): an attacker without K_mac can
-        // replay any captured envelope to force the previous SC session keys to be wiped, which
-        // is a free DoS lever. By refusing the replayed envelope without tearing down the
-        // session, the same attacker is forced to pay the full MAC-verify cost (~5 ms) before
-        // any state change is possible. MAC-verification failure below remains a session-killer
-        // because at that point the attacker either has K_mac (compromise) or is corrupting in
-        // flight (genuine integrity failure).
+        // Replay defence before MAC verification: reject non-monotonic IVs cheaply. IV bytes
+        // are public, so a non-constant-time compare is fine. Critically, this branch does NOT
+        // reset() the session: an attacker without K_mac could otherwise replay any captured
+        // envelope to wipe the session keys, a free DoS lever. The MAC-verification failure
+        // path below is still a session-killer because at that point the attacker either holds
+        // K_mac or is corrupting in flight — a genuine integrity event, not just replay.
         if (compare16(apduBuffer, ivOffset, lastInboundIv, (short) 0) <= 0) {
             ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
         }
@@ -404,11 +400,11 @@ public final class SecureChannel {
     }
 
     /**
-     * Increments the 16-byte outbound counter; on overflow (counter wraps to all-zero after
-     * 2¹²⁸ - 1 wraps, an unreachable state in practice but defensible against fault injection)
-     * the channel is torn down and {@link Constants#SW_SECURE_CHANNEL_FAILED} is raised. Without
-     * this guard a wrapped counter would reuse {@code IV_base XOR 0} on a fresh ciphertext —
-     * AES-CBC with the same (key, IV) leaks plaintext XOR (A-09).
+     * Increments the 16-byte outbound counter; on overflow the channel is torn down and {@link
+     * Constants#SW_SECURE_CHANNEL_FAILED} is raised. Without this guard a wrapped counter would
+     * reuse {@code IV_base XOR 0} on a fresh ciphertext — AES-CBC with the same (key, IV) leaks
+     * plaintext XOR. Practically unreachable after 2¹²⁸ - 1 wraps; defence-in-depth against
+     * fault injection.
      */
     private void incrementCounter() {
         for (short i = (short) (Constants.SC_BLOCK_LEN - 1); i >= 0; i--) {
@@ -418,9 +414,8 @@ public final class SecureChannel {
                 return;
             }
         }
-        // All 16 bytes carried out — the counter has wrapped to all-zero. Tear down the session
-        // so the host is forced to re-handshake with fresh IV_base before any further outbound
-        // ciphertext is emitted. Practically unreachable; defence in depth only.
+        // All 16 bytes carried out — counter wrapped to all-zero. Tear down so the host must
+        // re-handshake with a fresh IV_base before any further outbound ciphertext is emitted.
         reset();
         ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
     }

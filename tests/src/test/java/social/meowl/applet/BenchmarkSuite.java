@@ -47,11 +47,8 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
  * </ol>
  *
  * <p>jcardsim runs in the same JVM as the test; numbers are <strong>not</strong> representative of
- * real silicon, which has its own clock domain and EEPROM write latencies. Use the {@code
- * meowl bench} CLI command for hardware-side numbers.
- *
- * <p>Self-contained Secure Channel client. Once {@code TestSession} is extracted (audit T-03), this
- * file should switch to it.
+ * real silicon, which has its own clock domain and EEPROM write latencies. Use the {@code meowl
+ * bench} CLI command for hardware-side numbers.
  */
 @EnabledIfSystemProperty(named = "bench", matches = "true")
 class BenchmarkSuite {

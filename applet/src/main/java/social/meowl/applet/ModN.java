@@ -103,10 +103,9 @@ public final class ModN {
     /**
      * Conditional negation: when {@code mask == -1} (all ones) writes {@code a ← n − a}; when
      * {@code mask == 0} leaves {@code a} untouched. The full subtraction is <em>always</em>
-     * computed and only the per-byte write is mask-selected — both code paths execute the same
-     * 32 sub instructions and 32 stores, so the elapsed wall-clock is independent of {@code
-     * mask}. Used by {@link Schnorr} to flip {@code k}/{@code d} on a secret-derived parity bit
-     * without leaking that bit through a conditional branch (A-01).
+     * computed and only the per-byte write is mask-selected, so the elapsed wall-clock is
+     * independent of {@code mask}. Used by {@link Schnorr} to flip {@code k}/{@code d} on a
+     * secret-derived parity bit without leaking the bit through a conditional branch.
      *
      * @param mask {@code -1} (i.e. {@code 0xFFFF}) to negate, {@code 0} to keep
      */
@@ -116,8 +115,8 @@ public final class ModN {
             short ai = (short) (a[(short) (aOff + i)] & 0xFF);
             short diff = (short) ((SECP256K1_N[i] & 0xFF) - ai - borrow);
             borrow = (short) ((diff >>> 15) & 1);
-            // Always store: mask selects either (n - a)[i] or original a[i]. Both branches of
-            // the select are evaluated above; the per-byte write itself is unconditional.
+            // Mask-select either (n - a)[i] or original a[i]; both have been computed already,
+            // so the per-byte write is unconditional.
             a[(short) (aOff + i)] = (byte) ((diff & mask) | (ai & ~mask));
         }
     }

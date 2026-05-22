@@ -7,15 +7,10 @@ package social.meowl.applet;
 import javacard.framework.Util;
 
 /**
- * Constant-time Barrett reduction of a 512-bit dividend modulo a 256-bit modulus.
- *
- * <p>This is the kernel that replaces the variable-time schoolbook long division of {@link
- * Bignat#mod} on the audit-flagged Schnorr {@code (k + e·d) mod n} and Ed25519 {@code (r + k·s) mod
- * ℓ} paths (audit finding <b>A-16</b>). Both group orders are 256-bit; both reductions feed a
- * 512-bit product (32×32 schoolbook multiply via {@link Bignat#mult}). Barrett is asymptotically a
- * bit slower than the Mersenne-style folding that secp256k1's prime {@code p} admits, but {@code n}
- * and {@code ℓ} are NOT pseudo-Mersenne, so Barrett (or Montgomery) is the only constant-time
- * option available on the 8-bit byte-radix our 32-byte big-endian buffers expose.
+ * Constant-time Barrett reduction of a 512-bit dividend modulo a 256-bit modulus. Used by the
+ * Schnorr {@code (k + e·d) mod n} and Ed25519 {@code (r + k·s) mod ℓ} signing paths, both of which
+ * feed a 512-bit product into a 256-bit non-Mersenne modulus where the previous {@link Bignat#mod}
+ * long division had a wall-clock proportional to the secret intermediate's bit length.
  *
  * <h2>Algorithm</h2>
  *
@@ -75,12 +70,6 @@ import javacard.framework.Util;
  *
  * with the property that {@code q1} never needs to be materialised — it is the top 33 bytes of the
  * caller's {@code x} buffer in place.
- *
- * <h2>Validation</h2>
- *
- * <p>Five hundred randomised differentials against {@link java.math.BigInteger#mod} for each
- * modulus, plus pinned KATs at every edge case identified by the audit (x = 0, 1, m-1, m, m+1,
- * 2^256 - 1, 2^512 - 1, exactly-m × k, near-3m). See {@code BarrettTest} for the full battery.
  */
 public final class Barrett {
 

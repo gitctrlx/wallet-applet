@@ -219,31 +219,29 @@ public final class Schnorr {
                     scratch, E_OFF, ModN.SECP256K1_N, (short) 0, COORD_LEN, (short) ~eLessN);
 
             // 7b. Emit bytes(R) now. R.x is the only thing we still need from the R uncompressed
-            //     slot, and the upcoming Barrett scratch (step 8c) aliases the head of R_OFF,
-            //     overwriting the first three bytes (0x04 prefix + R.x[0..2]). Emit-then-clobber is
-            //     simpler and cheaper than carving a non-contiguous Barrett workspace.
+            //    slot, and the upcoming Barrett scratch (step 8c) aliases the head of R_OFF,
+            //    overwriting the first three bytes (0x04 prefix + R.x[0..2]). Emit-then-clobber
+            //    is simpler and cheaper than carving a non-contiguous Barrett workspace.
             Util.arrayCopyNonAtomic(scratch, (short) (R_OFF + 1), outBuf, outOff, COORD_LEN);
 
             // 8. s = (k + e·d) mod n.
             // 8a. e·d (32×32 → 64) into WORK_OFF.
             Bignat.mult(scratch, E_OFF, scratch, D_OFF, COORD_LEN, scratch, WORK_OFF);
             // 8b. Add k (zero-extended to 64 bytes) into WORK[0..64]. The bound k + e·d < n +
-            //    (n-1)² < 2^512 guarantees no overflow past the 64-byte buffer. The constant-time
-            //    helper walks every byte of the upper half unconditionally so the wall-clock is
-            //    independent of where the carry chain stops (A-02). Reading k from scratch is
-            //    safe because addLowerHalfCt reads each source byte before writing the matching
-            //    destination byte.
+            //    (n-1)² < 2^512 guarantees no overflow past the 64-byte buffer. addLowerHalfCt
+            //    walks every byte of the upper half unconditionally so the wall-clock is
+            //    independent of where the carry chain stops, and reads each source byte before
+            //    writing the matching destination byte so aliasing the same scratch buffer for
+            //    both operands is safe.
             Bignat.addLowerHalfCt(scratch, WORK_OFF, scratch, K_OFF, COORD_LEN);
-            // 8c. Reduce WORK[0..64] mod n into the trailing 32 bytes of WORK using constant-time
-            //     Barrett (closes audit A-16). The unreduced dividend k + e·d is a SECRET
-            //     intermediate — its bit pattern would leak the full nonce/key relationship via a
-            //     single per-signature wall-clock measurement under Bignat.mod's classical long
-            //     division. Barrett's reducer touches every byte of (x, n) the same number of
-            //     times on every call.
+            // 8c. Reduce WORK[0..64] mod n into the trailing 32 bytes of WORK with constant-time
+            //    Barrett. The unreduced dividend k + e·d is a SECRET intermediate — its bit
+            //    pattern would leak the full nonce/key relationship via a single per-signature
+            //    wall-clock measurement under any variable-time reducer.
             //
-            //     The 132-byte Barrett scratch reuses scratch[D_OFF..D_OFF+132]; by this point d,
-            //     t, P.x and R.x are no longer needed (steps 7-8a consumed them) and we wipe the
-            //     whole frame in the outer finally anyway, so the temporary aliasing is safe.
+            //    The 132-byte Barrett scratch reuses scratch[D_OFF..D_OFF+132]; by this point d,
+            //    t, P.x and R.x are no longer needed (steps 7-8a consumed them) and we wipe the
+            //    whole frame in the outer finally anyway, so the temporary aliasing is safe.
             BarrettN.reduce(
                     scratch,
                     WORK_OFF,

@@ -168,21 +168,12 @@ public final class Bip32 {
     /**
      * One iteration of {@code CKDpriv}: state.{k,c} → state.{k,c}.
      *
-     * <p><b>Invalid I_L handling (A-21):</b> BIP-32 §"Specification: Key derivation" states that
-     * if {@code parse256(I_L) ≥ n} or {@code k_i == 0}, the resulting key is invalid and one
-     * should proceed with the next value for {@code i}. The probability of this is below {@code
-     * 2⁻¹²⁷}, an unreachable event in practice. We deliberately raise {@link
-     * Constants#SW_CONDITIONS_NOT_SATISFIED} rather than auto-retrying inside the applet because
-     *
-     * <ul>
-     *   <li>auto-retry would silently change the path the host requested, breaking the wire
-     *       contract that the applet derives the exact path the host asked for;
-     *   <li>matching Trezor's {@code hdnode_private_ckd} and libsecp256k1's {@code
-     *       secp256k1_ec_seckey_tweak_add}, which both surface the error to the caller;
-     *   <li>the host SDK can re-issue {@code EXPORT_XPUB} with {@code path[depth-1] + 1} on
-     *       receipt of this SW — the cost is one extra round-trip on an event that has not been
-     *       observed in production-issued seed-derivation traces.
-     * </ul>
+     * <p>BIP-32 §"Specification: Key derivation" states that if {@code parse256(I_L) ≥ n} or
+     * {@code k_i == 0}, the resulting key is invalid and the caller should proceed with the next
+     * value for {@code i} (probability {@code < 2⁻¹²⁷}, unreachable in practice). We raise {@link
+     * Constants#SW_CONDITIONS_NOT_SATISFIED} rather than auto-retrying so the applet never
+     * silently changes the path the host requested — matching the behaviour of Trezor's {@code
+     * hdnode_private_ckd} and libsecp256k1's {@code secp256k1_ec_seckey_tweak_add}.
      */
     private void ckdPriv(byte[] pathBuf, short idxOff) {
         boolean hardened = (pathBuf[idxOff] & HARDENED_MASK) != 0;

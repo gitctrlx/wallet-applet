@@ -193,13 +193,11 @@ public final class PinManager {
      * seed and lifecycle wipes into one atomic reset-to-factory commit.
      */
     public void wipeInTx() {
-        // EEPROM scrub: drive one update() through each OwnerPIN with a garbage buffer before
-        // discarding the reference. Any silicon-side failure here (CryptoException, ISOException)
-        // must propagate so the enclosing JC transaction rolls back — silently swallowing it would
-        // leave the caller believing reset-to-factory committed while the EEPROM cells still hold
-        // the previous PIN/PUK hashes. The OwnerPIN re-instantiation below is the JC-level
-        // invalidation; the scrub is the EEPROM-cell-level invalidation. Both must succeed
-        // together or fail together.
+        // Two-layer wipe: an EEPROM-cell scrub via OwnerPIN.update() with a garbage buffer,
+        // then a fresh OwnerPIN re-instantiation as the JC-level invalidation. Failures during
+        // the scrub MUST propagate so the enclosing JC transaction rolls back — silently
+        // swallowing would leave the caller believing reset-to-factory committed while the
+        // EEPROM cells still held the previous PIN/PUK hashes.
         Util.arrayFillNonAtomic(scrub, (short) 0, Constants.PUK_MAX_LEN, (byte) 0xFF);
         pin.update(scrub, (short) 0, Constants.PIN_MAX_LEN);
         puk.update(scrub, (short) 0, Constants.PUK_MAX_LEN);

@@ -67,10 +67,9 @@ public final class Bignat {
      * accumulator: {@code x[xOff..xOff+2*halfSize] += zeroExtend(y[yOff..yOff+halfSize])}.
      *
      * <p>The full {@code 2 * halfSize}-byte buffer is touched on every call: the lower half
-     * performs a real add, the upper half propagates the resulting carry through every byte
-     * (rather than breaking out as soon as the carry is absorbed). This eliminates the
-     * data-dependent early-exit of a naive {@code if (carry) propagateUpwards()} pattern that
-     * would otherwise leak the {@code carry} bit (A-02 in {@code Schnorr.signDigest}).
+     * performs a real add, the upper half walks every byte propagating the resulting carry
+     * (rather than breaking out as soon as it is absorbed), so the wall-clock is independent of
+     * where the carry chain stops.
      */
     public static void addLowerHalfCt(
             byte[] x, short xOff, byte[] y, short yOff, short halfSize) {
@@ -85,10 +84,9 @@ public final class Bignat {
             x[(short) (xOff + halfSize + i)] = (byte) sum;
             carry = (short) ((sum >>> DIGIT_LEN) & 0x01);
         }
-        // Upper half: unconditionally walk every byte propagating carry. Each iteration adds
-        // (carry ∈ {0,1}) to the byte and recomputes the new carry; bytes after carry hits 0
-        // see (b + 0) which is the byte's original value, so the buffer is unchanged after that
-        // point — but we keep walking so the wall-clock is independent of where carry stopped.
+        // Upper half: walk every byte adding (carry ∈ {0, 1}) and recomputing the carry.
+        // Bytes beyond the point where carry settles to 0 are unchanged but still touched, so
+        // the wall-clock is independent of where the carry chain stopped.
         for (short i = (short) (halfSize - 1); i >= 0; i--) {
             short sum = (short) ((x[(short) (xOff + i)] & DIGIT_MASK) + carry);
             x[(short) (xOff + i)] = (byte) sum;

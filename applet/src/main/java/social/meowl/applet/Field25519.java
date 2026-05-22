@@ -22,10 +22,8 @@ import javacard.framework.Util;
  * <p><b>Timing model.</b> Every public method is fully constant-time. Additive helpers ({@link
  * #add}, {@link #sub}, {@link #neg}) walk every byte unconditionally and the conditional
  * p-reduction is mask-driven. {@link #mul} and {@link #sqr} use the constant-time pseudo-
- * Mersenne reducer instead of the variable-time {@link Bignat#mod} kernel — the latter's
- * iteration count was a function of the secret intermediate's bit length (audit A-17). The
- * exponent in {@link #inv} is the public constant {@code p − 2}, so the schedule is data-
- * independent.
+ * Mersenne reducer ({@link #reducePseudoMersenne}); the exponent in {@link #inv} is the public
+ * constant {@code p − 2}, so the schedule is data-independent.
  *
  * <p>The {@link Edwards25519#randomizeProjective} input blinding (Coron CHES 1999) is retained as
  * a defence-in-depth measure: even though every individual field operation is now constant-time,
@@ -205,11 +203,6 @@ public final class Field25519 {
      * carry/borrow chains carry data-dependent values but their schedule (number of operations,
      * sequence of reads and writes) is fixed. {@link Bignat#condSubInPlace} is itself mask-
      * driven. There are no early exits.
-     *
-     * <p><b>Performance.</b> ~96 byte-ops for step 1, ~33 for step 2, ~33 for step 3, ~64 for
-     * the two condSubs. Total ~226 byte-ops vs ~2 000 for the prior {@link Bignat#mod} kernel
-     * (~8× speed-up on the typical curve operation, ~10× on the worst case the long-division
-     * loop walked).
      *
      * @param x       64-byte big-endian product; UNMODIFIED on return.
      * @param xOff    start offset within {@code x}.

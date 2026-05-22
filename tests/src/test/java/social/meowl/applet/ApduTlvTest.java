@@ -15,13 +15,12 @@ import org.junit.jupiter.api.Test;
 /**
  * Direct unit tests for the {@link ApduTlv} simplified single-byte BER-TLV writer.
  *
- * <p>Audits the four entry points ({@link ApduTlv#putByte putByte} / {@link ApduTlv#putShort
+ * <p>Covers the four entry points ({@link ApduTlv#putByte putByte} / {@link ApduTlv#putShort
  * putShort} / {@link ApduTlv#putBytes putBytes} / {@link ApduTlv#reserve reserve} + {@link
- * ApduTlv#finishReserved finishReserved}) over the wire-shape MEAP-1 §TLV-encoding pins, plus the
- * boundary conditions that previously surfaced as {@code 6F00} from the JC runtime instead of
- * {@code 6700} from the applet (A-19 — {@code finishReserved} did not validate the destination
- * range, causing a silent {@code IndexOutOfBoundsException} when the caller wrote past the buffer
- * before back-patching the length byte).
+ * ApduTlv#finishReserved finishReserved}) against the wire shapes pinned by MEAP-1, plus the
+ * destination-range bound check on {@code finishReserved} so a value written past the buffer
+ * surfaces as {@link Constants#SW_WRONG_LENGTH} rather than a runtime
+ * {@code IndexOutOfBoundsException} ({@code 6F00}).
  */
 class ApduTlvTest {
 
@@ -193,11 +192,11 @@ class ApduTlvTest {
     }
 
     @Test
-    @DisplayName("finishReserved: dst too small for header + claimed value raises SW_WRONG_LENGTH (A-19 regression)")
+    @DisplayName("finishReserved: dst too small for header + claimed value raises SW_WRONG_LENGTH")
     void finishReservedDestinationOverrun() {
         // Caller programmer error: reserved at the very end of the buffer, then claims more value
-        // bytes than dst can hold. Without the A-19 fix, this would back-patch the length byte
-        // without rejecting an obviously inconsistent record.
+        // bytes than dst can hold. The bounds check rejects the obviously inconsistent record
+        // instead of silently back-patching the length byte past the buffer end.
         byte[] dst = new byte[10];
         ApduTlv.reserve(dst, (short) 5, TAG); // value would start at offset 7
         // Claim 5 value bytes, but only 3 fit (10 - 5 - 2 = 3). Must reject with 6700.

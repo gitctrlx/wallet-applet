@@ -29,9 +29,9 @@ import org.junit.jupiter.api.Test;
  *       Schnorr's {@code e·d} and Ed25519's {@code k·s}).
  * </ul>
  *
- * <p>Once {@link Schnorr#signDigest} switches from {@link Bignat#mod} to {@link BarrettN#reduce}
- * (PR-3), the BIP-340 test-vector suite ({@code SchnorrK1Test}) provides the cryptographic
- * confirmation: any error here would translate to invalid Schnorr signatures.
+ * <p>The BIP-340 test-vector suite ({@code SchnorrK1Test}) provides the upstream cryptographic
+ * confirmation since {@link Schnorr#signDigest} routes its final reduction through {@link
+ * BarrettN#reduce}: any error here would translate to invalid Schnorr signatures.
  */
 class BarrettNTest {
 
@@ -213,10 +213,6 @@ class BarrettNTest {
         System.arraycopy(dstBacking, 16, got, 0, 32);
         assertArrayEquals(expected, got);
     }
-
-    // ------------------------------------------------------------------
-    // helpers
-    // ------------------------------------------------------------------
 
     private static void assertReducesTo(BigInteger x, BigInteger expected) {
         assertReducesTo(x, expected, "x=0x" + x.toString(16));

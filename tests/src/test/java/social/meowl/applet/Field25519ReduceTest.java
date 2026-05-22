@@ -13,11 +13,11 @@ import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 
 /**
- * Validates {@link Field25519#reducePseudoMersenne} — the constant-time replacement for
- * {@code Bignat.mod(64-byte product, p = 2^255 - 19)} that closes audit A-17.
+ * Validates {@link Field25519#reducePseudoMersenne} — the constant-time pseudo-Mersenne reducer
+ * that replaced the variable-time {@code Bignat.mod(64-byte product, p = 2^255 - 19)} kernel.
  *
- * <p>The reducer is exercised end-to-end via every {@code Ed25519Test}, {@code SchnorrK1Test}
- * (indirectly — Schnorr doesn't use Field25519) and {@code Edwards25519Test} case. This suite
+ * <p>The reducer is exercised end-to-end via every {@code Ed25519Test} and {@code
+ * Edwards25519Test} case (Schnorr does not touch Field25519). This suite
  * additionally pins the reducer's per-input semantics so future regressions surface here first,
  * before the larger curve-level suites grind through tens of thousands of intermediates.
  *

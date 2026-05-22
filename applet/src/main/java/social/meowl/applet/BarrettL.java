@@ -32,11 +32,8 @@ package social.meowl.applet;
  * width simply means more of the top bytes of μ are non-zero and the {@code q3} estimator's
  * partial-product matrix is denser.
  *
- * <p>Verified end-to-end via {@code BarrettLTest}: 30 KAT edge cases plus 1 000 randomised
- * dividends against {@link java.math.BigInteger#mod}.
- *
- * <p>This class will replace the variable-time {@link Bignat#mod} kernel on the {@code (r + k·s)
- * mod ℓ} reduction inside {@link Ed25519#signDigest} (audit finding A-16, delivered in PR-3).
+ * <p>Constant-time replacement for {@link Bignat#mod} on the {@code (r + k·s) mod ℓ} reduction
+ * inside {@link Ed25519#signDigest}.
  */
 public final class BarrettL {
 

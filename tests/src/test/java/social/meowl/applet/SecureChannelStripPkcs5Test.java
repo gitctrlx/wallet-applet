@@ -33,7 +33,7 @@ class SecureChannelStripPkcs5Test {
      */
     @ParameterizedTest
     @ValueSource(ints = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16})
-    @DisplayName("stripPkcs5 accepts every legitimate padding length 1..16 (F-27)")
+    @DisplayName("stripPkcs5 accepts every legitimate padding length 1..16")
     void acceptsEveryValidPadLength(int padLen) {
         byte[] buf = new byte[BLOCK];
         // Fill the data prefix with a sentinel that differs from the pad byte so a pad-leak
@@ -49,7 +49,7 @@ class SecureChannelStripPkcs5Test {
     }
 
     @Test
-    @DisplayName("stripPkcs5 rejects padLen == 0 (F-27)")
+    @DisplayName("stripPkcs5 rejects padLen == 0")
     void rejectsPadZero() {
         byte[] buf = new byte[BLOCK];
         // All zeros — the trailing byte is 0x00 which violates PKCS#5.
@@ -60,7 +60,7 @@ class SecureChannelStripPkcs5Test {
     }
 
     @Test
-    @DisplayName("stripPkcs5 rejects padLen > BLOCK_LEN (F-27)")
+    @DisplayName("stripPkcs5 rejects padLen > BLOCK_LEN")
     void rejectsPadLargerThanBlock() {
         byte[] buf = new byte[BLOCK];
         // Trailing byte 0x11 (= 17) which exceeds the AES-128 block size.
@@ -74,7 +74,7 @@ class SecureChannelStripPkcs5Test {
     }
 
     @Test
-    @DisplayName("stripPkcs5 rejects a single tampered byte at every pad position (F-27)")
+    @DisplayName("stripPkcs5 rejects a single tampered byte at every pad position")
     void rejectsTamperedPadByte() {
         for (int tamperPos = 0; tamperPos < BLOCK; tamperPos++) {
             byte[] buf = new byte[BLOCK];
@@ -94,7 +94,7 @@ class SecureChannelStripPkcs5Test {
     }
 
     @Test
-    @DisplayName("stripPkcs5 rejects unaligned paddedLen (F-27)")
+    @DisplayName("stripPkcs5 rejects unaligned paddedLen")
     void rejectsUnalignedLength() {
         byte[] buf = new byte[BLOCK];
         ISOException ex =
@@ -105,7 +105,7 @@ class SecureChannelStripPkcs5Test {
     }
 
     @Test
-    @DisplayName("stripPkcs5 rejects zero paddedLen (F-27)")
+    @DisplayName("stripPkcs5 rejects zero paddedLen")
     void rejectsZeroLength() {
         byte[] buf = new byte[BLOCK];
         ISOException ex =
@@ -116,7 +116,7 @@ class SecureChannelStripPkcs5Test {
     }
 
     @Test
-    @DisplayName("stripPkcs5 honours non-zero offsets (F-27)")
+    @DisplayName("stripPkcs5 honours non-zero offsets")
     void honoursOffset() {
         // Place a valid 16-byte block at offset 8 in a 32-byte buffer.
         byte[] buf = new byte[32];
@@ -128,7 +128,7 @@ class SecureChannelStripPkcs5Test {
     }
 
     @Test
-    @DisplayName("compare16 returns 0 on identical inputs (F-28)")
+    @DisplayName("compare16 returns 0 on identical inputs")
     void compareEqual() {
         byte[] a = new byte[BLOCK];
         byte[] b = new byte[BLOCK];
@@ -139,7 +139,7 @@ class SecureChannelStripPkcs5Test {
     }
 
     @Test
-    @DisplayName("compare16 returns > 0 when a > b at every byte position (F-28)")
+    @DisplayName("compare16 returns > 0 when a > b at every byte position")
     void compareGreater() {
         for (int diffPos = 0; diffPos < BLOCK; diffPos++) {
             byte[] a = new byte[BLOCK];
@@ -153,7 +153,7 @@ class SecureChannelStripPkcs5Test {
     }
 
     @Test
-    @DisplayName("compare16 returns < 0 when a < b at every byte position (F-28)")
+    @DisplayName("compare16 returns < 0 when a < b at every byte position")
     void compareLess() {
         for (int diffPos = 0; diffPos < BLOCK; diffPos++) {
             byte[] a = new byte[BLOCK];
@@ -167,7 +167,7 @@ class SecureChannelStripPkcs5Test {
     }
 
     @Test
-    @DisplayName("compare16 verdict is dominated by the most-significant differing byte (F-28)")
+    @DisplayName("compare16 verdict is dominated by the most-significant differing byte")
     void mostSignificantByteWins() {
         // a = 02 FF, b = 01 00. Position 0 says a > b; position 1 (lower order) says a > b too.
         // Verdict must be > 0.
@@ -189,7 +189,7 @@ class SecureChannelStripPkcs5Test {
     }
 
     @Test
-    @DisplayName("compare16 handles full-byte values 0x80..0xFF correctly (F-28)")
+    @DisplayName("compare16 handles full-byte values 0x80..0xFF correctly")
     void compareHighByteValues() {
         // Sanity: a = 0xFF FF ..., b = 0x80 ..., a > b. Tests the unsigned-byte semantics:
         // a signed-byte buggy implementation would treat 0xFF as -1 < 0x80 (= -128) and flip.
