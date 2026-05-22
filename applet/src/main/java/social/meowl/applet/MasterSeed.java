@@ -15,8 +15,8 @@ import javacard.framework.Util;
  * once and persists only the resulting master keying material:
  *
  * <pre>
- *   bip32Master  = HMAC-SHA-512("Bitcoin seed", seed)   // 64 bytes, k(32) || c(32)
- *   slip10Master = HMAC-SHA-512("ed25519 seed", seed)   // 64 bytes, k(32) || c(32)
+ *   bip32Material  = HMAC-SHA-512("Bitcoin seed", seed)   // 64 bytes, k(32) || c(32)
+ *   slip10Material = HMAC-SHA-512("ed25519 seed", seed)   // 64 bytes, k(32) || c(32)
  * </pre>
  *
  * <p>Lifecycle: {@link #importSeed} for a host-supplied seed, {@link #generateSeed} for a
@@ -60,10 +60,10 @@ public final class MasterSeed {
     private static final short MASTER_LEN = (short) 64;
 
     /** Concatenated {@code k_master(32) || c_master(32)} for BIP-32 secp256k1. */
-    private final byte[] bip32Master;
+    private final byte[] bip32Material;
 
     /** Concatenated {@code k_master(32) || c_master(32)} for SLIP-10 Ed25519. */
-    private final byte[] slip10Master;
+    private final byte[] slip10Material;
 
     /** {@code [0] != 0} once a seed has been imported or generated. */
     private final byte[] seededFlag;
@@ -77,8 +77,8 @@ public final class MasterSeed {
      *     lack native HMAC (the software path needs ~192 bytes per engine).
      */
     public MasterSeed(HmacSha sharedHmac512) {
-        this.bip32Master = new byte[MASTER_LEN];
-        this.slip10Master = new byte[MASTER_LEN];
+        this.bip32Material = new byte[MASTER_LEN];
+        this.slip10Material = new byte[MASTER_LEN];
         this.seededFlag = new byte[1];
         this.hmac = sharedHmac512;
     }
@@ -123,7 +123,7 @@ public final class MasterSeed {
                 seedBuf,
                 seedOff,
                 seedLen,
-                bip32Master,
+                bip32Material,
                 (short) 0);
         requireValidBip32MasterKey();
         hmacInto(
@@ -132,7 +132,7 @@ public final class MasterSeed {
                 seedBuf,
                 seedOff,
                 seedLen,
-                slip10Master,
+                slip10Material,
                 (short) 0);
         seededFlag[0] = 1;
     }
@@ -182,16 +182,17 @@ public final class MasterSeed {
                     outBuf,
                     outOff,
                     Constants.SEED_GENERATED_LEN,
-                    bip32Master,
+                    bip32Material,
                     (short) 0);
-            if (ModN.lessThanN(bip32Master, (short) 0) && !ModN.isZero(bip32Master, (short) 0)) {
+            if (ModN.lessThanN(bip32Material, (short) 0)
+                    && !ModN.isZero(bip32Material, (short) 0)) {
                 hmacInto(
                         HMAC_LABEL_SLIP10,
                         (short) HMAC_LABEL_SLIP10.length,
                         outBuf,
                         outOff,
                         Constants.SEED_GENERATED_LEN,
-                        slip10Master,
+                        slip10Material,
                         (short) 0);
                 seededFlag[0] = 1;
                 return Constants.SEED_GENERATED_LEN;
@@ -199,7 +200,7 @@ public final class MasterSeed {
         }
         // Exhausted the resample budget; surface a clean SW so the host knows to retry. Wipe the
         // partially-written master material first so a torn rollback can't leak it.
-        Util.arrayFillNonAtomic(bip32Master, (short) 0, MASTER_LEN, (byte) 0);
+        Util.arrayFillNonAtomic(bip32Material, (short) 0, MASTER_LEN, (byte) 0);
         Util.arrayFillNonAtomic(outBuf, outOff, Constants.SEED_GENERATED_LEN, (byte) 0);
         ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
         return 0; // unreachable
@@ -207,32 +208,43 @@ public final class MasterSeed {
 
     /**
      * Enforces BIP-32 §"Master key generation" validity on the {@code k_master} half of {@link
-     * #bip32Master}: {@code 0 < parse256(I_L) < n}. Failure throws {@link
+     * #bip32Material}: {@code 0 < parse256(I_L) < n}. Failure throws {@link
      * Constants#SW_CONDITIONS_NOT_SATISFIED} (occurrence probability is below {@code 2⁻¹²⁷}; the
      * host's expected response is to retry with a fresh seed).
      */
     private void requireValidBip32MasterKey() {
-        if (ModN.isZero(bip32Master, (short) 0) || !ModN.lessThanN(bip32Master, (short) 0)) {
+        if (ModN.isZero(bip32Material, (short) 0) || !ModN.lessThanN(bip32Material, (short) 0)) {
             // Wipe the partially-written master before bailing so a future commit (or a
             // diagnostic dump) cannot expose a structurally invalid key.
-            Util.arrayFillNonAtomic(bip32Master, (short) 0, MASTER_LEN, (byte) 0);
+            Util.arrayFillNonAtomic(bip32Material, (short) 0, MASTER_LEN, (byte) 0);
             ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
         }
     }
 
     /**
-     * Returns the (read-only) view of the BIP-32 master keying material laid out as {@code
-     * k_master(32) || c_master(32)}. The caller MUST NOT mutate the returned array.
+     * Copies the BIP-32 master keying material — laid out as {@code k_master(32) || c_master(32)},
+     * 64 bytes — into {@code dst[dstOff..dstOff+64]}. Callers MUST treat the destination slot as
+     * secret and wipe it on the same scratch lifecycle that owns the surrounding HD walk state.
+     *
+     * <p>Per audit F-29 the previous {@code byte[] bip32Master()} accessor returned a live alias to
+     * the persistent master field, which made it possible (in principle, not in any current call
+     * site) for a misbehaving caller in the same package to mutate the master in place. This
+     * pull-based API removes the alias outright: the master field is now reachable only through a
+     * one-shot copy, and the field itself stays {@code private}.
      */
-    public byte[] bip32Master() {
+    public void copyBip32MasterTo(byte[] dst, short dstOff) {
         requireSeeded();
-        return bip32Master;
+        Util.arrayCopyNonAtomic(bip32Material, (short) 0, dst, dstOff, MASTER_LEN);
     }
 
-    /** Returns the SLIP-10 Ed25519 master keying material with the same {@code k || c} layout. */
-    public byte[] slip10Master() {
+    /**
+     * Copies the SLIP-10 Ed25519 master keying material with the same {@code k || c} layout into
+     * {@code dst[dstOff..dstOff+64]}. Same secrecy contract as {@link #copyBip32MasterTo} (audit
+     * F-29).
+     */
+    public void copySlip10MasterTo(byte[] dst, short dstOff) {
         requireSeeded();
-        return slip10Master;
+        Util.arrayCopyNonAtomic(slip10Material, (short) 0, dst, dstOff, MASTER_LEN);
     }
 
     /** Reset-to-factory hook: wipe both master fields and the seeded flag. */
@@ -246,11 +258,11 @@ public final class MasterSeed {
      * Transaction-less wipe variant. Caller MUST hold a {@link JCSystem#beginTransaction()} block;
      * used by {@link MeowlApplet#wipe()} to bundle the master-seed wipe into the single
      * reset-to-factory transaction so the BIP-32 and SLIP-10 master fields, the seeded flag, the
-     * PIN/PUK and the lifecycle state all flip atomically (audit S3-11).
+     * PIN/PUK and the lifecycle state all flip atomically (audit F-15).
      */
     public void wipeInTx() {
-        Util.arrayFillNonAtomic(bip32Master, (short) 0, MASTER_LEN, (byte) 0);
-        Util.arrayFillNonAtomic(slip10Master, (short) 0, MASTER_LEN, (byte) 0);
+        Util.arrayFillNonAtomic(bip32Material, (short) 0, MASTER_LEN, (byte) 0);
+        Util.arrayFillNonAtomic(slip10Material, (short) 0, MASTER_LEN, (byte) 0);
         seededFlag[0] = 0;
     }
 

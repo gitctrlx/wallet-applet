@@ -165,10 +165,10 @@ public final class Bip32 {
         if (depth < 0 || depth > Constants.HD_MAX_DEPTH) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        // Seed the working scalar+chain code from the master.
-        byte[] master = masterSeed.bip32Master();
-        Util.arrayCopyNonAtomic(master, (short) 0, state, STATE_K_OFF, ModN.LEN);
-        Util.arrayCopyNonAtomic(master, ModN.LEN, state, STATE_C_OFF, Constants.CHAIN_CODE_LEN);
+        // Seed the working scalar+chain code from the master in one shot. STATE_K_OFF and
+        // STATE_C_OFF are contiguous (0, 32) so the 64-byte pull-based copy lands the
+        // k_master(32) || c_master(32) layout directly into state[0..64] (audit F-29).
+        masterSeed.copyBip32MasterTo(state, STATE_K_OFF);
 
         for (short level = 0; level < depth; level++) {
             short idxOff = (short) (pathOff + level * INDEX_LEN);
@@ -187,7 +187,7 @@ public final class Bip32 {
      *       sibling pubkeys; {@code chain code + one secret} → all sibling secrets) means a stale
      *       chain code lingering in transient memory across an APDU is a defense-in-depth gap.
      *       Trezor's {@code hdnode_clear} wipes everything; we mirror that, and align with {@link
-     *       Slip10}'s wipe path which already does so (audit S3-03).
+     *       Slip10}'s wipe path which already does so (audit F-07).
      *   <li>{@code state[I_OFF..]} — the last HMAC-SHA-512 output (its left half is a secret scalar
      *       candidate).
      *   <li>{@code state[PUB_OFF..]} — the uncompressed public-key scratch used by the non-hardened

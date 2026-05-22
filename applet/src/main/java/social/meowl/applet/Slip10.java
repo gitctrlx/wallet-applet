@@ -25,7 +25,7 @@ import javacard.framework.Util;
  * Constants#SW_CONDITIONS_NOT_SATISFIED}; this is the safe interpretation of the spec's
  * "non-hardened derivation is not defined" rule. Earlier revisions returned {@code
  * SW_INCORRECT_P1P2} but ISO 7816-4 reserves the {@code 6A86} class for malformed APDU headers, not
- * for inner-data policy violations — see audit S3-10.
+ * for inner-data policy violations — see audit F-14.
  *
  * <p>Two derivation entry points sit on top of the shared SLIP-10 walk:
  *
@@ -108,17 +108,17 @@ public final class Slip10 {
         if (depth < 0 || depth > Constants.HD_MAX_DEPTH) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        byte[] master = masterSeed.slip10Master();
-        Util.arrayCopyNonAtomic(master, (short) 0, state, STATE_K_OFF, SECRET_KEY_LEN);
-        Util.arrayCopyNonAtomic(
-                master, SECRET_KEY_LEN, state, STATE_C_OFF, Constants.CHAIN_CODE_LEN);
+        // Seed the working scalar+chain code from the master in one shot. STATE_K_OFF and
+        // STATE_C_OFF are contiguous (0, 32) so the 64-byte pull-based copy lands the
+        // k_master(32) || c_master(32) layout directly into state[0..64] (audit F-29).
+        masterSeed.copySlip10MasterTo(state, STATE_K_OFF);
         for (short level = 0; level < depth; level++) {
             short idxOff = (short) (pathOff + level * Bip32.INDEX_LEN);
             if ((pathBuf[idxOff] & HARDENED_MASK) == 0) {
                 // SLIP-10 Ed25519 forbids non-hardened derivation. Reject with
                 // SW_CONDITIONS_NOT_SATISFIED — ISO 7816-4 6A86 is reserved for malformed APDU
                 // headers, but the offending bit lives inside the data field, so 6985 is the
-                // semantically correct status word (audit S3-10).
+                // semantically correct status word (audit F-14).
                 ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
             }
             ckdPriv(pathBuf, idxOff);
