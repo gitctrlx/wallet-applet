@@ -12,8 +12,11 @@ import javacard.framework.Util;
  * destination buffer.
  *
  * <p>Usage is intentionally restricted to the simplified form {@code [tag(1) | length(1) |
- * value(length)]} with {@code length ≤ 127}. This is sufficient for every TLV record meowl emits
- * (see {@code Constants.TAG_*}) and keeps the encoder small enough to audit by inspection.
+ * value(length)]} with {@code length ∈ [0, 255]} per {@code docs/specs/meap-1.md §TLV-encoding}.
+ * This deliberately departs from strict BER-TLV (which mandates long-form {@code 0x81 LL} for
+ * length ≥ 128); the meowl wire trades strict ISO compliance for parser simplicity, since every TLV
+ * value is well below 256 bytes. Audit F-36 corrected an earlier {@code length ≤ 127} claim that
+ * contradicted both the spec and the {@link #MAX_VALUE_LEN} constant.
  *
  * <p>Every method returns the offset immediately past the last byte written, so call sites can
  * chain writes without keeping a separate cursor variable. Misuse (oversized value, illegal offset,
