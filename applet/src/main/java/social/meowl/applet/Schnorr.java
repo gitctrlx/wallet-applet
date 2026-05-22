@@ -243,12 +243,7 @@ public final class Schnorr {
             //    t, P.x and R.x are no longer needed (steps 7-8a consumed them) and we wipe the
             //    whole frame in the outer finally anyway, so the temporary aliasing is safe.
             BarrettN.reduce(
-                    scratch,
-                    WORK_OFF,
-                    scratch,
-                    D_OFF,
-                    scratch,
-                    (short) (WORK_OFF + COORD_LEN));
+                    scratch, WORK_OFF, scratch, D_OFF, scratch, (short) (WORK_OFF + COORD_LEN));
 
             // 9. Emit s (bytes(R) was emitted at step 7b before Barrett aliased R_OFF).
             Util.arrayCopyNonAtomic(

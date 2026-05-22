@@ -7,9 +7,9 @@ package social.meowl.applet;
 /**
  * Wire-level and policy constants for the meowl-applet.
  *
- * <p>Every magic number that appears on the APDU wire or in a policy threshold is declared here
- * so the rest of the codebase stays free of literal hex constants and the MEAP specifications
- * under {@code docs/specs/} can be diffed against a single file.
+ * <p>Every magic number that appears on the APDU wire or in a policy threshold is declared here so
+ * the rest of the codebase stays free of literal hex constants and the MEAP specifications under
+ * {@code docs/specs/} can be diffed against a single file.
  *
  * <p>JavaCard 3.0.5 has no {@code enum}, so {@code byte} / {@code short} literals are the idiomatic
  * representation.

@@ -161,10 +161,7 @@ class SecureChannelTest {
         //    and the card would return 6FB1 (SW_SECURE_CHANNEL_REQUIRED).
         byte[] env2 = session.encryptForCard(innerApdu);
         ResponseAPDU resp = transmit(INS_OPEN_SC, 0x00, 0x00, env2);
-        assertEquals(
-                0x9000,
-                resp.getSW(),
-                "session must survive an unauthenticated replay");
+        assertEquals(0x9000, resp.getSW(), "session must survive an unauthenticated replay");
     }
 
     @Test

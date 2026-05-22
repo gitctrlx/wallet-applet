@@ -32,18 +32,18 @@ public final class BarrettN {
 
     /**
      * The secp256k1 group order {@code n}, 32 bytes big-endian. Same numerical value as {@link
-     * ModN#SECP256K1_N}; intentionally duplicated so {@code BarrettN} stays a self-contained
-     * module whose constants can be diffed directly against the spec.
+     * ModN#SECP256K1_N}; intentionally duplicated so {@code BarrettN} stays a self-contained module
+     * whose constants can be diffed directly against the spec.
      */
     public static final byte[] N = {
-            (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
-            (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
-            (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
-            (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFE,
-            (byte) 0xBA, (byte) 0xAE, (byte) 0xDC, (byte) 0xE6,
-            (byte) 0xAF, (byte) 0x48, (byte) 0xA0, (byte) 0x3B,
-            (byte) 0xBF, (byte) 0xD2, (byte) 0x5E, (byte) 0x8C,
-            (byte) 0xD0, (byte) 0x36, (byte) 0x41, (byte) 0x41,
+        (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
+        (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
+        (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
+        (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFE,
+        (byte) 0xBA, (byte) 0xAE, (byte) 0xDC, (byte) 0xE6,
+        (byte) 0xAF, (byte) 0x48, (byte) 0xA0, (byte) 0x3B,
+        (byte) 0xBF, (byte) 0xD2, (byte) 0x5E, (byte) 0x8C,
+        (byte) 0xD0, (byte) 0x36, (byte) 0x41, (byte) 0x41,
     };
 
     /**
@@ -52,15 +52,15 @@ public final class BarrettN {
      * exact quotient {@code 2^512 / n} crosses {@code 2^256} (n is just below {@code 2^256}).
      */
     public static final byte[] MU = {
-            (byte) 0x01, (byte) 0x00, (byte) 0x00, (byte) 0x00,
-            (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00,
-            (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00,
-            (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00,
-            (byte) 0x01, (byte) 0x45, (byte) 0x51, (byte) 0x23,
-            (byte) 0x19, (byte) 0x50, (byte) 0xB7, (byte) 0x5F,
-            (byte) 0xC4, (byte) 0x40, (byte) 0x2D, (byte) 0xA1,
-            (byte) 0x73, (byte) 0x2F, (byte) 0xC9, (byte) 0xBE,
-            (byte) 0xC0,
+        (byte) 0x01, (byte) 0x00, (byte) 0x00, (byte) 0x00,
+        (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00,
+        (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00,
+        (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00,
+        (byte) 0x01, (byte) 0x45, (byte) 0x51, (byte) 0x23,
+        (byte) 0x19, (byte) 0x50, (byte) 0xB7, (byte) 0x5F,
+        (byte) 0xC4, (byte) 0x40, (byte) 0x2D, (byte) 0xA1,
+        (byte) 0x73, (byte) 0x2F, (byte) 0xC9, (byte) 0xBE,
+        (byte) 0xC0,
     };
 
     private BarrettN() {}
@@ -68,21 +68,16 @@ public final class BarrettN {
     /**
      * Constant-time {@code dst[0..32] := x[0..64] mod n}.
      *
-     * @param x        64-byte big-endian dividend; UNMODIFIED on return.
-     * @param xOff     start offset within {@code x}.
-     * @param scratch  caller-supplied workspace of at least {@link Barrett#SCRATCH_LEN} bytes;
+     * @param x 64-byte big-endian dividend; UNMODIFIED on return.
+     * @param xOff start offset within {@code x}.
+     * @param scratch caller-supplied workspace of at least {@link Barrett#SCRATCH_LEN} bytes;
      *     clobbered.
-     * @param scOff    start offset within {@code scratch}.
-     * @param dst      32-byte big-endian output; receives {@code x mod n}.
-     * @param dstOff   start offset within {@code dst}.
+     * @param scOff start offset within {@code scratch}.
+     * @param dst 32-byte big-endian output; receives {@code x mod n}.
+     * @param dstOff start offset within {@code dst}.
      */
     public static void reduce(
-            byte[] x,
-            short xOff,
-            byte[] scratch,
-            short scOff,
-            byte[] dst,
-            short dstOff) {
+            byte[] x, short xOff, byte[] scratch, short scOff, byte[] dst, short dstOff) {
         Barrett.reduce(x, xOff, N, (short) 0, MU, (short) 0, scratch, scOff, dst, dstOff);
     }
 }

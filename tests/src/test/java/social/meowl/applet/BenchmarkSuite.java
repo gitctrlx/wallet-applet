@@ -69,7 +69,8 @@ class BenchmarkSuite {
 
     private static final byte[] DEFAULT_PIN = "123456".getBytes();
     private static final byte[] DEFAULT_PUK = "ABCDEFGH".getBytes();
-    private static final byte[] DEFAULT_SEED = new byte[32]; // deterministic seed for reproducibility
+    private static final byte[] DEFAULT_SEED =
+            new byte[32]; // deterministic seed for reproducibility
 
     private CardSimulator simulator;
     private Session session;
@@ -155,56 +156,69 @@ class BenchmarkSuite {
     @DisplayName("Bench: SIGN_ECDSA_K1 (m/44'/0'/0'/0/0)")
     void benchEcdsaK1() {
         byte[] payload = signPayloadK1();
-        runBench("SIGN_ECDSA_K1", () -> sendInnerExpectOk(
-                Constants.INS_SIGN_ECDSA_K1, (byte) 0, (byte) 0, payload));
+        runBench(
+                "SIGN_ECDSA_K1",
+                () -> sendInnerExpectOk(Constants.INS_SIGN_ECDSA_K1, (byte) 0, (byte) 0, payload));
     }
 
     @Test
     @DisplayName("Bench: SIGN_SCHNORR_K1 (m/86'/0'/0'/0/0)")
     void benchSchnorrK1() {
         byte[] payload = signPayloadK1();
-        runBench("SIGN_SCHNORR_K1", () -> sendInnerExpectOk(
-                Constants.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, payload));
+        runBench(
+                "SIGN_SCHNORR_K1",
+                () ->
+                        sendInnerExpectOk(
+                                Constants.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, payload));
     }
 
     @Test
     @DisplayName("Bench: SIGN_ED25519 (m/44'/501'/0'/0')")
     void benchEd25519() {
         byte[] payload = signPayloadEd25519();
-        runBench("SIGN_ED25519", () -> sendInnerExpectOk(
-                Constants.INS_SIGN_ED25519, (byte) 0, (byte) 0, payload));
+        runBench(
+                "SIGN_ED25519",
+                () -> sendInnerExpectOk(Constants.INS_SIGN_ED25519, (byte) 0, (byte) 0, payload));
     }
 
     @Test
     @DisplayName("Bench: EXPORT_XPUB secp256k1 (m/44'/0'/0'/0/0)")
     void benchExportXpubK1() {
-        byte[] payload = exportXpubPayload(Constants.CURVE_SECP256K1, new int[] {
-                0x8000002C, 0x80000000, 0x80000000, 0, 0});
-        runBench("EXPORT_XPUB_K1", () -> sendInnerExpectOk(
-                Constants.INS_EXPORT_XPUB, (byte) 0, (byte) 0, payload));
+        byte[] payload =
+                exportXpubPayload(
+                        Constants.CURVE_SECP256K1,
+                        new int[] {0x8000002C, 0x80000000, 0x80000000, 0, 0});
+        runBench(
+                "EXPORT_XPUB_K1",
+                () -> sendInnerExpectOk(Constants.INS_EXPORT_XPUB, (byte) 0, (byte) 0, payload));
     }
 
     @Test
     @DisplayName("Bench: EXPORT_XPUB ed25519 (m/44'/501'/0'/0')")
     void benchExportXpubEd25519() {
-        byte[] payload = exportXpubPayload(Constants.CURVE_ED25519, new int[] {
-                0x8000002C, 0x800001F5, 0x80000000, 0x80000000});
-        runBench("EXPORT_XPUB_ED25519", () -> sendInnerExpectOk(
-                Constants.INS_EXPORT_XPUB, (byte) 0, (byte) 0, payload));
+        byte[] payload =
+                exportXpubPayload(
+                        Constants.CURVE_ED25519,
+                        new int[] {0x8000002C, 0x800001F5, 0x80000000, 0x80000000});
+        runBench(
+                "EXPORT_XPUB_ED25519",
+                () -> sendInnerExpectOk(Constants.INS_EXPORT_XPUB, (byte) 0, (byte) 0, payload));
     }
 
     @Test
     @DisplayName("Bench: OPEN_SECURE_CHANNEL (handshake only)")
     void benchOpenSc() {
         // Re-handshake on a fresh simulator each iteration to isolate handshake cost.
-        runBench("OPEN_SECURE_CHANNEL", () -> {
-            CardSimulator sim = new CardSimulator();
-            AID aid = AIDUtil.create(APPLET_AID_BYTES);
-            sim.installApplet(aid, MeowlApplet.class);
-            sim.selectApplet(aid);
-            simulator = sim;
-            session = openSession();
-        });
+        runBench(
+                "OPEN_SECURE_CHANNEL",
+                () -> {
+                    CardSimulator sim = new CardSimulator();
+                    AID aid = AIDUtil.create(APPLET_AID_BYTES);
+                    sim.installApplet(aid, MeowlApplet.class);
+                    sim.selectApplet(aid);
+                    simulator = sim;
+                    session = openSession();
+                });
     }
 
     @FunctionalInterface
@@ -316,11 +330,14 @@ class BenchmarkSuite {
         dst[off + 2] = (byte) ((val >>> 8) & 0xFF);
         dst[off + 3] = (byte) (val & 0xFF);
     }
+
     private byte[] sendInnerExpectOk(byte ins, byte p1, byte p2, byte[] data) {
         ResponseAPDU r = sendInner(ins, p1, p2, data);
         if (r.getSW() != 0x9000) {
             throw new IllegalStateException(
-                    "INS " + Integer.toHexString(ins & 0xFF) + " SW="
+                    "INS "
+                            + Integer.toHexString(ins & 0xFF)
+                            + " SW="
                             + Integer.toHexString(r.getSW()));
         }
         try {

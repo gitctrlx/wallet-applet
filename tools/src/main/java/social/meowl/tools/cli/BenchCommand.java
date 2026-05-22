@@ -30,8 +30,7 @@ import social.meowl.tools.transport.CardTransport;
  * <p>Runs a fresh Secure Channel handshake, performs a {@code VERIFY_PIN} with the supplied PIN,
  * then times each operation with {@link #warmup} warm-up iterations followed by {@link #samples}
  * timed iterations. Text output mirrors {@code BenchmarkSuite} for easy side-by-side comparison
- * between simulator and silicon; {@code --json} emits a structured object for regression
- * harnesses.
+ * between simulator and silicon; {@code --json} emits a structured object for regression harnesses.
  */
 @Command(
         name = "bench",
@@ -83,9 +82,7 @@ public final class BenchCommand implements Callable<Integer> {
     };
 
     /** Ed25519 SLIP-44: m/44'/501'/0'/0' — Solana account 0. */
-    private static final int[] PATH_ED25519 = {
-        0x8000002C, 0x800001F5, 0x80000000, 0x80000000
-    };
+    private static final int[] PATH_ED25519 = {0x8000002C, 0x800001F5, 0x80000000, 0x80000000};
 
     @Override
     public Integer call() {
@@ -121,9 +118,7 @@ public final class BenchCommand implements Callable<Integer> {
         progress(
                 "setup complete in %.1fs (SELECT + GET_AUTHENTIKEY + handshake + VERIFY_PIN);"
                         + " warmup=%d samples=%d per op",
-                (System.nanoTime() - t0) / 1e9,
-                warmup,
-                samples);
+                (System.nanoTime() - t0) / 1e9, warmup, samples);
 
         Map<String, Stats> out = new LinkedHashMap<>();
         if (shouldRun("ecdsa")) {
@@ -171,9 +166,7 @@ public final class BenchCommand implements Callable<Integer> {
             // `bibo` and creates a fresh client / new ECDH ephemerals each call.
             out.put(
                     "OPEN_SECURE_CHANNEL",
-                    benchOp(
-                            "OPEN_SECURE_CHANNEL",
-                            () -> reHandshake(bibo, akResp.getData())));
+                    benchOp("OPEN_SECURE_CHANNEL", () -> reHandshake(bibo, akResp.getData())));
         }
         progress("bench complete; total wall %.1fs", (System.nanoTime() - t0) / 1e9);
         return out;
@@ -213,28 +206,20 @@ public final class BenchCommand implements Callable<Integer> {
             double warmupMeanMs = warmup == 0 ? 0.0 : (warmNanos / (double) warmup) / 1e6;
             progress(
                     "%-22s warmup done in %.1fs (mean %.0fms); now timing %d samples...",
-                    label,
-                    warmNanos / 1e9,
-                    warmupMeanMs,
-                    samples);
+                    label, warmNanos / 1e9, warmupMeanMs, samples);
             long[] nanos = new long[samples];
             for (int i = 0; i < samples; i++) {
                 long start = System.nanoTime();
                 op.run();
                 nanos[i] = System.nanoTime() - start;
                 if (samples >= 10 && (i + 1) % Math.max(1, samples / 10) == 0) {
-                    progress(
-                            "%-22s   %d/%d   last=%.0fms",
-                            label, i + 1, samples, nanos[i] / 1e6);
+                    progress("%-22s   %d/%d   last=%.0fms", label, i + 1, samples, nanos[i] / 1e6);
                 }
             }
             Stats stats = Stats.from(nanos);
             progress(
                     "%-22s done in %.1fs   p50=%.0fms   p99=%.0fms",
-                    label,
-                    (System.nanoTime() - opStart) / 1e9,
-                    stats.p50Ms,
-                    stats.p99Ms);
+                    label, (System.nanoTime() - opStart) / 1e9, stats.p50Ms, stats.p99Ms);
             return stats;
         } catch (Exception e) {
             throw new RuntimeException("benchmark op failed: " + label, e);
@@ -317,10 +302,18 @@ public final class BenchCommand implements Callable<Integer> {
     private static void renderText(PrintStream out, Map<String, Stats> results) {
         out.printf(
                 "%-22s %5s %8s %8s %8s %8s %8s %8s %8s%n",
-                "operation", "n", "p50_ms", "p95_ms", "p99_ms", "mean_ms", "stddev", "min_ms",
+                "operation",
+                "n",
+                "p50_ms",
+                "p95_ms",
+                "p99_ms",
+                "mean_ms",
+                "stddev",
+                "min_ms",
                 "max_ms");
-        out.println("---------------------- ----- -------- -------- -------- -------- "
-                + "-------- -------- --------");
+        out.println(
+                "---------------------- ----- -------- -------- -------- -------- "
+                        + "-------- -------- --------");
         for (var e : results.entrySet()) {
             Stats s = e.getValue();
             out.printf(
@@ -382,8 +375,7 @@ public final class BenchCommand implements Callable<Integer> {
                     sorted.length,
                     sorted[(int) (sorted.length * 0.50)] / 1_000_000.0,
                     sorted[(int) (sorted.length * 0.95)] / 1_000_000.0,
-                    sorted[Math.min(sorted.length - 1, (int) (sorted.length * 0.99))]
-                            / 1_000_000.0,
+                    sorted[Math.min(sorted.length - 1, (int) (sorted.length * 0.99))] / 1_000_000.0,
                     mean / 1_000_000.0,
                     stddev / 1_000_000.0,
                     sorted[0] / 1_000_000.0,

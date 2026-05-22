@@ -168,11 +168,11 @@ public final class Bip32 {
     /**
      * One iteration of {@code CKDpriv}: state.{k,c} → state.{k,c}.
      *
-     * <p>BIP-32 §"Specification: Key derivation" states that if {@code parse256(I_L) ≥ n} or
-     * {@code k_i == 0}, the resulting key is invalid and the caller should proceed with the next
-     * value for {@code i} (probability {@code < 2⁻¹²⁷}, unreachable in practice). We raise {@link
-     * Constants#SW_CONDITIONS_NOT_SATISFIED} rather than auto-retrying so the applet never
-     * silently changes the path the host requested — matching the behaviour of Trezor's {@code
+     * <p>BIP-32 §"Specification: Key derivation" states that if {@code parse256(I_L) ≥ n} or {@code
+     * k_i == 0}, the resulting key is invalid and the caller should proceed with the next value for
+     * {@code i} (probability {@code < 2⁻¹²⁷}, unreachable in practice). We raise {@link
+     * Constants#SW_CONDITIONS_NOT_SATISFIED} rather than auto-retrying so the applet never silently
+     * changes the path the host requested — matching the behaviour of Trezor's {@code
      * hdnode_private_ckd} and libsecp256k1's {@code secp256k1_ec_seckey_tweak_add}.
      */
     private void ckdPriv(byte[] pathBuf, short idxOff) {

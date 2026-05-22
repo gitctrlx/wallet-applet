@@ -18,17 +18,18 @@ import org.junit.jupiter.api.Test;
  * {@code ℓ = 2^252 + 27742317777372353535851937790883648493}. Mirrors the structure of {@code
  * BarrettNTest} so the two suites give equal coverage to both moduli.
  *
- * <p>{@code ℓ} has 253 bits, so {@code μ_ℓ = ⌊2^512 / ℓ⌋} has 260 bits (top byte {@code 0x0F},
- * one nibble of which is non-zero). This is a wider μ than {@code μ_n}, exercising more of the
- * {@code q3 · m} multiply matrix. The headline KAT set therefore overlaps with {@code
- * BarrettNTest} cases but the failure modes are different — a regression in carry handling at
- * the 257..260 bit positions of q3 would surface here first.
+ * <p>{@code ℓ} has 253 bits, so {@code μ_ℓ = ⌊2^512 / ℓ⌋} has 260 bits (top byte {@code 0x0F}, one
+ * nibble of which is non-zero). This is a wider μ than {@code μ_n}, exercising more of the {@code
+ * q3 · m} multiply matrix. The headline KAT set therefore overlaps with {@code BarrettNTest} cases
+ * but the failure modes are different — a regression in carry handling at the 257..260 bit
+ * positions of q3 would surface here first.
  */
 class BarrettLTest {
 
     /** Ed25519 group order {@code ℓ}, the constant {@link BarrettL#L} bakes in. */
     private static final BigInteger L =
-            BigInteger.ONE.shiftLeft(252)
+            BigInteger.ONE
+                    .shiftLeft(252)
                     .add(new BigInteger("14def9dea2f79cd65812631a5cf5d3ed", 16));
 
     private static final SecureRandom RNG = new SecureRandom();
@@ -40,7 +41,8 @@ class BarrettLTest {
     }
 
     @Test
-    @DisplayName("BarrettL constant: BarrettL.MU = floor(2^512 / ℓ) bit-for-bit (260 bits, 33 bytes)")
+    @DisplayName(
+            "BarrettL constant: BarrettL.MU = floor(2^512 / ℓ) bit-for-bit (260 bits, 33 bytes)")
     void muConstantPinned() {
         BigInteger muExpected = BigInteger.ONE.shiftLeft(512).divide(L);
         assertEquals(260, muExpected.bitLength(), "μ_ℓ must be exactly 260 bits");

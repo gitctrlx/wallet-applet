@@ -18,8 +18,8 @@ import org.junit.jupiter.api.Test;
  * {@code n}. The kernel is {@link Barrett#reduce}; this suite pins both the kernel correctness and
  * the {@code (n, μ_n)} constants baked into {@link BarrettN}.
  *
- * <p>The reference is the JDK's {@link BigInteger#mod} so each test case is independently
- * checkable against the published secp256k1 group order. We cover
+ * <p>The reference is the JDK's {@link BigInteger#mod} so each test case is independently checkable
+ * against the published secp256k1 group order. We cover
  *
  * <ul>
  *   <li>headline edge cases: 0, 1, n−1, n, n+1, 2^256−1, 2^512−1, k·n for k = 1..3 and k·n ± 1;

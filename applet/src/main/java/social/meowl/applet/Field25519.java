@@ -13,22 +13,22 @@ import javacard.framework.Util;
  * methods are static and operate on caller-supplied buffers; output buffers may alias input buffers
  * (every method reads inputs before writing the output).
  *
- * <p>Multiplication is schoolbook 32×32 → 64 followed by a constant-time pseudo-Mersenne
- * reduction ({@link #reducePseudoMersenne}) exploiting {@code 2²⁵⁶ ≡ 38 (mod p)}. Squaring is
- * implemented as {@code mul(a, a)}. Inversion uses Fermat: {@code a⁻¹ = a^(p−2) mod p} via 254
- * left-to-right square-and-multiplies. RFC 8032 wire format is little-endian; this class works
- * in big-endian and the flip happens at the {@link Ed25519} boundary.
+ * <p>Multiplication is schoolbook 32×32 → 64 followed by a constant-time pseudo-Mersenne reduction
+ * ({@link #reducePseudoMersenne}) exploiting {@code 2²⁵⁶ ≡ 38 (mod p)}. Squaring is implemented as
+ * {@code mul(a, a)}. Inversion uses Fermat: {@code a⁻¹ = a^(p−2) mod p} via 254 left-to-right
+ * square-and-multiplies. RFC 8032 wire format is little-endian; this class works in big-endian and
+ * the flip happens at the {@link Ed25519} boundary.
  *
  * <p><b>Timing model.</b> Every public method is fully constant-time. Additive helpers ({@link
  * #add}, {@link #sub}, {@link #neg}) walk every byte unconditionally and the conditional
- * p-reduction is mask-driven. {@link #mul} and {@link #sqr} use the constant-time pseudo-
- * Mersenne reducer ({@link #reducePseudoMersenne}); the exponent in {@link #inv} is the public
- * constant {@code p − 2}, so the schedule is data-independent.
+ * p-reduction is mask-driven. {@link #mul} and {@link #sqr} use the constant-time pseudo- Mersenne
+ * reducer ({@link #reducePseudoMersenne}); the exponent in {@link #inv} is the public constant
+ * {@code p − 2}, so the schedule is data-independent.
  *
- * <p>The {@link Edwards25519#randomizeProjective} input blinding (Coron CHES 1999) is retained as
- * a defence-in-depth measure: even though every individual field operation is now constant-time,
- * the projective randomisation decorrelates the bit pattern of intermediate field elements from
- * the secret scalar bits, hardening against second-order side channels (power, EM).
+ * <p>The {@link Edwards25519#randomizeProjective} input blinding (Coron CHES 1999) is retained as a
+ * defence-in-depth measure: even though every individual field operation is now constant-time, the
+ * projective randomisation decorrelates the bit pattern of intermediate field elements from the
+ * secret scalar bits, hardening against second-order side channels (power, EM).
  */
 public final class Field25519 {
 
@@ -177,37 +177,37 @@ public final class Field25519 {
     }
 
     /**
-     * Constant-time reduction of a 64-byte big-endian product modulo {@code p = 2²⁵⁵ − 19},
-     * writing the canonical 32-byte residue to {@code dst}.
+     * Constant-time reduction of a 64-byte big-endian product modulo {@code p = 2²⁵⁵ − 19}, writing
+     * the canonical 32-byte residue to {@code dst}.
      *
-     * <p><b>Algorithm.</b> Pseudo-Mersenne fold using {@code 2²⁵⁶ ≡ 38 (mod p)}. The 512-bit
-     * input splits as {@code x = x_hi · 2²⁵⁶ + x_lo} with {@code 0 ≤ x_hi, x_lo < 2²⁵⁶}, so
-     * {@code x ≡ 38·x_hi + x_lo (mod p)}. The reduction proceeds in four steps, each constant-
-     * time in every byte of the input:
+     * <p><b>Algorithm.</b> Pseudo-Mersenne fold using {@code 2²⁵⁶ ≡ 38 (mod p)}. The 512-bit input
+     * splits as {@code x = x_hi · 2²⁵⁶ + x_lo} with {@code 0 ≤ x_hi, x_lo < 2²⁵⁶}, so {@code x ≡
+     * 38·x_hi + x_lo (mod p)}. The reduction proceeds in four steps, each constant- time in every
+     * byte of the input:
      *
      * <ol>
-     *   <li>Compute {@code r = (38·x_hi + x_lo) mod 2²⁵⁶} byte-wise, tracking a 6-bit carry
-     *       {@code c₁ ∈ [0, 39]} (the {@code 38·x_hi + x_lo} fits in 38 + 32 + small bits).
-     *   <li>Fold the carry: {@code r ← r + 38·c₁}. Since {@code 38·c₁ ≤ 1482 ≤ 2¹¹}, the result
-     *       is at most {@code 2²⁵⁶ + 1481 < 2²⁵⁷}; the new top-carry {@code c₂ ∈ {0, 1}}.
-     *   <li>Fold again: {@code r ← r + 38·c₂}. If {@code c₂ = 1} the body was {@code ≤ 1481}
-     *       before this step, so after adding {@code 38} the body is {@code ≤ 1519 < 2¹¹} and
-     *       no further carry escapes; if {@code c₂ = 0} the body is unchanged. In both cases
-     *       {@code r < 2²⁵⁶} after this step.
-     *   <li>Run two unconditional mask-driven {@code condSub(r, p)} passes. After the first
-     *       pass {@code r ∈ [0, 2p)}, after the second {@code r ∈ [0, p)}, regardless of which
-     *       sub-range the post-fold value originally landed in.
+     *   <li>Compute {@code r = (38·x_hi + x_lo) mod 2²⁵⁶} byte-wise, tracking a 6-bit carry {@code
+     *       c₁ ∈ [0, 39]} (the {@code 38·x_hi + x_lo} fits in 38 + 32 + small bits).
+     *   <li>Fold the carry: {@code r ← r + 38·c₁}. Since {@code 38·c₁ ≤ 1482 ≤ 2¹¹}, the result is
+     *       at most {@code 2²⁵⁶ + 1481 < 2²⁵⁷}; the new top-carry {@code c₂ ∈ {0, 1}}.
+     *   <li>Fold again: {@code r ← r + 38·c₂}. If {@code c₂ = 1} the body was {@code ≤ 1481} before
+     *       this step, so after adding {@code 38} the body is {@code ≤ 1519 < 2¹¹} and no further
+     *       carry escapes; if {@code c₂ = 0} the body is unchanged. In both cases {@code r < 2²⁵⁶}
+     *       after this step.
+     *   <li>Run two unconditional mask-driven {@code condSub(r, p)} passes. After the first pass
+     *       {@code r ∈ [0, 2p)}, after the second {@code r ∈ [0, p)}, regardless of which sub-range
+     *       the post-fold value originally landed in.
      * </ol>
      *
      * <p><b>Constant-time argument.</b> Every iteration of every loop runs unconditionally. The
      * carry/borrow chains carry data-dependent values but their schedule (number of operations,
-     * sequence of reads and writes) is fixed. {@link Bignat#condSubInPlace} is itself mask-
-     * driven. There are no early exits.
+     * sequence of reads and writes) is fixed. {@link Bignat#condSubInPlace} is itself mask- driven.
+     * There are no early exits.
      *
-     * @param x       64-byte big-endian product; UNMODIFIED on return.
-     * @param xOff    start offset within {@code x}.
-     * @param dst     32-byte big-endian output; receives {@code x mod p}.
-     * @param dstOff  start offset within {@code dst}.
+     * @param x 64-byte big-endian product; UNMODIFIED on return.
+     * @param xOff start offset within {@code x}.
+     * @param dst 32-byte big-endian output; receives {@code x mod p}.
+     * @param dstOff start offset within {@code dst}.
      */
     static void reducePseudoMersenne(byte[] x, short xOff, byte[] dst, short dstOff) {
         // Step 1: r = (38 · x_hi + x_lo) mod 2^256, c1 = (38 · x_hi + x_lo) >> 256.

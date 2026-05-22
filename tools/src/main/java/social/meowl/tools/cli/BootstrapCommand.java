@@ -28,26 +28,26 @@ import social.meowl.tools.transport.CardTransport;
  *
  * <ol>
  *   <li>SELECT the applet, GET_AUTHENTIKEY, open Secure Channel.
- *   <li>{@code IMPORT_PKI_CERT} (init / write / finalize) with a synthetic {@code 80}-byte cert
- *       so {@code LOCK_PKI} is willing to commit.
+ *   <li>{@code IMPORT_PKI_CERT} (init / write / finalize) with a synthetic {@code 80}-byte cert so
+ *       {@code LOCK_PKI} is willing to commit.
  *   <li>{@code LOCK_PKI} → {@code PERSONALIZED}.
  *   <li>{@code SETUP} with {@code --pin}/{@code --puk} → {@code SETUP_DONE}.
- *   <li>{@code VERIFY_PIN} (the SETUP transition leaves the card in a not-PIN-verified state on
- *       the first hop after SETUP_DONE in some applet builds; verifying explicitly is harmless
- *       on every revision and lets {@code IMPORT_SEED} succeed unconditionally).
+ *   <li>{@code VERIFY_PIN} (the SETUP transition leaves the card in a not-PIN-verified state on the
+ *       first hop after SETUP_DONE in some applet builds; verifying explicitly is harmless on every
+ *       revision and lets {@code IMPORT_SEED} succeed unconditionally).
  *   <li>{@code IMPORT_SEED} (default: deterministic {@code 0x01 0x02 ... 0x20}) → {@code SEEDED}.
  *       Override with {@code --seed=HEX} to import a specific seed (16-64 bytes).
  * </ol>
  *
  * <p><b>This command is destructive.</b> A successful {@code SETUP} burns the card's transition
- * counter; running {@code bootstrap} on a card that is already past {@code POST_INSTALL} will
- * fail at the offending step (the applet rejects re-{@code SETUP} once {@code SETUP_DONE} has
- * been reached). For a clean re-bootstrap, run {@code meowl reset} first or re-install the CAP.
+ * counter; running {@code bootstrap} on a card that is already past {@code POST_INSTALL} will fail
+ * at the offending step (the applet rejects re-{@code SETUP} once {@code SETUP_DONE} has been
+ * reached). For a clean re-bootstrap, run {@code meowl reset} first or re-install the CAP.
  *
  * <p>The synthetic cert is a deterministic byte ramp ({@code 0x00 0x01 ... 0x4F}); production
- * deployments MUST replace it with a real manufacturer-signed cert before {@code LOCK_PKI}.
- * {@code bootstrap} is a developer / CI / hardware-bench tool, not a production provisioning
- * path — call it that way in any deploy script that uses it.
+ * deployments MUST replace it with a real manufacturer-signed cert before {@code LOCK_PKI}. {@code
+ * bootstrap} is a developer / CI / hardware-bench tool, not a production provisioning path — call
+ * it that way in any deploy script that uses it.
  */
 @Command(
         name = "bootstrap",
@@ -127,8 +127,7 @@ public final class BootstrapCommand implements Callable<Integer> {
                                 0,
                                 0));
         if (!MeowlSw.isSuccess(akResp.getSW())) {
-            throw new ProtocolException(
-                    akResp.getSW(), "GET_AUTHENTIKEY failed during bootstrap");
+            throw new ProtocolException(akResp.getSW(), "GET_AUTHENTIKEY failed during bootstrap");
         }
 
         SecureChannelClient sc = new SecureChannelClient(bibo, akResp.getData());
@@ -146,12 +145,7 @@ public final class BootstrapCommand implements Callable<Integer> {
         // 3. SETUP → SETUP_DONE.
         byte[] pinBytes = pin.getBytes();
         byte[] pukBytes = puk.getBytes();
-        sendInner(
-                sc,
-                MeowlInsn.SETUP.value(),
-                (byte) 0,
-                (byte) 0,
-                encodeSetup(pinBytes, pukBytes));
+        sendInner(sc, MeowlInsn.SETUP.value(), (byte) 0, (byte) 0, encodeSetup(pinBytes, pukBytes));
         log("SETUP: PIN/PUK installed (PIN=%d B, PUK=%d B).", pinBytes.length, pukBytes.length);
 
         // 4. VERIFY_PIN — establishes the session-scoped PIN authorisation IMPORT_SEED needs.
@@ -190,11 +184,7 @@ public final class BootstrapCommand implements Callable<Integer> {
                 payload[2 + i] = (byte) ((written + i) & 0xFF);
             }
             sendInner(
-                    sc,
-                    MeowlInsn.IMPORT_PKI_CERT.value(),
-                    PKI_IMPORT_P1_WRITE,
-                    (byte) 0,
-                    payload);
+                    sc, MeowlInsn.IMPORT_PKI_CERT.value(), PKI_IMPORT_P1_WRITE, (byte) 0, payload);
             written += chunkLen;
         }
 
@@ -218,14 +208,13 @@ public final class BootstrapCommand implements Callable<Integer> {
             throw new IllegalArgumentException("--seed is not valid hex: " + e.getMessage());
         }
         if (bytes.length < 16 || bytes.length > 64) {
-            throw new IllegalArgumentException(
-                    "--seed must be 16-64 bytes; got " + bytes.length);
+            throw new IllegalArgumentException("--seed must be 16-64 bytes; got " + bytes.length);
         }
         return bytes;
     }
 
-    private static void sendInner(
-            SecureChannelClient sc, byte ins, byte p1, byte p2, byte[] data) throws BIBOException {
+    private static void sendInner(SecureChannelClient sc, byte ins, byte p1, byte p2, byte[] data)
+            throws BIBOException {
         byte[] inner = new byte[5 + data.length];
         inner[0] = (byte) 0x80;
         inner[1] = ins;

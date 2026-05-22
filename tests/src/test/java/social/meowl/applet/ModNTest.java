@@ -358,7 +358,8 @@ class ModNTest {
     }
 
     @Test
-    @DisplayName("negateModConditional: 50 randomised scalars match BigInteger.subtract under mask=-1")
+    @DisplayName(
+            "negateModConditional: 50 randomised scalars match BigInteger.subtract under mask=-1")
     void negateConditionalRandomized() {
         SecureRandom rng = new SecureRandom();
         for (int trial = 0; trial < 50; trial++) {
@@ -367,9 +368,7 @@ class ModNTest {
             byte[] a = bigIntToFixed(x, 32);
             ModN.negateModConditional(a, (short) 0, (short) -1);
             assertArrayEquals(
-                    bigIntToFixed(N.subtract(x), 32),
-                    a,
-                    "trial " + trial + " x=" + x.toString(16));
+                    bigIntToFixed(N.subtract(x), 32), a, "trial " + trial + " x=" + x.toString(16));
         }
     }
 

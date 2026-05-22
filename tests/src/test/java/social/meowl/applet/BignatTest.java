@@ -374,7 +374,9 @@ class BignatTest {
     }
 
     @RepeatedTest(100)
-    @DisplayName("addLowerHalfCt: 64-byte accumulator + zero-extended 32-byte rhs matches BigInteger mod 2^512")
+    @DisplayName(
+            "addLowerHalfCt: 64-byte accumulator + zero-extended 32-byte rhs matches BigInteger mod"
+                    + " 2^512")
     void addLowerHalfCtMatchesBigInteger() {
         byte[] x = randomBytes(64);
         byte[] y = randomBytes(32);

@@ -403,8 +403,8 @@ public final class SecureChannel {
      * Increments the 16-byte outbound counter; on overflow the channel is torn down and {@link
      * Constants#SW_SECURE_CHANNEL_FAILED} is raised. Without this guard a wrapped counter would
      * reuse {@code IV_base XOR 0} on a fresh ciphertext — AES-CBC with the same (key, IV) leaks
-     * plaintext XOR. Practically unreachable after 2¹²⁸ - 1 wraps; defence-in-depth against
-     * fault injection.
+     * plaintext XOR. Practically unreachable after 2¹²⁸ - 1 wraps; defence-in-depth against fault
+     * injection.
      */
     private void incrementCounter() {
         for (short i = (short) (Constants.SC_BLOCK_LEN - 1); i >= 0; i--) {

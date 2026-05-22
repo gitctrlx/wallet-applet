@@ -189,8 +189,7 @@ public final class Ed25519 {
             //    residue directly into scratch[HASH_OFF+32..HASH_OFF+64], matching the slot the
             //    add step below reads.
             Bignat.mult(scratch, K_BE_OFF, scratch, S_BE_OFF, (short) 32, scratch, HASH_OFF);
-            BarrettL.reduce(
-                    scratch, HASH_OFF, scratch, WORK_OFF, scratch, (short) (HASH_OFF + 32));
+            BarrettL.reduce(scratch, HASH_OFF, scratch, WORK_OFF, scratch, (short) (HASH_OFF + 32));
             //    k·s mod ℓ now lives at scratch[HASH_OFF+32..HASH_OFF+64]. Add r and reduce.
             Util.arrayCopyNonAtomic(scratch, R_BE_OFF, scratch, S_OUT_BE_OFF, (short) 32);
             boolean carry =

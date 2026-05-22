@@ -15,9 +15,9 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
- * Pinned boundary cases for {@link HmacSha}. Complements {@link HmacShaTest} (RFC 4231 + 200
- * random differentials) by exercising the explicit message-length and key-length edges that the
- * software fallback walks per RFC 2104:
+ * Pinned boundary cases for {@link HmacSha}. Complements {@link HmacShaTest} (RFC 4231 + 200 random
+ * differentials) by exercising the explicit message-length and key-length edges that the software
+ * fallback walks per RFC 2104:
  *
  * <ul>
  *   <li>empty message ({@code msgLen == 0});
@@ -95,13 +95,19 @@ class HmacShaEdgeTest {
         assertArrayEquals(
                 expected,
                 got,
-                "native HMAC-" + algName + " disagrees with JDK at keyLen=" + keyLen + ", msgLen=" + msgLen);
+                "native HMAC-"
+                        + algName
+                        + " disagrees with JDK at keyLen="
+                        + keyLen
+                        + ", msgLen="
+                        + msgLen);
     }
 
     @ParameterizedTest(name = "{0}: key={2} bytes, msg={3} bytes — software vs JDK")
     @MethodSource("edgeCases")
     @DisplayName("software HMAC fallback matches JDK on every (keyLen, msgLen) boundary case")
-    void softwareMatchesJdk(String algName, String jdkAlg, int keyLen, int msgLen) throws Exception {
+    void softwareMatchesJdk(String algName, String jdkAlg, int keyLen, int msgLen)
+            throws Exception {
         byte alg = "SHA-256".equals(algName) ? HmacSha.ALG_SHA_256 : HmacSha.ALG_SHA_512;
         byte[] key = deterministicBytes(0x11, keyLen);
         byte[] msg = deterministicBytes(0x22, msgLen);
@@ -126,7 +132,12 @@ class HmacShaEdgeTest {
         assertArrayEquals(
                 expected,
                 got,
-                "software HMAC-" + algName + " disagrees with JDK at keyLen=" + keyLen + ", msgLen=" + msgLen);
+                "software HMAC-"
+                        + algName
+                        + " disagrees with JDK at keyLen="
+                        + keyLen
+                        + ", msgLen="
+                        + msgLen);
     }
 
     /** Deterministic non-zero payload, so a regression that drops the message entirely shows up. */

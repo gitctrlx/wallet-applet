@@ -16,18 +16,18 @@ import org.junit.jupiter.api.Test;
  * Validates {@link Field25519#reducePseudoMersenne} — the constant-time pseudo-Mersenne reducer
  * that replaced the variable-time {@code Bignat.mod(64-byte product, p = 2^255 - 19)} kernel.
  *
- * <p>The reducer is exercised end-to-end via every {@code Ed25519Test} and {@code
- * Edwards25519Test} case (Schnorr does not touch Field25519). This suite
- * additionally pins the reducer's per-input semantics so future regressions surface here first,
- * before the larger curve-level suites grind through tens of thousands of intermediates.
+ * <p>The reducer is exercised end-to-end via every {@code Ed25519Test} and {@code Edwards25519Test}
+ * case (Schnorr does not touch Field25519). This suite additionally pins the reducer's per-input
+ * semantics so future regressions surface here first, before the larger curve-level suites grind
+ * through tens of thousands of intermediates.
  *
  * <p>Coverage:
  *
  * <ul>
  *   <li>Headline KATs: 0, 1, p − 1, p, p + 1, 2p − 1, 2²⁵⁶ − 1, 2²⁵⁶ exact, 2⁵¹², 2⁵¹² − 1, k · p
  *       and k · p ± 1 for k = 1..3, (p − 1)² (the maximal canonical product).
- *   <li>Forced carry-path edges: inputs designed to drive {@code c₁} to its maximum, force
- *       {@code c₂ = 1} (the 33-byte intermediate), and force {@code c₃ = 0} from a near-overflow.
+ *   <li>Forced carry-path edges: inputs designed to drive {@code c₁} to its maximum, force {@code
+ *       c₂ = 1} (the 33-byte intermediate), and force {@code c₃ = 0} from a near-overflow.
  *   <li>1 000 randomised 64-byte products differential-tested against {@link BigInteger#mod}.
  * </ul>
  */
@@ -94,16 +94,18 @@ class Field25519ReduceTest {
     }
 
     @Test
-    @DisplayName("reduce(2^512 - 1) = (2^512 - 1) mod p (largest 512-bit dividend; both x_hi and "
-            + "x_lo are all-ones, forces c1 to its maximum and triggers the 33-byte intermediate)")
+    @DisplayName(
+            "reduce(2^512 - 1) = (2^512 - 1) mod p (largest 512-bit dividend; both x_hi and x_lo"
+                + " are all-ones, forces c1 to its maximum and triggers the 33-byte intermediate)")
     void reduceAllOnes512() {
         BigInteger x = BigInteger.ONE.shiftLeft(512).subtract(BigInteger.ONE);
         assertReducesTo(x, x.mod(P));
     }
 
     @Test
-    @DisplayName("reduce(2^512) — same as 2^512 - 0 but with the bottom bit clear, separate carry "
-            + "footprint")
+    @DisplayName(
+            "reduce(2^512) — same as 2^512 - 0 but with the bottom bit clear, separate carry "
+                    + "footprint")
     void reducePowerOf512Approx() {
         BigInteger x = BigInteger.ONE.shiftLeft(512).subtract(BigInteger.TEN);
         assertReducesTo(x, x.mod(P));
@@ -199,10 +201,10 @@ class Field25519ReduceTest {
 
         // x sentinels intact:
         for (int i = 0; i < 32; i++) {
-            assertArrayEquals(new byte[]{(byte) 0xAA}, new byte[]{xBacking[i]}, "x prefix " + i);
+            assertArrayEquals(new byte[] {(byte) 0xAA}, new byte[] {xBacking[i]}, "x prefix " + i);
         }
         for (int i = 96; i < 128; i++) {
-            assertArrayEquals(new byte[]{(byte) 0xBB}, new byte[]{xBacking[i]}, "x suffix " + i);
+            assertArrayEquals(new byte[] {(byte) 0xBB}, new byte[] {xBacking[i]}, "x suffix " + i);
         }
         byte[] xAfter = new byte[64];
         System.arraycopy(xBacking, 32, xAfter, 0, 64);
@@ -210,10 +212,12 @@ class Field25519ReduceTest {
 
         // dst sentinels intact:
         for (int i = 0; i < 16; i++) {
-            assertArrayEquals(new byte[]{(byte) 0xDD}, new byte[]{dstBacking[i]}, "dst prefix " + i);
+            assertArrayEquals(
+                    new byte[] {(byte) 0xDD}, new byte[] {dstBacking[i]}, "dst prefix " + i);
         }
         for (int i = 48; i < 64; i++) {
-            assertArrayEquals(new byte[]{(byte) 0xDD}, new byte[]{dstBacking[i]}, "dst suffix " + i);
+            assertArrayEquals(
+                    new byte[] {(byte) 0xDD}, new byte[] {dstBacking[i]}, "dst suffix " + i);
         }
 
         // dst[16..48] == (p - 10) mod p = p - 10.

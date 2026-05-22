@@ -67,12 +67,11 @@ public final class Bignat {
      * accumulator: {@code x[xOff..xOff+2*halfSize] += zeroExtend(y[yOff..yOff+halfSize])}.
      *
      * <p>The full {@code 2 * halfSize}-byte buffer is touched on every call: the lower half
-     * performs a real add, the upper half walks every byte propagating the resulting carry
-     * (rather than breaking out as soon as it is absorbed), so the wall-clock is independent of
-     * where the carry chain stops.
+     * performs a real add, the upper half walks every byte propagating the resulting carry (rather
+     * than breaking out as soon as it is absorbed), so the wall-clock is independent of where the
+     * carry chain stops.
      */
-    public static void addLowerHalfCt(
-            byte[] x, short xOff, byte[] y, short yOff, short halfSize) {
+    public static void addLowerHalfCt(byte[] x, short xOff, byte[] y, short yOff, short halfSize) {
         short carry = 0;
         // Lower half: real byte-wise add with carry chaining.
         for (short i = (short) (halfSize - 1); i >= 0; i--) {

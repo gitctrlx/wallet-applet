@@ -35,12 +35,12 @@ import javacard.framework.Util;
  *   8. return r mod 2^256           (low 32 bytes of r)
  * </pre>
  *
- * <p><b>Why three subtracts, not two?</b> HAC 14.44 proves the quotient estimator
- * {@code q3 = ⌊⌊q2/b^(k+1)⌋⌋} satisfies {@code q3 ≤ ⌊x/m⌋} and {@code q3 ≥ ⌊x/m⌋ - 2}, hence
- * {@code r ∈ [0, 3m)} and two subtracts suffice. We always run three to keep the wall-clock fully
- * data-independent: the third subtract is a no-op when {@code r < m} but takes the same time as
- * the first two. The extra cost is one byte-wise compare and one masked add, ~100 µs on real
- * silicon — negligible against the ~1500 byte-multiplies that dominate this routine.
+ * <p><b>Why three subtracts, not two?</b> HAC 14.44 proves the quotient estimator {@code q3 =
+ * ⌊⌊q2/b^(k+1)⌋⌋} satisfies {@code q3 ≤ ⌊x/m⌋} and {@code q3 ≥ ⌊x/m⌋ - 2}, hence {@code r ∈ [0,
+ * 3m)} and two subtracts suffice. We always run three to keep the wall-clock fully
+ * data-independent: the third subtract is a no-op when {@code r < m} but takes the same time as the
+ * first two. The extra cost is one byte-wise compare and one masked add, ~100 µs on real silicon —
+ * negligible against the ~1500 byte-multiplies that dominate this routine.
  *
  * <h2>Constant-time guarantees</h2>
  *
@@ -79,7 +79,10 @@ public final class Barrett {
     /** Constant: the byte length of a 32-byte group-order modulus. */
     public static final short MODULUS_LEN = 32;
 
-    /** Constant: the byte length of the 64-byte dividend (a 512-bit value, e.g. a · b for 32-byte a, b). */
+    /**
+     * Constant: the byte length of the 64-byte dividend (a 512-bit value, e.g. a · b for 32-byte a,
+     * b).
+     */
     public static final short DIVIDEND_LEN = 64;
 
     /** Constant: the byte length of Barrett's pre-computed μ. */
@@ -100,16 +103,16 @@ public final class Barrett {
     /**
      * Constant-time Barrett reduction {@code dst[0..32] := x[0..64] mod m[0..32]}.
      *
-     * @param x        64-byte big-endian dividend, {@code 0 ≤ x < 2^512}; UNMODIFIED on return.
-     * @param xOff     start offset within {@code x}.
-     * @param m        32-byte big-endian modulus, {@code 0 < m < 2^256}; UNMODIFIED.
-     * @param mOff     start offset within {@code m}.
-     * @param mu       33-byte big-endian Barrett constant {@code floor(2^512 / m)}; UNMODIFIED.
-     * @param muOff    start offset within {@code mu}.
-     * @param scratch  caller-supplied workspace of at least {@link #SCRATCH_LEN} bytes; clobbered.
-     * @param scOff    start offset within {@code scratch}.
-     * @param dst      32-byte big-endian output buffer; receives {@code x mod m}.
-     * @param dstOff   start offset within {@code dst}.
+     * @param x 64-byte big-endian dividend, {@code 0 ≤ x < 2^512}; UNMODIFIED on return.
+     * @param xOff start offset within {@code x}.
+     * @param m 32-byte big-endian modulus, {@code 0 < m < 2^256}; UNMODIFIED.
+     * @param mOff start offset within {@code m}.
+     * @param mu 33-byte big-endian Barrett constant {@code floor(2^512 / m)}; UNMODIFIED.
+     * @param muOff start offset within {@code mu}.
+     * @param scratch caller-supplied workspace of at least {@link #SCRATCH_LEN} bytes; clobbered.
+     * @param scOff start offset within {@code scratch}.
+     * @param dst 32-byte big-endian output buffer; receives {@code x mod m}.
+     * @param dstOff start offset within {@code dst}.
      */
     public static void reduce(
             byte[] x,
@@ -150,13 +153,12 @@ public final class Barrett {
         // bytes of x; we copy it into the scratch r-slot, then subtract r2 in place. Any borrow is
         // implicitly +2^264 in the stored value — exactly what the algorithm wants.
         Util.arrayCopyNonAtomic(
-                x, (short) (xOff + DIVIDEND_LEN - EXT_LEN), scratch, (short) (scOff + R_OFF), EXT_LEN);
-        Bignat.sub(
+                x,
+                (short) (xOff + DIVIDEND_LEN - EXT_LEN),
                 scratch,
                 (short) (scOff + R_OFF),
-                scratch,
-                (short) (scOff + R2_OFF),
                 EXT_LEN);
+        Bignat.sub(scratch, (short) (scOff + R_OFF), scratch, (short) (scOff + R2_OFF), EXT_LEN);
 
         // Step 7: at most three conditional subtracts of m to bring r into [0, m). We zero-extend m
         // by one byte for the 33-byte compare. The mask is produced byte-wise constant-time by
@@ -165,9 +167,9 @@ public final class Barrett {
         condSub33(scratch, (short) (scOff + R_OFF), m, mOff);
         condSub33(scratch, (short) (scOff + R_OFF), m, mOff);
 
-        // Step 8: emit the low 32 bytes; the (now-known-zero) top byte at scratch[R_OFF] is dropped.
-        Util.arrayCopyNonAtomic(
-                scratch, (short) (scOff + R_OFF + 1), dst, dstOff, MODULUS_LEN);
+        // Step 8: emit the low 32 bytes; the (now-known-zero) top byte at scratch[R_OFF] is
+        // dropped.
+        Util.arrayCopyNonAtomic(scratch, (short) (scOff + R_OFF + 1), dst, dstOff, MODULUS_LEN);
     }
 
     /**
@@ -254,7 +256,8 @@ public final class Barrett {
                                 (((prod >>> BYTE_BITS) & BYTE_MASK)
                                         + ((sum >>> BYTE_BITS) & BYTE_MASK));
             }
-            // Final carry into the column above the inner loop (only if it lands inside the window).
+            // Final carry into the column above the inner loop (only if it lands inside the
+            // window).
             short kFull = i;
             short kLo = (short) (kFull - (xSize + ySize - outSize));
             if (kLo >= 0) {
@@ -265,17 +268,17 @@ public final class Barrett {
     }
 
     /**
-     * Constant-time conditional subtraction of a 32-byte modulus (zero-extended to 33 bytes) from
-     * a 33-byte accumulator: if {@code r ≥ (0x00 ‖ m)} the buffer is replaced with {@code r − m},
+     * Constant-time conditional subtraction of a 32-byte modulus (zero-extended to 33 bytes) from a
+     * 33-byte accumulator: if {@code r ≥ (0x00 ‖ m)} the buffer is replaced with {@code r − m},
      * otherwise it is left unchanged. Implements one iteration of step 7 of Barrett's algorithm.
      *
-     * <p><b>Strategy.</b> The trial subtract is run unconditionally byte-wise (32 iterations on
-     * the low half + 1 on the top byte), tracking the borrow as a short. The borrow that comes
-     * out of the top-byte subtract is exactly the bit that says "we underflowed, so {@code r} was
-     * smaller than {@code m_ext}". That bit is sign-extended into a 16-bit mask and fed to a
-     * mask-driven byte-wise add of {@code m} back into the buffer — when the mask is zero, the
-     * add is a no-op; when the mask is all-ones the add cancels out the trial subtract exactly
-     * (including the top-byte borrow we just wrote, which the carry of the masked add restores).
+     * <p><b>Strategy.</b> The trial subtract is run unconditionally byte-wise (32 iterations on the
+     * low half + 1 on the top byte), tracking the borrow as a short. The borrow that comes out of
+     * the top-byte subtract is exactly the bit that says "we underflowed, so {@code r} was smaller
+     * than {@code m_ext}". That bit is sign-extended into a 16-bit mask and fed to a mask-driven
+     * byte-wise add of {@code m} back into the buffer — when the mask is zero, the add is a no-op;
+     * when the mask is all-ones the add cancels out the trial subtract exactly (including the
+     * top-byte borrow we just wrote, which the carry of the masked add restores).
      *
      * <p>Every byte of {@code r} and {@code m} is read and written the same number of times on
      * every call, so the wall-clock is data-independent.

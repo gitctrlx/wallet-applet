@@ -28,9 +28,9 @@ import org.junit.jupiter.api.Test;
  *       correct sub-slots).
  * </ul>
  *
- * <p>Together with the {@link Ed25519#blindBasePoint} control-flow coverage, these tests close
- * the gap that previously left the projective-blinding mitigation unverified outside the
- * integration loop in {@link Ed25519SigningTest}.
+ * <p>Together with the {@link Ed25519#blindBasePoint} control-flow coverage, these tests close the
+ * gap that previously left the projective-blinding mitigation unverified outside the integration
+ * loop in {@link Ed25519SigningTest}.
  */
 class RandomizeProjectiveTest {
 

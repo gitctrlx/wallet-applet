@@ -19,8 +19,8 @@ import org.junit.jupiter.api.Test;
  * putShort} / {@link ApduTlv#putBytes putBytes} / {@link ApduTlv#reserve reserve} + {@link
  * ApduTlv#finishReserved finishReserved}) against the wire shapes pinned by MEAP-1, plus the
  * destination-range bound check on {@code finishReserved} so a value written past the buffer
- * surfaces as {@link Constants#SW_WRONG_LENGTH} rather than a runtime
- * {@code IndexOutOfBoundsException} ({@code 6F00}).
+ * surfaces as {@link Constants#SW_WRONG_LENGTH} rather than a runtime {@code
+ * IndexOutOfBoundsException} ({@code 6F00}).
  */
 class ApduTlvTest {
 
@@ -134,7 +134,8 @@ class ApduTlvTest {
     }
 
     @Test
-    @DisplayName("putBytes: source range overrun (srcOff + length > src.length) raises SW_WRONG_LENGTH")
+    @DisplayName(
+            "putBytes: source range overrun (srcOff + length > src.length) raises SW_WRONG_LENGTH")
     void putBytesSourceOverrun() {
         byte[] src = new byte[5];
         byte[] dst = new byte[20];
@@ -144,7 +145,8 @@ class ApduTlvTest {
     }
 
     @Test
-    @DisplayName("reserve + finishReserved: round-trip preserves value bytes and back-patches length")
+    @DisplayName(
+            "reserve + finishReserved: round-trip preserves value bytes and back-patches length")
     void reserveAndFinishRoundtrip() {
         byte[] dst = new byte[16];
         short valueStart = ApduTlv.reserve(dst, (short) 2, TAG);
@@ -201,12 +203,12 @@ class ApduTlvTest {
         ApduTlv.reserve(dst, (short) 5, TAG); // value would start at offset 7
         // Claim 5 value bytes, but only 3 fit (10 - 5 - 2 = 3). Must reject with 6700.
         assertSw(
-                Constants.SW_WRONG_LENGTH,
-                () -> ApduTlv.finishReserved(dst, (short) 5, (short) 5));
+                Constants.SW_WRONG_LENGTH, () -> ApduTlv.finishReserved(dst, (short) 5, (short) 5));
     }
 
     @Test
-    @DisplayName("finishReserved: dst exactly large enough for header + value succeeds at the boundary")
+    @DisplayName(
+            "finishReserved: dst exactly large enough for header + value succeeds at the boundary")
     void finishReservedExactBoundary() {
         byte[] dst = new byte[10];
         ApduTlv.reserve(dst, (short) 5, TAG); // value would start at offset 7
@@ -229,14 +231,28 @@ class ApduTlvTest {
         short cursor = (short) 0;
         cursor = ApduTlv.putByte(dst, cursor, (byte) 0x01, (byte) 0xAA);
         cursor = ApduTlv.putShort(dst, cursor, (byte) 0x02, (short) 0xBBCC);
-        cursor = ApduTlv.putBytes(
-                dst, cursor, (byte) 0x03, new byte[] {(byte) 0xDD, (byte) 0xEE}, (short) 0, (short) 2);
+        cursor =
+                ApduTlv.putBytes(
+                        dst,
+                        cursor,
+                        (byte) 0x03,
+                        new byte[] {(byte) 0xDD, (byte) 0xEE},
+                        (short) 0,
+                        (short) 2);
 
         // Expected layout: 01 01 AA | 02 02 BB CC | 03 02 DD EE
         byte[] expected = {
-            (byte) 0x01, (byte) 0x01, (byte) 0xAA,
-            (byte) 0x02, (byte) 0x02, (byte) 0xBB, (byte) 0xCC,
-            (byte) 0x03, (byte) 0x02, (byte) 0xDD, (byte) 0xEE,
+            (byte) 0x01,
+            (byte) 0x01,
+            (byte) 0xAA,
+            (byte) 0x02,
+            (byte) 0x02,
+            (byte) 0xBB,
+            (byte) 0xCC,
+            (byte) 0x03,
+            (byte) 0x02,
+            (byte) 0xDD,
+            (byte) 0xEE,
         };
         byte[] actual = new byte[expected.length];
         System.arraycopy(dst, 0, actual, 0, expected.length);
@@ -262,7 +278,6 @@ class ApduTlvTest {
     /** Asserts that {@code thunk} raises an {@link ISOException} with the given status word. */
     private static void assertSw(short expectedSw, Thunk thunk) {
         ISOException ex = assertThrows(ISOException.class, thunk::run);
-        assertEquals(
-                expectedSw & 0xFFFF, ex.getReason() & 0xFFFF, "unexpected status word");
+        assertEquals(expectedSw & 0xFFFF, ex.getReason() & 0xFFFF, "unexpected status word");
     }
 }
