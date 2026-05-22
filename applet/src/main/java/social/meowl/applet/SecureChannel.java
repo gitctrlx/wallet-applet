@@ -317,8 +317,15 @@ public final class SecureChannel {
 
         // Replay defense before MAC verification: reject non-monotonic IVs cheaply. IV bytes are
         // public, so a non-constant-time compare is fine.
+        //
+        // We do NOT reset() the session on this branch (A-08): an attacker without K_mac can
+        // replay any captured envelope to force the previous SC session keys to be wiped, which
+        // is a free DoS lever. By refusing the replayed envelope without tearing down the
+        // session, the same attacker is forced to pay the full MAC-verify cost (~5 ms) before
+        // any state change is possible. MAC-verification failure below remains a session-killer
+        // because at that point the attacker either has K_mac (compromise) or is corrupting in
+        // flight (genuine integrity failure).
         if (compare16(apduBuffer, ivOffset, lastInboundIv, (short) 0) <= 0) {
-            reset();
             ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
         }
 
@@ -396,6 +403,13 @@ public final class SecureChannel {
         return (short) (Constants.SC_BLOCK_LEN + ctLen + Constants.SC_MAC_LEN);
     }
 
+    /**
+     * Increments the 16-byte outbound counter; on overflow (counter wraps to all-zero after
+     * 2¹²⁸ - 1 wraps, an unreachable state in practice but defensible against fault injection)
+     * the channel is torn down and {@link Constants#SW_SECURE_CHANNEL_FAILED} is raised. Without
+     * this guard a wrapped counter would reuse {@code IV_base XOR 0} on a fresh ciphertext —
+     * AES-CBC with the same (key, IV) leaks plaintext XOR (A-09).
+     */
     private void incrementCounter() {
         for (short i = (short) (Constants.SC_BLOCK_LEN - 1); i >= 0; i--) {
             short next = (short) ((outboundCounter[i] & 0xFF) + 1);
@@ -404,6 +418,11 @@ public final class SecureChannel {
                 return;
             }
         }
+        // All 16 bytes carried out — the counter has wrapped to all-zero. Tear down the session
+        // so the host is forced to re-handshake with fresh IV_base before any further outbound
+        // ciphertext is emitted. Practically unreachable; defence in depth only.
+        reset();
+        ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
     }
 
     /**

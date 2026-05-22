@@ -306,6 +306,73 @@ class ModNTest {
         }
     }
 
+    @Test
+    @DisplayName("negateModConditional: mask = -1 negates (matches negateMod)")
+    void negateConditionalAllOnesMask() {
+        BigInteger x = BigInteger.valueOf(12345);
+        byte[] a = bigIntToFixed(x, 32);
+        ModN.negateModConditional(a, (short) 0, (short) -1);
+        assertArrayEquals(bigIntToFixed(N.subtract(x), 32), a);
+    }
+
+    @Test
+    @DisplayName("negateModConditional: mask = 0 leaves the value untouched")
+    void negateConditionalZeroMask() {
+        BigInteger x = BigInteger.valueOf(0x1122334455667788L);
+        byte[] a = bigIntToFixed(x, 32);
+        byte[] snapshot = a.clone();
+        ModN.negateModConditional(a, (short) 0, (short) 0);
+        assertArrayEquals(snapshot, a, "mask=0 must NOT modify the buffer");
+    }
+
+    @Test
+    @DisplayName("negateModConditional: mask = -1 is involutive on [1, n)")
+    void negateConditionalInvolution() {
+        BigInteger x = BigInteger.valueOf(7);
+        byte[] a = bigIntToFixed(x, 32);
+        ModN.negateModConditional(a, (short) 0, (short) -1);
+        assertArrayEquals(bigIntToFixed(N.subtract(x), 32), a);
+        ModN.negateModConditional(a, (short) 0, (short) -1);
+        assertArrayEquals(bigIntToFixed(x, 32), a, "double negate must return the original");
+    }
+
+    @Test
+    @DisplayName("negateModConditional: honours non-zero offset and only touches its slice")
+    void negateConditionalHonoursOffset() {
+        byte[] backing = new byte[64];
+        // Fill the leading + trailing bytes with a sentinel so we can detect bleeding writes.
+        for (int i = 0; i < 16; i++) backing[i] = (byte) 0xAA;
+        for (int i = 48; i < 64; i++) backing[i] = (byte) 0xBB;
+        BigInteger x = BigInteger.valueOf(0xDEADBEEFL);
+        System.arraycopy(bigIntToFixed(x, 32), 0, backing, 16, 32);
+        ModN.negateModConditional(backing, (short) 16, (short) -1);
+
+        // 16 leading bytes untouched.
+        for (int i = 0; i < 16; i++) assertEquals((byte) 0xAA, backing[i], "byte " + i);
+        // 16 trailing bytes untouched.
+        for (int i = 48; i < 64; i++) assertEquals((byte) 0xBB, backing[i], "byte " + i);
+        // The 32-byte slice equals (n - x).
+        byte[] slice = new byte[32];
+        System.arraycopy(backing, 16, slice, 0, 32);
+        assertArrayEquals(bigIntToFixed(N.subtract(x), 32), slice);
+    }
+
+    @Test
+    @DisplayName("negateModConditional: 50 randomised scalars match BigInteger.subtract under mask=-1")
+    void negateConditionalRandomized() {
+        SecureRandom rng = new SecureRandom();
+        for (int trial = 0; trial < 50; trial++) {
+            BigInteger x = randomScalar(rng);
+            if (x.signum() == 0) continue;
+            byte[] a = bigIntToFixed(x, 32);
+            ModN.negateModConditional(a, (short) 0, (short) -1);
+            assertArrayEquals(
+                    bigIntToFixed(N.subtract(x), 32),
+                    a,
+                    "trial " + trial + " x=" + x.toString(16));
+        }
+    }
+
     private static byte[] repeat(byte v) {
         byte[] out = new byte[32];
         for (int i = 0; i < out.length; i++) out[i] = v;

@@ -63,6 +63,40 @@ public final class Bignat {
     }
 
     /**
+     * Constant-time big-endian add of a half-width operand into the lower half of a full-width
+     * accumulator: {@code x[xOff..xOff+2*halfSize] += zeroExtend(y[yOff..yOff+halfSize])}.
+     *
+     * <p>The full {@code 2 * halfSize}-byte buffer is touched on every call: the lower half
+     * performs a real add, the upper half propagates the resulting carry through every byte
+     * (rather than breaking out as soon as the carry is absorbed). This eliminates the
+     * data-dependent early-exit of a naive {@code if (carry) propagateUpwards()} pattern that
+     * would otherwise leak the {@code carry} bit (A-02 in {@code Schnorr.signDigest}).
+     */
+    public static void addLowerHalfCt(
+            byte[] x, short xOff, byte[] y, short yOff, short halfSize) {
+        short carry = 0;
+        // Lower half: real byte-wise add with carry chaining.
+        for (short i = (short) (halfSize - 1); i >= 0; i--) {
+            short sum =
+                    (short)
+                            ((x[(short) (xOff + halfSize + i)] & DIGIT_MASK)
+                                    + (y[(short) (yOff + i)] & DIGIT_MASK)
+                                    + carry);
+            x[(short) (xOff + halfSize + i)] = (byte) sum;
+            carry = (short) ((sum >>> DIGIT_LEN) & 0x01);
+        }
+        // Upper half: unconditionally walk every byte propagating carry. Each iteration adds
+        // (carry ∈ {0,1}) to the byte and recomputes the new carry; bytes after carry hits 0
+        // see (b + 0) which is the byte's original value, so the buffer is unchanged after that
+        // point — but we keep walking so the wall-clock is independent of where carry stopped.
+        for (short i = (short) (halfSize - 1); i >= 0; i--) {
+            short sum = (short) ((x[(short) (xOff + i)] & DIGIT_MASK) + carry);
+            x[(short) (xOff + i)] = (byte) sum;
+            carry = (short) ((sum >>> DIGIT_LEN) & 0x01);
+        }
+    }
+
+    /**
      * Big-endian unsigned subtraction: {@code x[xOff..xOff+size] -= y[yOff..yOff+size]}.
      *
      * @return {@code true} iff the subtraction underflowed

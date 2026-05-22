@@ -214,17 +214,22 @@ public final class MasterSeed {
      * into {@code dst[dstOff..dstOff+64]}. Callers MUST treat the destination as secret and wipe it
      * on the surrounding HD-walk scratch lifecycle. Pull-based by design so no live alias to the
      * persistent master ever escapes.
+     *
+     * <p><b>Visibility:</b> package-private — only {@link Bip32#walkPathToLeaf} should ever call
+     * this. Widening to {@code public} would let any package-internal class (PKI, SC, …) copy the
+     * master into a non-transient buffer.
      */
-    public void copyBip32MasterTo(byte[] dst, short dstOff) {
+    void copyBip32MasterTo(byte[] dst, short dstOff) {
         requireSeeded();
         Util.arrayCopyNonAtomic(bip32Material, (short) 0, dst, dstOff, MASTER_LEN);
     }
 
     /**
      * Copies the SLIP-10 Ed25519 master ({@code k || c} layout) into {@code
-     * dst[dstOff..dstOff+64]}. Same secrecy contract as {@link #copyBip32MasterTo}.
+     * dst[dstOff..dstOff+64]}. Same secrecy contract and package-private visibility as {@link
+     * #copyBip32MasterTo}.
      */
-    public void copySlip10MasterTo(byte[] dst, short dstOff) {
+    void copySlip10MasterTo(byte[] dst, short dstOff) {
         requireSeeded();
         Util.arrayCopyNonAtomic(slip10Material, (short) 0, dst, dstOff, MASTER_LEN);
     }

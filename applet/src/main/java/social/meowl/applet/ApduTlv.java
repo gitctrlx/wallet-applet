@@ -97,6 +97,10 @@ public final class ApduTlv {
     /**
      * Completes a record previously opened with {@link #reserve(byte[], short, byte)}.
      *
+     * <p>The {@code header + value} range is bounds-checked against {@code dst} so a programmer
+     * error (value written past the buffer end) surfaces as {@link Constants#SW_WRONG_LENGTH}
+     * rather than a {@code 6F00} from the runtime's {@link IndexOutOfBoundsException}.
+     *
      * @param headerOffset the offset returned by the original {@code reserve} call, minus 2 — i.e.
      *     the offset of the tag byte
      * @param valueLen the number of value bytes the caller wrote past the reserved header
@@ -105,6 +109,7 @@ public final class ApduTlv {
         if (valueLen < 0 || valueLen > MAX_VALUE_LEN) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
+        Bounds.requireCapacity(dst, headerOffset, (short) (2 + valueLen));
         dst[(short) (headerOffset + 1)] = (byte) valueLen;
     }
 }

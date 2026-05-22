@@ -158,11 +158,14 @@ public final class Schnorr {
 
             // 2. P = d'·G; d = (y(P) odd ? n - d' : d').
             bip32.scalarMultG(scratch, D_OFF, scratch, P_OFF);
-            // y(P) parity: last byte of the uncompressed encoding (0x04 ‖ x ‖ y).
+            // y(P) parity: last byte of the uncompressed encoding (0x04 ‖ x ‖ y). The parity of
+            // P.y is public (P appears in tagged_hash(challenge, ...) and is recoverable from
+            // the signature), so this masked select is here for code-uniformity with the y(R)
+            // path below rather than for SCA — but using the same idiom keeps both call sites
+            // structurally identical.
             byte pyLastByte = scratch[(short) (P_OFF + Constants.EC_POINT_UNCOMPRESSED_LEN - 1)];
-            if ((pyLastByte & 0x01) != 0) {
-                ModN.negateMod(scratch, D_OFF);
-            }
+            short pParityMask = (short) -((pyLastByte & 0x01));
+            ModN.negateModConditional(scratch, D_OFF, pParityMask);
 
             // 3. t = bytes(d) ⊕ tagged_hash("BIP0340/aux", aux).
             //    aux is staged at WORK_OFF; the slot is reused for the multiply-add later.
@@ -192,11 +195,18 @@ public final class Schnorr {
             }
 
             // 6. R = k'·G; k = (y(R) odd ? n - k' : k').
+            //    The parity of y(R) is derived from the ephemeral nonce k' and therefore SECRET
+            //    (BIP-340 aux randomness keeps k' fresh per signature, so the parity bit is the
+            //    only stable secret summary across multiple signatures of the same digest under
+            //    the same d). We MUST NOT branch on it: a conditional `if (parity) negateMod(K)`
+            //    runs 32 extra byte ops on 50% of signatures, giving an attacker a per-signature
+            //    1-bit timing oracle on k' that — combined with ~256 samples and a lattice attack
+            //    — recovers d. The mask-driven helper below always executes the same 32 sub
+            //    instructions and 32 stores; only the per-byte select is mask-conditional.
             bip32.scalarMultG(scratch, K_OFF, scratch, R_OFF);
             byte ryLastByte = scratch[(short) (R_OFF + Constants.EC_POINT_UNCOMPRESSED_LEN - 1)];
-            if ((ryLastByte & 0x01) != 0) {
-                ModN.negateMod(scratch, K_OFF);
-            }
+            short rParityMask = (short) -((ryLastByte & 0x01));
+            ModN.negateModConditional(scratch, K_OFF, rParityMask);
 
             // 7. e = int(tagged_hash("BIP0340/challenge", R.x ‖ P.x ‖ m)) mod n.
             taggedHashStart(HASH_OF_TAG_CHALLENGE);
@@ -211,21 +221,13 @@ public final class Schnorr {
             // 8. s = (k + e·d) mod n.
             // 8a. e·d (32×32 → 64) into WORK_OFF.
             Bignat.mult(scratch, E_OFF, scratch, D_OFF, COORD_LEN, scratch, WORK_OFF);
-            // 8b. Add k into the lower 32 bytes of WORK; propagate any carry upward. The bound
-            //    k + e·d < n + (n-1)² < 2^512 guarantees no overflow past the 64-byte buffer.
-            boolean carry =
-                    Bignat.add(scratch, (short) (WORK_OFF + COORD_LEN), scratch, K_OFF, COORD_LEN);
-            if (carry) {
-                short i = (short) (WORK_OFF + COORD_LEN - 1);
-                while (i >= WORK_OFF) {
-                    short sum = (short) ((scratch[i] & 0xFF) + 1);
-                    scratch[i] = (byte) sum;
-                    if ((sum & 0x100) == 0) {
-                        break;
-                    }
-                    i--;
-                }
-            }
+            // 8b. Add k (zero-extended to 64 bytes) into WORK[0..64]. The bound k + e·d < n +
+            //    (n-1)² < 2^512 guarantees no overflow past the 64-byte buffer. The constant-time
+            //    helper walks every byte of the upper half unconditionally so the wall-clock is
+            //    independent of where the carry chain stops (A-02). Reading k from scratch is
+            //    safe because addLowerHalfCt reads each source byte before writing the matching
+            //    destination byte.
+            Bignat.addLowerHalfCt(scratch, WORK_OFF, scratch, K_OFF, COORD_LEN);
             // 8c. Reduce WORK[0..64] mod n; result lands in the trailing 32 bytes.
             Bignat.mod(
                     scratch,

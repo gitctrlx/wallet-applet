@@ -1,0 +1,38 @@
+{
+  "version": "pr-1",
+  "platform": "jcardsim",
+  "hostNotes": "Windows / OpenJDK 21 / Ryzen-class desktop. Numbers are NOT representative of real J3R180 silicon; they are a regression baseline only. Run `meowl bench --json` on real hardware for the on-card numbers.",
+  "harness": "tests/src/test/java/social/meowl/applet/BenchmarkSuite.java",
+  "harnessConfig": {
+    "warmupIterations": 5,
+    "sampleIterations": 50,
+    "seedBytes": 32,
+    "pathSecp256k1": "m/44'/0'/0'/0/0",
+    "pathEd25519": "m/44'/501'/0'/0'"
+  },
+  "samples": {
+    "SIGN_ECDSA_K1":          { "n": 50, "p50_ms":  4.8, "p95_ms":  6.7, "p99_ms":  8.2, "mean_ms":  4.8, "stddev_ms": 1.0, "min_ms":  3.2, "max_ms":  8.2 },
+    "SIGN_SCHNORR_K1":        { "n": 50, "p50_ms":  4.6, "p95_ms":  7.1, "p99_ms":  9.2, "mean_ms":  5.0, "stddev_ms": 1.3, "min_ms":  3.2, "max_ms":  9.2 },
+    "SIGN_ED25519":           { "n": 50, "p50_ms": 36.6, "p95_ms": 45.4, "p99_ms": 46.3, "mean_ms": 37.9, "stddev_ms": 3.6, "min_ms": 33.0, "max_ms": 46.3 },
+    "EXPORT_XPUB_K1":         { "n": 50, "p50_ms":  3.9, "p95_ms":  6.9, "p99_ms":  8.5, "mean_ms":  4.3, "stddev_ms": 1.2, "min_ms":  2.8, "max_ms":  8.5 },
+    "EXPORT_XPUB_ED25519":    { "n": 50, "p50_ms": 22.8, "p95_ms": 27.5, "p99_ms": 29.5, "mean_ms": 23.1, "stddev_ms": 2.2, "min_ms": 19.3, "max_ms": 29.5 },
+    "OPEN_SECURE_CHANNEL":    { "n": 50, "p50_ms":  8.1, "p95_ms": 10.9, "p99_ms": 15.1, "mean_ms":  8.5, "stddev_ms": 1.8, "min_ms":  5.6, "max_ms": 15.1 }
+  },
+  "tests": {
+    "total": 1978,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 6,
+    "skippedReason": "BenchmarkSuite gated by -Dbench=true; not failures."
+  },
+  "findingsResolvedInThisPr": [
+    { "id": "A-01", "severity": "S2", "title": "Schnorr y(R) parity flip not constant-time" },
+    { "id": "A-02", "severity": "S3", "title": "Schnorr carry propagation early-exit branch" },
+    { "id": "A-08", "severity": "S3", "title": "SecureChannel resets on stale-IV replay" },
+    { "id": "A-09", "severity": "S4", "title": "outboundCounter has no wrap protection" },
+    { "id": "A-12", "severity": "S3", "title": "MasterSeed.copy*MasterTo public" },
+    { "id": "A-13", "severity": "S3", "title": "PinManager wipe swallows scrub exceptions" },
+    { "id": "A-19", "severity": "S4", "title": "ApduTlv.finishReserved does not bound-check dst" },
+    { "id": "A-21", "severity": "S3", "title": "Bip32 invalid-I_L handling documentation (no behaviour change)" }
+  ]
+}

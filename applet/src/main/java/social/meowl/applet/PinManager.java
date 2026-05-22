@@ -193,20 +193,16 @@ public final class PinManager {
      * seed and lifecycle wipes into one atomic reset-to-factory commit.
      */
     public void wipeInTx() {
-        // Best-effort EEPROM scrub: drive one update() through each OwnerPIN with a garbage
-        // buffer before discarding the reference. provisioned[0] = 0 below gates any later
-        // verify(), but this still forces a write through whatever cells the platform uses.
+        // EEPROM scrub: drive one update() through each OwnerPIN with a garbage buffer before
+        // discarding the reference. Any silicon-side failure here (CryptoException, ISOException)
+        // must propagate so the enclosing JC transaction rolls back — silently swallowing it would
+        // leave the caller believing reset-to-factory committed while the EEPROM cells still hold
+        // the previous PIN/PUK hashes. The OwnerPIN re-instantiation below is the JC-level
+        // invalidation; the scrub is the EEPROM-cell-level invalidation. Both must succeed
+        // together or fail together.
         Util.arrayFillNonAtomic(scrub, (short) 0, Constants.PUK_MAX_LEN, (byte) 0xFF);
-        try {
-            pin.update(scrub, (short) 0, Constants.PIN_MAX_LEN);
-        } catch (Exception ignored) {
-            // Scrub is best-effort; re-instantiation below still provides JC-level invalidation.
-        }
-        try {
-            puk.update(scrub, (short) 0, Constants.PUK_MAX_LEN);
-        } catch (Exception ignored) {
-            // Same fallback rationale as the PIN scrub.
-        }
+        pin.update(scrub, (short) 0, Constants.PIN_MAX_LEN);
+        puk.update(scrub, (short) 0, Constants.PUK_MAX_LEN);
         // Rebuild fresh OwnerPIN instances; JC spec offers no clearKey-equivalent.
         this.pin = new OwnerPIN(Constants.PIN_RETRY_LIMIT, Constants.PIN_MAX_LEN);
         this.puk = new OwnerPIN(Constants.PUK_RETRY_LIMIT, Constants.PUK_MAX_LEN);

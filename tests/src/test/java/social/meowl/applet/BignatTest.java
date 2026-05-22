@@ -302,6 +302,89 @@ class BignatTest {
                 "sentinel inside the window must flip the verdict");
     }
 
+    @Test
+    @DisplayName("addLowerHalfCt: zero into zero is zero, no upper-half bleed")
+    void addLowerHalfCtZeroPlusZero() {
+        byte[] x = new byte[64];
+        byte[] y = new byte[32];
+        Bignat.addLowerHalfCt(x, (short) 0, y, (short) 0, (short) 32);
+        assertTrue(Bignat.isZero(x, (short) 0, (short) 64));
+    }
+
+    @Test
+    @DisplayName("addLowerHalfCt: no-carry case — upper half stays untouched")
+    void addLowerHalfCtNoCarry() {
+        byte[] x = new byte[64];
+        byte[] y = new byte[32];
+        // x_low = 0x...0123, y = 0x...0456 → sum 0x...0579, no carry into upper half.
+        x[63] = 0x23;
+        x[62] = 0x01;
+        y[31] = 0x56;
+        y[30] = 0x04;
+        // Pre-fill upper half with a sentinel so we can detect any unintended write.
+        for (int i = 0; i < 32; i++) x[i] = (byte) 0xCC;
+
+        Bignat.addLowerHalfCt(x, (short) 0, y, (short) 0, (short) 32);
+
+        for (int i = 0; i < 32; i++) {
+            assertEquals((byte) 0xCC, x[i], "upper half byte " + i + " bled");
+        }
+        assertEquals((byte) 0x79, x[63]);
+        assertEquals((byte) 0x05, x[62]);
+    }
+
+    @Test
+    @DisplayName("addLowerHalfCt: lower half overflow propagates exactly one bit into upper half")
+    void addLowerHalfCtCarryPropagates() {
+        byte[] x = new byte[64];
+        byte[] y = new byte[32];
+        // x_low = 0xFF..FF (all ones in lower 32 bytes); y = 0x00..01.
+        // Sum: 2^256 → lower half wraps to all-zero, single carry into x[31].
+        for (int i = 32; i < 64; i++) x[i] = (byte) 0xFF;
+        y[31] = 0x01;
+        // Upper half is currently zero; after the add, byte 31 should become 0x01.
+        Bignat.addLowerHalfCt(x, (short) 0, y, (short) 0, (short) 32);
+
+        for (int i = 32; i < 64; i++) {
+            assertEquals((byte) 0x00, x[i], "lower half byte " + i + " not wrapped to zero");
+        }
+        assertEquals((byte) 0x01, x[31], "upper half LSB must absorb the carry");
+        for (int i = 0; i < 31; i++) {
+            assertEquals((byte) 0x00, x[i], "upper half byte " + i + " must remain zero");
+        }
+    }
+
+    @Test
+    @DisplayName("addLowerHalfCt: carry chains all the way through the upper half")
+    void addLowerHalfCtCarryFullChain() {
+        byte[] x = new byte[64];
+        byte[] y = new byte[32];
+        // x = 0xFF...FF (all 64 bytes are 0xFF), y = 0x00..01.
+        // Sum: 2^512 - 1 + 1 = 2^512 — lower half wraps to 0, then every upper-half byte takes a
+        // carry and wraps to 0 as well. The final discarded carry (off the top of the buffer) is
+        // not observable; this asserts the function walks every byte unconditionally.
+        for (int i = 0; i < 64; i++) x[i] = (byte) 0xFF;
+        y[31] = 0x01;
+
+        Bignat.addLowerHalfCt(x, (short) 0, y, (short) 0, (short) 32);
+
+        for (int i = 0; i < 64; i++) {
+            assertEquals((byte) 0x00, x[i], "byte " + i + " must wrap to zero");
+        }
+    }
+
+    @RepeatedTest(100)
+    @DisplayName("addLowerHalfCt: 64-byte accumulator + zero-extended 32-byte rhs matches BigInteger mod 2^512")
+    void addLowerHalfCtMatchesBigInteger() {
+        byte[] x = randomBytes(64);
+        byte[] y = randomBytes(32);
+        BigInteger xBig = unsigned(x);
+        BigInteger yBig = unsigned(y); // zero-extended (BigInteger.add does that implicitly)
+        BigInteger expected = xBig.add(yBig).mod(BigInteger.ONE.shiftLeft(512));
+        Bignat.addLowerHalfCt(x, (short) 0, y, (short) 0, (short) 32);
+        assertEquals(expected, unsigned(x), "Bignat.addLowerHalfCt disagrees with BigInteger");
+    }
+
     private static byte[] randomBytes(int n) {
         byte[] b = new byte[n];
         RNG.nextBytes(b);

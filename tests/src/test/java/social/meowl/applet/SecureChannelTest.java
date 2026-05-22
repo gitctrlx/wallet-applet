@@ -132,6 +132,44 @@ class SecureChannelTest {
     }
 
     @Test
+    @DisplayName(
+            "replay attack does NOT tear down the session (A-08): a follow-up legitimate "
+                    + "envelope still succeeds with the existing keys")
+    void replayDoesNotKillSession() throws Exception {
+        // A-08 regression: before the fix, an unauthenticated replay of a captured envelope
+        // would call SecureChannel.reset() inside unwrap(), wiping the session keys. That gave
+        // an attacker without K_mac a free DoS lever — the host had to re-handshake after any
+        // replay. The fix defers reset() to the post-MAC-failure branch, so a stale-IV replay
+        // is now rejected (SW=6FB2) without disturbing the session.
+        Session session = openSession();
+        byte[] innerApdu =
+                bytes(
+                        Constants.CLA_MEOWL & 0xFF,
+                        Constants.INS_EXPORT_PKI_PUBKEY & 0xFF,
+                        0x00,
+                        0x00,
+                        0x00);
+        // 1. Send the first envelope — succeeds.
+        byte[] env1 = session.encryptForCard(innerApdu);
+        assertEquals(0x9000, transmit(INS_OPEN_SC, 0x00, 0x00, env1).getSW());
+
+        // 2. Replay the same envelope — must fail with 6FB2 (stale IV).
+        ResponseAPDU replay = transmit(INS_OPEN_SC, 0x00, 0x00, env1);
+        assertEquals(Constants.SW_SECURE_CHANNEL_FAILED & 0xFFFF, replay.getSW());
+
+        // 3. Build a fresh envelope under the SAME session keys — must succeed. Before the fix
+        //    the replay above would have called reset(), so the host's K_enc/K_mac would no
+        //    longer match the card's (which are zero now), the MAC would not verify, and the
+        //    card would return 6FB1 (SW_SECURE_CHANNEL_REQUIRED) because openFlag == 0.
+        byte[] env2 = session.encryptForCard(innerApdu);
+        ResponseAPDU resp = transmit(INS_OPEN_SC, 0x00, 0x00, env2);
+        assertEquals(
+                0x9000,
+                resp.getSW(),
+                "session must survive an unauthenticated replay; A-08 regression");
+    }
+
+    @Test
     @DisplayName("tampered MAC: any 1-bit flip in the ciphertext invalidates the envelope")
     void tamperedMacRejected() throws Exception {
         Session session = openSession();

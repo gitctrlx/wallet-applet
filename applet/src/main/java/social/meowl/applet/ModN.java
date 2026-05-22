@@ -97,12 +97,28 @@ public final class ModN {
      * is set iff {@code diff < 0}.
      */
     public static void negateMod(byte[] a, short aOff) {
+        negateModConditional(a, aOff, (short) -1);
+    }
+
+    /**
+     * Conditional negation: when {@code mask == -1} (all ones) writes {@code a ← n − a}; when
+     * {@code mask == 0} leaves {@code a} untouched. The full subtraction is <em>always</em>
+     * computed and only the per-byte write is mask-selected — both code paths execute the same
+     * 32 sub instructions and 32 stores, so the elapsed wall-clock is independent of {@code
+     * mask}. Used by {@link Schnorr} to flip {@code k}/{@code d} on a secret-derived parity bit
+     * without leaking that bit through a conditional branch (A-01).
+     *
+     * @param mask {@code -1} (i.e. {@code 0xFFFF}) to negate, {@code 0} to keep
+     */
+    public static void negateModConditional(byte[] a, short aOff, short mask) {
         short borrow = 0;
         for (short i = (short) (LEN - 1); i >= 0; i--) {
-            short diff =
-                    (short) ((SECP256K1_N[i] & 0xFF) - (a[(short) (aOff + i)] & 0xFF) - borrow);
-            a[(short) (aOff + i)] = (byte) diff;
+            short ai = (short) (a[(short) (aOff + i)] & 0xFF);
+            short diff = (short) ((SECP256K1_N[i] & 0xFF) - ai - borrow);
             borrow = (short) ((diff >>> 15) & 1);
+            // Always store: mask selects either (n - a)[i] or original a[i]. Both branches of
+            // the select are evaluated above; the per-byte write itself is unconditional.
+            a[(short) (aOff + i)] = (byte) ((diff & mask) | (ai & ~mask));
         }
     }
 
