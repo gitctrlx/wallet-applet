@@ -150,8 +150,8 @@ public final class SecureChannel {
         this.hmac = sharedHmac256;
 
         this.ephKeypair = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
-        Secp256k1.setCurveParameters((ECPrivateKey) ephKeypair.getPrivate());
-        Secp256k1.setCurveParameters((ECPublicKey) ephKeypair.getPublic());
+        Secp256k1Curve.setCurveParameters((ECPrivateKey) ephKeypair.getPrivate());
+        Secp256k1Curve.setCurveParameters((ECPublicKey) ephKeypair.getPublic());
 
         this.ecdh = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY, false);
         this.aesCbc = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
@@ -325,8 +325,8 @@ public final class SecureChannel {
             ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
         }
 
-        // MAC = HMAC-SHA-256(K_mac, outer_header ‖ IV ‖ ciphertext)[0..16]. ConstantTime.equals
-        // is mandatory: Util.arrayCompare is left-to-right ternary, leaking mismatch position.
+        // MAC = HMAC-SHA-256(K_mac, outer_header ‖ IV ‖ ciphertext)[0..16]. BigNat.ctEquals is
+        // mandatory: Util.arrayCompare is left-to-right ternary and leaks mismatch position.
         hmac.init(macKey, (short) 0, Constants.SC_KEY_LEN);
         hmac.update(apduBuffer, (short) 0, (short) 5);
         hmac.doFinal(
@@ -335,7 +335,7 @@ public final class SecureChannel {
                 (short) (Constants.SC_BLOCK_LEN + ctLen),
                 macScratch,
                 (short) 0);
-        if (!ConstantTime.equals(
+        if (!BigNat.ctEquals(
                 macScratch, (short) 0, apduBuffer, macOffset, Constants.SC_MAC_LEN)) {
             reset();
             ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);

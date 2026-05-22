@@ -175,8 +175,14 @@ public final class MasterSeed {
                     Constants.SEED_GENERATED_LEN,
                     bip32Material,
                     (short) 0);
-            if (ModN.lessThanN(bip32Material, (short) 0)
-                    && !ModN.isZero(bip32Material, (short) 0)) {
+            if (BigNat.ctLessThan(
+                                    bip32Material,
+                                    (short) 0,
+                                    Secp256k1Curve.N,
+                                    (short) 0,
+                                    Constants.EC_SCALAR_LEN)
+                            != 0
+                    && BigNat.ctIsZero(bip32Material, (short) 0, Constants.EC_SCALAR_LEN) == 0) {
                 hmacInto(
                         HMAC_LABEL_SLIP10,
                         (short) HMAC_LABEL_SLIP10.length,
@@ -202,7 +208,14 @@ public final class MasterSeed {
      * retry with a fresh seed.
      */
     private void requireValidBip32MasterKey() {
-        if (ModN.isZero(bip32Material, (short) 0) || !ModN.lessThanN(bip32Material, (short) 0)) {
+        if (BigNat.ctIsZero(bip32Material, (short) 0, Constants.EC_SCALAR_LEN) != 0
+                || BigNat.ctLessThan(
+                                bip32Material,
+                                (short) 0,
+                                Secp256k1Curve.N,
+                                (short) 0,
+                                Constants.EC_SCALAR_LEN)
+                        == 0) {
             // Wipe the partial master so a future commit can't expose a structurally invalid key.
             Util.arrayFillNonAtomic(bip32Material, (short) 0, MASTER_LEN, (byte) 0);
             ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);

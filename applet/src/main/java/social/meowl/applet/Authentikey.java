@@ -31,8 +31,8 @@ public final class Authentikey {
                 (ECPublicKey)
                         KeyBuilder.buildKey(
                                 KeyBuilder.TYPE_EC_FP_PUBLIC, KeyBuilder.LENGTH_EC_FP_256, false);
-        Secp256k1.setCurveParameters(this.privateKey);
-        Secp256k1.setCurveParameters(this.publicKey);
+        Secp256k1Curve.setCurveParameters(this.privateKey);
+        Secp256k1Curve.setCurveParameters(this.publicKey);
 
         new KeyPair(this.publicKey, this.privateKey).genKeyPair();
     }

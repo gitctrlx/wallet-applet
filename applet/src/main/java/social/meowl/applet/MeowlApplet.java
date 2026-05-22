@@ -45,17 +45,17 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     /**
      * Size of the per-applet shared transient scratch buffer, sized to the largest of the four
      * mutually-exclusive consumers (single-threaded APDU dispatch keeps them from overlapping):
-     * Ed25519 1056, Schnorr 386, SecureChannel handshake 259, EcdsaK1 168. Sharing one buffer cuts
-     * ~813 bytes of transient RAM — the difference between fitting or not on cards with a ~3 KB
-     * user-RAM budget (notably J3R180).
+     * Ed25519 {@value Ed25519#SCRATCH_LEN}, Schnorr 354, SecureChannel handshake 259, EcdsaK1
+     * 168. Sharing one buffer cuts ~970 bytes of transient RAM — the difference between fitting
+     * or not on cards with a ~3 KB user-RAM budget (notably J3R180).
      */
-    private static final short SHARED_SCRATCH_LEN = (short) 1056;
+    private static final short SHARED_SCRATCH_LEN = Ed25519.SCRATCH_LEN;
 
     private MeowlApplet() {
         HmacSha sharedHmac256 = new HmacSha(HmacSha.ALG_SHA_256);
         HmacSha sharedHmac512 = new HmacSha(HmacSha.ALG_SHA_512);
         // CLEAR_ON_DESELECT scratch: nothing outlives a session, and the install-time
-        // CLEAR_ON_RESET pool on NFC SECID cards (J3R180) is too small for a 1 KB allocation.
+        // CLEAR_ON_RESET pool on NFC SECID cards (J3R180) is too small for a 600-byte allocation.
         byte[] sharedScratch =
                 JCSystem.makeTransientByteArray(SHARED_SCRATCH_LEN, JCSystem.CLEAR_ON_DESELECT);
         this.state = new LifecycleState();
