@@ -213,6 +213,12 @@ public final class EcdsaK1 {
      * the optional leading {@code 0x00} sign byte must not shrink the structural advance, only the
      * copied magnitude.
      *
+     * <p>Strict DER (X.690 §8.3.2): the encoding must be minimal — a leading {@code 0x00} byte is
+     * permitted only when the next byte's MSB is set (otherwise the {@code 0x00} would be
+     * redundant). The function also rejects an INTEGER value of zero, since ECDSA components {@code
+     * r = 0} or {@code s = 0} are invalid by definition (an attacker-supplied DER with {@code r =
+     * 0} or {@code s = 0} is a malformed signature, not a valid one). Audit F-42 / F-43.
+     *
      * @return the next cursor position after the element
      */
     private static short copyDerInteger(byte[] der, short cursor, byte[] out, short outOff) {
@@ -229,13 +235,28 @@ public final class EcdsaK1 {
         short valStart = cursor;
         short nextCursor = (short) (cursor + rawLen);
         short copyLen = rawLen;
-        // Drop the single optional leading 0x00 sign byte; reject anything wider than 33 bytes
-        // (which would imply a value ≥ 2²⁵⁶, impossible for a well-formed ECDSA component).
         if (rawLen == 33 && der[valStart] == 0) {
+            // Legal sign-byte: the magnitude is 32 bytes and its MSB must be set, otherwise the
+            // 0x00 is non-minimal per X.690 §8.3.2.
+            if ((der[(short) (valStart + 1)] & 0x80) == 0) {
+                ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
+            }
             valStart++;
             copyLen--;
+        } else if (rawLen > 1 && der[valStart] == 0) {
+            // Any other leading 0x00 (rawLen < 33) is non-minimal DER.
+            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
         if (copyLen <= 0 || copyLen > ModN.LEN) {
+            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
+        }
+        // Reject INTEGER value == 0 (r = 0 or s = 0 are invalid ECDSA components). Constant-time
+        // OR-fold of every magnitude byte; tests against zero in one go.
+        short orAll = 0;
+        for (short i = 0; i < copyLen; i++) {
+            orAll |= (short) (der[(short) (valStart + i)] & 0xFF);
+        }
+        if (orAll == 0) {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
         short padLen = (short) (ModN.LEN - copyLen);
