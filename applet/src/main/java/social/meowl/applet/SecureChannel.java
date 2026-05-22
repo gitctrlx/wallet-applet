@@ -415,33 +415,87 @@ public final class SecureChannel {
         }
     }
 
-    private static short compare16(byte[] a, short aOff, byte[] b, short bOff) {
+    /**
+     * Lexicographic 16-byte big-endian comparison used solely for the inbound IV monotonicity
+     * check. Returns {@code > 0} if {@code a > b}, {@code 0} on equality, {@code < 0} otherwise.
+     *
+     * <p>IV bytes are public — they ride in the clear at the head of every inbound envelope — so
+     * timing-based side channels reveal nothing secret. Even so, audit F-28 brings this helper into
+     * the same constant-time mask-based style the rest of the channel uses ({@link
+     * ConstantTime#equals}, {@link Bignat#ctLessThan}) so the codebase speaks one defence-in-depth
+     * dialect; the previous early-return ternary was a stylistic outlier.
+     */
+    static short compare16(byte[] a, short aOff, byte[] b, short bOff) {
+        // gtMask / ltMask each track "have we already proven a > b / a < b at some earlier
+        // (more significant) byte?". Once one of them is set, the per-byte comparison must not
+        // overwrite the earlier verdict — masks are sticky.
+        short gtMask = 0;
+        short ltMask = 0;
         for (short i = 0; i < Constants.SC_BLOCK_LEN; i++) {
             short av = (short) (a[(short) (aOff + i)] & 0xFF);
             short bv = (short) (b[(short) (bOff + i)] & 0xFF);
-            if (av > bv) {
-                return 1;
-            }
-            if (av < bv) {
-                return -1;
-            }
+            // (av - bv) ∈ [-255, 255]. Sign-shift to get a 0xFFFF mask iff av < bv.
+            short diff = (short) (av - bv);
+            short ltHere = (short) ((diff >> 31) & 0xFFFF);
+            // bv < av iff (bv - av) is negative.
+            short gtHere = (short) (((bv - av) >> 31) & 0xFFFF);
+            // Promote ltHere/gtHere only if neither verdict was reached at a more significant
+            // byte. ~(gtMask | ltMask) is 0xFFFF iff "still tied so far".
+            short stillTied = (short) ~(gtMask | ltMask);
+            ltMask |= (short) (ltHere & stillTied);
+            gtMask |= (short) (gtHere & stillTied);
         }
-        return 0;
+        // Materialise the three-way result without a branch: +1 / -1 / 0.
+        return (short) ((gtMask & 1) - (ltMask & 1));
     }
 
-    private static short stripPkcs5(byte[] buf, short offset, short paddedLen) {
+    /**
+     * Validates and strips PKCS#5/#7 padding from an AES-CBC plaintext block in place. Returns the
+     * unpadded length. On any malformed pad raises {@link Constants#SW_SECURE_CHANNEL_FAILED}.
+     *
+     * <p>Per audit F-27 every padding-error branch — bad block alignment, pad byte zero, pad byte
+     * larger than the block size, or a body byte that does not equal the pad byte — folds into a
+     * single accumulator {@code failMask} that is checked once at the end. This eliminates the
+     * three early-return {@code ISOException.throwIt} calls and their associated timing fan-out
+     * over the secret-derived plaintext bytes. The Encrypt-then-MAC layer above already gates any
+     * externally-observable signal by rejecting tampered ciphertexts before this method runs, so
+     * the change is defence-in-depth — but it also matches the discipline used by every other
+     * secret-touching helper in the codebase ({@link ConstantTime#equals}, {@link Bignat}).
+     */
+    static short stripPkcs5(byte[] buf, short offset, short paddedLen) {
+        // The block-alignment check stays branchful: it operates on plaintext length only, which
+        // is structural metadata derived from the ciphertext length the AES engine accepted, not
+        // from any secret byte. Returning early here also keeps the loop bound below well-defined.
         if (paddedLen <= 0 || (short) (paddedLen % Constants.SC_BLOCK_LEN) != 0) {
             ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
         }
-        byte pad = buf[(short) (offset + paddedLen - 1)];
-        short padVal = (short) (pad & 0xFF);
-        if (padVal == 0 || padVal > Constants.SC_BLOCK_LEN) {
-            ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
+        short padVal = (short) (buf[(short) (offset + paddedLen - 1)] & 0xFF);
+        // failMask: 0 = OK, non-zero = at least one pad invariant failed. Bits are OR-accumulated
+        // from per-check sub-masks so the time spent here is independent of which (or how many)
+        // invariants were violated.
+        short failMask = 0;
+        // padVal == 0 → reject. ((padVal | -padVal) >>> 31) is the classic "is non-zero" mask:
+        // 0 when padVal == 0, 1 otherwise. Subtracting from 1 inverts it into the failure bit.
+        failMask |= (short) (1 - ((padVal | -padVal) >>> 31));
+        // padVal > BLOCK_LEN → reject. (BLOCK_LEN - padVal) is negative iff padVal > BLOCK_LEN.
+        failMask |= (short) (((Constants.SC_BLOCK_LEN - padVal) >> 31) & 1);
+        // For every byte in the trailing block (the only positions that could legitimately hold
+        // pad bytes), check that it equals padVal whenever its distance from the end is ≤ padVal.
+        // Iterating over the full SC_BLOCK_LEN tail keeps the loop count constant; per-byte
+        // contribution to failMask is gated by the "this position must match" mask.
+        for (short i = 0; i < Constants.SC_BLOCK_LEN; i++) {
+            short distFromEnd = (short) (i + 1); // 1..BLOCK_LEN
+            // mustMatch = -1 iff distFromEnd ≤ padVal, else 0. (padVal - distFromEnd) is
+            // non-negative iff the byte is inside the pad region.
+            short mustMatch = (short) ~(((padVal - distFromEnd) >> 31) & 0xFFFF);
+            short bv = (short) (buf[(short) (offset + paddedLen - distFromEnd)] & 0xFF);
+            // mismatch: bv ⊕ padVal ∈ [0, 255]; gated by mustMatch, then collapsed to a single
+            // bit via the same is-non-zero pattern used for padVal == 0 above.
+            short mismatchHere = (short) ((bv ^ padVal) & mustMatch);
+            failMask |= (short) ((mismatchHere | -mismatchHere) >>> 31);
         }
-        for (short i = 1; i <= padVal; i++) {
-            if (buf[(short) (offset + paddedLen - i)] != pad) {
-                ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
-            }
+        if (failMask != 0) {
+            ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
         }
         return (short) (paddedLen - padVal);
     }
