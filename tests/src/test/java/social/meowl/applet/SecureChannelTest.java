@@ -197,8 +197,8 @@ class SecureChannelTest {
     void handshakeNonZeroFourPrefixIsCryptoFailure() {
         // 65-byte body of the right length but with a corrupted prefix: MEAP-2 §57 says this
         // must be reported as a cryptographic check failure (6FB2), not as a length error
-        // (6700). Before the fix the applet returned 6700, which a strict spec-compliance
-        // checker would flag.
+        // (6700), since the length itself is well-formed and only the cryptographic structure
+        // is wrong.
         byte[] body = new byte[Constants.EC_POINT_UNCOMPRESSED_LEN];
         body[0] = (byte) 0x02; // wrong prefix
         ResponseAPDU resp = transmit(INS_INIT_SC, 0x00, 0x00, body);
@@ -208,7 +208,8 @@ class SecureChannelTest {
     @Test
     @DisplayName("handshake with wrong-length body is rejected with 6700 (length, not crypto)")
     void handshakeWrongLengthIsWrongLength() {
-        // 60-byte body — too short for an uncompressed secp256k1 point: this remains a 6700.
+        // 60-byte body — too short for an uncompressed secp256k1 point: surfaces as 6700,
+        // distinct from the crypto-failure path above.
         byte[] body = new byte[60];
         ResponseAPDU resp = transmit(INS_INIT_SC, 0x00, 0x00, body);
         assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, resp.getSW());

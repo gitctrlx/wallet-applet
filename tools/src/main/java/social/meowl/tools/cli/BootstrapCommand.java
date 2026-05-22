@@ -20,34 +20,24 @@ import social.meowl.tools.proto.SecureChannelClient;
 import social.meowl.tools.transport.CardTransport;
 
 /**
- * {@code meowl bootstrap} — drives a fresh card from {@code POST_INSTALL} all the way to {@code
- * SEEDED + PIN-validated} in one shot.
- *
- * <p>Performs the canonical lifecycle walk that {@code BenchmarkSuite} runs against {@code
- * jcardsim}, but over a real Secure Channel:
+ * {@code meowl bootstrap} — drives a fresh card from {@code POST_INSTALL} to {@code SEEDED +
+ * PIN-validated} in one shot, over a real Secure Channel.
  *
  * <ol>
- *   <li>SELECT the applet, GET_AUTHENTIKEY, open Secure Channel.
- *   <li>{@code IMPORT_PKI_CERT} (init / write / finalize) with a synthetic {@code 80}-byte cert so
- *       {@code LOCK_PKI} is willing to commit.
+ *   <li>SELECT, GET_AUTHENTIKEY, open Secure Channel.
+ *   <li>{@code IMPORT_PKI_CERT} (init / write / finalize) with a synthetic {@code --cert-size} byte
+ *       cert so {@code LOCK_PKI} will commit.
  *   <li>{@code LOCK_PKI} → {@code PERSONALIZED}.
  *   <li>{@code SETUP} with {@code --pin}/{@code --puk} → {@code SETUP_DONE}.
- *   <li>{@code VERIFY_PIN} (the SETUP transition leaves the card in a not-PIN-verified state on the
- *       first hop after SETUP_DONE in some applet builds; verifying explicitly is harmless on every
- *       revision and lets {@code IMPORT_SEED} succeed unconditionally).
- *   <li>{@code IMPORT_SEED} (default: deterministic {@code 0x01 0x02 ... 0x20}) → {@code SEEDED}.
- *       Override with {@code --seed=HEX} to import a specific seed (16-64 bytes).
+ *   <li>{@code VERIFY_PIN} so {@code IMPORT_SEED} sees an authorised session.
+ *   <li>{@code IMPORT_SEED} (default: deterministic {@code 0x01 0x02 ... 0x20}; override with
+ *       {@code --seed=HEX}, 16-64 bytes) → {@code SEEDED}.
  * </ol>
  *
- * <p><b>This command is destructive.</b> A successful {@code SETUP} burns the card's transition
- * counter; running {@code bootstrap} on a card that is already past {@code POST_INSTALL} will fail
- * at the offending step (the applet rejects re-{@code SETUP} once {@code SETUP_DONE} has been
- * reached). For a clean re-bootstrap, run {@code meowl reset} first or re-install the CAP.
- *
- * <p>The synthetic cert is a deterministic byte ramp ({@code 0x00 0x01 ... 0x4F}); production
- * deployments MUST replace it with a real manufacturer-signed cert before {@code LOCK_PKI}. {@code
- * bootstrap} is a developer / CI / hardware-bench tool, not a production provisioning path — call
- * it that way in any deploy script that uses it.
+ * <p><b>Destructive.</b> A successful {@code SETUP} burns the lifecycle transition; re-running on a
+ * card past {@code POST_INSTALL} will fail. Run {@code meowl reset} or re-install the CAP first.
+ * The synthetic cert is a deterministic byte ramp — developer / CI / hardware-bench tool only, NOT
+ * a production provisioning path.
  */
 @Command(
         name = "bootstrap",
