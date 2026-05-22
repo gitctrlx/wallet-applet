@@ -75,9 +75,9 @@ public final class Fp25519Inv {
     };
 
     /**
-     * 64-byte zero-extended {@code p} (modulus value). Materialised as a literal because the JC
-     * CAP converter rejects {@code invokestatic} from {@code <clinit>}: building the array via a
-     * helper method works on the JVM but fails offcard conversion.
+     * 64-byte zero-extended {@code p} (modulus value). Materialised as a literal because the JC CAP
+     * converter rejects {@code invokestatic} from {@code <clinit>}: building the array via a helper
+     * method works on the JVM but fails offcard conversion.
      */
     private static final byte[] P_PADDED = {
         (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00,
@@ -123,12 +123,12 @@ public final class Fp25519Inv {
     private final boolean hardwareAvailable;
 
     /**
-     * Allocates the RSA fixture and probes the engine. Construction never throws: if RSA fails,
-     * the software fallback kicks in transparently at {@link #inv} time. The RSA modulus and
-     * exponent are re-loaded inside every {@link #inv} call rather than once here, because
-     * JCMathLib's JCOP4_P71 profile reports {@code DEFERRED_INITIALIZATION = true} on NXP P71
-     * silicon (J3R180 family): RSA key state set at install time does not survive the first
-     * {@code select} and must be rebuilt per call.
+     * Allocates the RSA fixture and probes the engine. Construction never throws: if RSA fails, the
+     * software fallback kicks in transparently at {@link #inv} time. The RSA modulus and exponent
+     * are re-loaded inside every {@link #inv} call rather than once here, because JCMathLib's
+     * JCOP4_P71 profile reports {@code DEFERRED_INITIALIZATION = true} on NXP P71 silicon (J3R180
+     * family): RSA key state set at install time does not survive the first {@code select} and must
+     * be rebuilt per call.
      */
     public Fp25519Inv() {
         RSAPrivateKey key = null;
@@ -151,8 +151,8 @@ public final class Fp25519Inv {
     /**
      * Round-trips {@code 1 · 1⁻¹ ≡ 1 (mod p)} through the engine; returns true iff every byte of
      * the output is the canonical Fp25519 one. The probe sets modulus + exponent inside this
-     * routine, exercising the exact code path {@link #hardwareInv} will run at every
-     * {@code encodeEdwards} — silicon that rejects the configuration here always rejects it later.
+     * routine, exercising the exact code path {@link #hardwareInv} will run at every {@code
+     * encodeEdwards} — silicon that rejects the configuration here always rejects it later.
      */
     private static boolean probe(Cipher cipher, RSAPrivateKey key) {
         byte[] probeBuf;
