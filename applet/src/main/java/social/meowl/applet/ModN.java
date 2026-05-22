@@ -126,6 +126,12 @@ public final class ModN {
      * ECDSA implementation returned a high-{@code s} signature. The caller is responsible for
      * ensuring {@code a < n} on entry (the subtraction would otherwise wrap into the negative
      * range, which is meaningless mod {@code n}).
+     *
+     * <p>Branch-free: the borrow bit is extracted by {@code (diff >>> 15) & 1}, matching the
+     * mask-based style of {@link Bignat#condSubInPlace} and {@link Field25519#sub}. The
+     * intermediate {@code diff} lies in {@code [-256, 255]} (one subtrahend byte plus one borrow),
+     * so bit 15 of {@code diff} as a signed short is set iff {@code diff < 0} — exactly the
+     * condition we need (audit F-33).
      */
     public static void negateMod(byte[] a, short aOff) {
         short borrow = 0;
@@ -133,7 +139,7 @@ public final class ModN {
             short diff =
                     (short) ((SECP256K1_N[i] & 0xFF) - (a[(short) (aOff + i)] & 0xFF) - borrow);
             a[(short) (aOff + i)] = (byte) diff;
-            borrow = (short) ((diff < 0) ? 1 : 0);
+            borrow = (short) ((diff >>> 15) & 1);
         }
     }
 
