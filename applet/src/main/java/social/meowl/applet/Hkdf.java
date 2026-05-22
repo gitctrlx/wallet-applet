@@ -133,9 +133,11 @@ public final class Hkdf {
         if (info == null && infoLen != 0) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        if (out == null || outOffset < 0 || (short) (outOffset + length) > (short) out.length) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
-        }
+        // Audit F-37: delegate the destination range check to Bounds.requireCapacity so the
+        // overflow-safe arithmetic (needed > dst.length - offset) replaces the prior hand-rolled
+        // (short)(outOffset + length) > out.length which silently wraps under JC's 16-bit signed
+        // short when the sum exceeds 0x7FFF.
+        Bounds.requireCapacity(out, outOffset, length);
 
         // T(0) is empty; T(i) = HMAC(PRK, T(i-1) ‖ info ‖ i).
         short remaining = length;
