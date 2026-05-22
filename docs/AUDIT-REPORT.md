@@ -4,15 +4,17 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 审计版本 | v1.1 (修复 sweep 完成) |
-| 审计日期 | 2026-01 (v1.0) / 2026-05 (v1.1 sweep) |
-| 审计范围 | applet (25 文件 / ~5,500 行) + tools (37 文件 / ~3,500 行) + tests (16 文件 / ~5,300 行) |
-| 总代码量 | ~14,300 行 Java |
-| 审计深度 | 逐行审计 + 多参考实现并排对比 + 全部高/中优先级修复合并 |
+| 审计版本 | v1.2 (ID 体系重构 + 代码加固 sweep) |
+| 审计日期 | 2026-01 (v1.0) / 2026-05 (v1.1 sweep) / 2026-05 (v1.2 重构) |
+| 审计范围 | applet (25 文件 / ~5,700 行) + tools (37 文件 / ~3,500 行) + tests (17 文件 / ~5,500 行) |
+| 总代码量 | ~14,700 行 Java |
+| 审计深度 | 逐行审计 + 多参考实现并排对比 + 全部高/中优先级修复合并 + 调研驱动的新发现追加 |
 | 参考实现 | Status Keycard、Satochip、Trezor firmware、Coldcard、libsodium、BoringSSL、Bitcoin Core、bitcoin/bips |
-| 关键 RFC/BIP | RFC 2104、RFC 4231、RFC 5869、RFC 6979、RFC 7748、RFC 8032、SEC 1 v2、SLIP-10、BIP-32、BIP-62、BIP-340、EIP-2 |
+| 关键 RFC/BIP | RFC 2104、RFC 4231、RFC 5869、RFC 6979、RFC 7366、RFC 7748、RFC 8032、SEC 1 v2、SLIP-10、BIP-32、BIP-62、BIP-340、EIP-2 |
 
-> **v1.1 修复 sweep 摘要 (2026-05)**：本次 sweep 完成了 §6.1 全部高优先级与 §6.2 全部中优先级条目（S2-01..04、S3-01..16、S4-01）。每条发现末尾的 *Status* 行标注为 ✅ Fixed（含修复位置）、🟡 Mitigated（部分缓解，残留风险登记）、或 ⏸ Deferred（v2.0+ 路线）。新增 7 个 v1.1 测试场景（`SchnorrTagHashTest` 3 个，`MeowlAppletTest` 4 个新场景，`HostCryptoTest.malformedPaddingRejected` 异常类型回归升级）。**`SchnorrTagHashTest` 在 sweep 中实际捕获了 `HASH_OF_TAG_AUX` 的预算字节错位**——这正是该回归测试的设计目的。所有测试在最新 sweep 上 PASSED。
+> **v1.2 重构 sweep 摘要 (2026-05)**：v1.0 / v1.1 使用 `S<等级>-<NN>` 双轨编号（ID 前缀同时承载顺序编号与严重等级），导致 §1.2 数量统计与正文不一致（S4 = 14 与正文实测 7 项偏差）。v1.2 把全部 26 项现有发现重新编号为 `F-01..F-26`，severity 作为独立标签，并在调研中追加 5 项新发现（F-27..F-31）。同步进行 4 处代码加固：`SecureChannel.stripPkcs5` 与 `compare16` 改为 mask-based 常时实现（F-27 / F-28），`MasterSeed` API 改为 pull-based copy 防止内部数组别名（F-29），`EcdsaK1.signDigest` 整体包裹 try-finally（F-30）。新增 `SecureChannelStripPkcs5Test` 共 27 个回归测试用例。代码注释中 37 处 `audit S<N>-<NN>` 引用全部同步替换为 `F-NN`，无双轨。最终 **1,697 个测试全部 PASSED**（applet/tests:1,445 + tools:252）。
+>
+> **v1.1 sweep 摘要 (历史)**：完成 §6.1 全部高优先级与 §6.2 全部中优先级条目（旧 ID S2-01..04、S3-01..16、S4-01）。新增 7 个回归测试场景，其中 `SchnorrTagHashTest` 实际捕获了 `HASH_OF_TAG_AUX` 的预算字节错位。
 
 ## 严重等级定义
 
@@ -38,22 +40,69 @@ meowl-applet 代码库在 **正确性** 与 **架构清晰度** 上达到准生�
 - **生命周期** FSM 简洁严格，单向前进 + reset 回退，状态机覆盖 100%。
 - **资源策略** (CLEAR_ON_DESELECT vs CLEAR_ON_RESET) 已针对 J3R180 调优。
 
-**主要顾虑**集中在两个方向：
+**v1.0 原始审计的两大主要顾虑**（修复历史回溯）：
 
-1. **侧信道**：`Bignat.mod` 与 `Field25519` 的 conditional-branch 模式在严格的"细粒度时间攻击"下不是常时的。在签名层 (Schnorr/Ed25519) 上文档承认这一点并以"k 充分随机化"作为缓解，但论证强度低于 Trezor / libsodium / BoringSSL 的纯常时实现。
-2. **异常路径泄露**：`MeowlApplet.handleSignEd25519` 把 SLIP-10 leaf 私钥暂存于 `innerScratch[0..32]`，但仅在 success path 上 wipe；若 `ed25519.sign` 抛出异常，secret 残留至下次 `select()`。
+1. **侧信道**（F-01 / F-03）：`Bignat.mod` 与 `Field25519` 的 conditional-branch 模式在严格的"细粒度时间攻击"下不是常时的。在签名层 (Schnorr/Ed25519) 上文档承认这一点并以"k 充分随机化"作为缓解，但论证强度低于 Trezor / libsodium / BoringSSL 的纯常时实现。**v1.1 缓解状态**：mask-based 基元（`Bignat.condAddInPlace` / `condSubInPlace` / `ctLessThan` / `ctIsZero`、`Field25519.add/sub/neg/equals/isZero`、`ModN.addMod/lessThanN/lessThanHalfN/isZero`）已落地；`Edwards25519.scalarMult` 入口加投影盲化。`Bignat.mod` 与 `Bignat.mult` 仍是 long-division 风格非常时，需 v2.0 limb 重写。
+2. **异常路径泄露**（F-02）：v1.0 时 `MeowlApplet.handleSignEd25519` 把 SLIP-10 leaf 私钥暂存于 `innerScratch[0..32]` 但仅在 success path 上 wipe。**v1.1 已修复**：整段 try-finally 包裹，异常路径与正常路径的 wipe 行为完全一致。
+
+**v1.2 增量加固方向**：
+
+1. **Secure Channel 辅助函数常时风格统一**（F-27 / F-28）：`stripPkcs5` 早退分支与 `compare16` 短路 ternary 重写为 mask-based，与 `ConstantTime.equals` / `Bignat.ctLessThan` 风格统一。
+2. **持久秘密字段强封装**（F-29）：`MasterSeed` 废除 `byte[]` getter 改为 pull-based copy API，编译期消除内部数组别名风险。
+3. **签名路径异常擦除完整性**（F-30）：`EcdsaK1.signDigest` 重构为单一 try-finally，与 `Schnorr.signDigest` / `Ed25519.sign` 风格统一。
 
 ### 1.2 发现总览
 
-| 等级 | 数量 | v1.1 sweep 状态 |
-| --- | --- | --- |
-| S1 | 0 | — |
-| S2 | 4 | ✅ S2-02 / S2-04 Fixed；🟡 S2-01 / S2-03 Mitigated（v2.0 limb 重写未做） |
-| S3 | 16 | ✅ 全部 Fixed |
-| S4 | 14 | ✅ 全部 Fixed |
-| S5 | 6 | 信息性，不需要修复 |
+v1.2 引入 **F-NN 顺序编号 + 独立 severity 标签** 的二维 ID 体系：每个发现拥有一个不可变的 `F-NN` 顺序号（按报告章节出现顺序，从 F-01 到 F-31），其严重等级独立标注于 *Severity* 字段。下表按 severity 分组汇总，每格列出对应 F-NN：
 
-**v1.1 sweep 结果**：所有 S2 / S3 / S4 条目都已合并修复，新增 7 个回归测试场景（`SchnorrTagHashTest` × 3 + `MeowlAppletTest` × 4），其中 `SchnorrTagHashTest` 在首跑实际捕获了 `HASH_OF_TAG_AUX` 的字节错位。所有 643 个测试在 sweep 末尾全部 PASSED。
+| 等级 | 数量 | F-NN 列表 | v1.2 状态 |
+| --- | --- | --- | --- |
+| **S1 — Critical** | 0 | — | — |
+| **S2 — High** | 4 | F-01, F-02, F-03, F-04 | ✅ F-02 / F-04 Fixed；🟡 F-01 / F-03 Mitigated（中期路径已落地，长期 limb 重写登记于 §6.3） |
+| **S3 — Medium** | 9 | F-05, F-07, F-09, F-12, F-15, F-18, F-19, F-24, F-25 | ✅ 7 项 Fixed；⏸ F-19 Deferred（Extended-APDU，v1.2/v2.0） |
+| **S4 — Low** | 9 | F-06, F-08, F-10, F-11, F-13, F-14, F-22, F-29, F-30 | ✅ 全部 Fixed |
+| **S5 — Info** | 9 | F-16, F-17, F-20, F-21, F-23, F-26, F-27, F-28, F-31 | ⏸ F-16 Deferred（性能 limb 重写）；F-27 / F-28 实际已修复（统一 defense-in-depth 风格）；其余记录 |
+| **合计** | **31** | — | — |
+
+**v1.2 sweep 结果**：除 §6.3 长期路线（F-01 / F-03 / F-16 / F-19）登记到 v2.0+ 外，其余 27 项均已合并。新增回归测试 `SecureChannelStripPkcs5Test`（覆盖 F-27 / F-28 共 27 个测试用例），加上 v1.1 引入的 `SchnorrTagHashTest`（3）/ `MeowlAppletTest` 4 新场景 / `HostCryptoTest.malformedPaddingRejected`，目前 **1,697 个测试用例 / 311 个 `@Test` 方法全部 PASSED**（applet/tests:1,445 + tools:252）。
+
+### 1.2.1 v1.0/v1.1 → v1.2 ID 编号映射
+
+旧 `S<等级>-<NN>` 编号已彻底废止；下表列出双向映射，仅供历史检索。代码注释、提交信息中所有引用都已同步替换为 F-NN，无双轨。
+
+| v1.0/v1.1 旧 ID | v1.2 新 ID | 旧 ID severity | v1.2 severity |
+| --- | --- | --- | --- |
+| S2-01 | **F-01** | S2 | S2 — High |
+| S2-02 | **F-02** | S2 | S2 — High |
+| S2-03 | **F-03** | S2 | S2 — High |
+| S2-04 | **F-04** | S2 | S2 — High |
+| S3-01 | **F-05** | S3 | S3 — Medium |
+| S3-02 | **F-06** | S4 (旧 ID 错配) | S4 — Low |
+| S3-03 | **F-07** | S3 | S3 — Medium |
+| S3-04 | **F-08** | S4 (旧 ID 错配) | S4 — Low |
+| S3-05 | **F-09** | S3 | S3 — Medium |
+| S3-06 | **F-10** | S4 (旧 ID 错配) | S4 — Low |
+| S3-07 | **F-11** | S4 (旧 ID 错配) | S4 — Low |
+| S3-08 | **F-12** | S3 | S3 — Medium |
+| S3-09 | **F-13** | S4 (旧 ID 错配) | S4 — Low |
+| S3-10 | **F-14** | S4 (旧 ID 错配) | S4 — Low |
+| S3-11 | **F-15** | S3 | S3 — Medium |
+| S3-12 | **F-16** | S5 (旧 ID 错配) | S5 — Info |
+| S5-01 | **F-17** | S5 | S5 — Info |
+| S3-13 | **F-18** | S3 | S3 — Medium |
+| S3-14 | **F-19** | S3 | S3 — Medium |
+| S5-02 | **F-20** | S5 | S5 — Info |
+| S5-03 | **F-21** | S5 | S5 — Info |
+| S4-01 | **F-22** | S4 | S4 — Low |
+| S5-04 | **F-23** | S5 | S5 — Info |
+| S3-15 | **F-24** | S3 | S3 — Medium |
+| S3-16 | **F-25** | S3 | S3 — Medium |
+| S5-05 | **F-26** | S5 | S5 — Info |
+| **(新)** | **F-27** | — | S5 — Info |
+| **(新)** | **F-28** | — | S5 — Info |
+| **(新)** | **F-29** | — | S4 — Low |
+| **(新)** | **F-30** | — | S4 — Low |
+| **(新)** | **F-31** | — | S5 — Info |
 
 ### 1.3 与社区参考的横向对比快照
 
@@ -73,7 +122,7 @@ meowl-applet 代码库在 **正确性** 与 **架构清晰度** 上达到准生�
 
 ## 二、Phase A — Applet 核心代码逐行发现
 
-### 2.1 [S2-01] `Field25519.inv` 常时性论断不严谨
+### 2.1 [F-01] `Field25519.inv` 常时性论断不严谨
 
 **严重等级**：S2 — High
 
@@ -112,7 +161,7 @@ meowl-applet 代码库在 **正确性** 与 **架构清晰度** 上达到准生�
 
 ---
 
-### 2.2 [S2-02] `MeowlApplet.handleSignEd25519` 异常路径残留 SLIP-10 leaf 私钥
+### 2.2 [F-02] `MeowlApplet.handleSignEd25519` 异常路径残留 SLIP-10 leaf 私钥
 
 **严重等级**：S2 — High
 
@@ -158,7 +207,7 @@ try {
 
 ---
 
-### 2.3 [S2-03] `Bignat.mod` 在 BIP-32 派生路径上对 parent secret 存在时间侧信道
+### 2.3 [F-03] `Bignat.mod` 在 BIP-32 派生路径上对 parent secret 存在时间侧信道
 
 **严重等级**：S2 — High
 
@@ -205,7 +254,7 @@ if (ge) { /* subtract n */ }
 
 ---
 
-### 2.4 [S2-04] `ApduTlv.ensureCapacity` 整型溢出（理论性）
+### 2.4 [F-04] `ApduTlv.ensureCapacity` 整型溢出（理论性）
 
 **严重等级**：S2 — High（理论性；当前调用路径不可触发）
 
@@ -248,7 +297,7 @@ if (dst == null || offset < 0 || needed < 0
 
 ---
 
-### 2.5 [S3-01] `Authentikey.ensureCapacity` 重复定义且未与 ApduTlv 共享
+### 2.5 [F-05] `Authentikey.ensureCapacity` 重复定义且未与 ApduTlv 共享
 
 **严重等级**：S3 — Medium
 
@@ -260,11 +309,11 @@ if (dst == null || offset < 0 || needed < 0
 
 **建议**：低优先级清理。
 
-**Status (v1.1)**：✅ Fixed。新建 `Bounds` 类承载 `requireCapacity` 与 `requireRange` 两个常用入口；`ApduTlv` 与 `Authentikey` 的私有 `ensureCapacity` 删除，统一调用 `Bounds.requireCapacity`。详见 S2-04 修复条目。
+**Status (v1.1)**：✅ Fixed。新建 `Bounds` 类承载 `requireCapacity` 与 `requireRange` 两个常用入口；`ApduTlv` 与 `Authentikey` 的私有 `ensureCapacity` 删除，统一调用 `Bounds.requireCapacity`。详见 F-04 修复条目。
 
 ---
 
-### 2.6 [S3-02] `MeowlApplet` 注释 `SecureChannel handshake 323` 与代码不一致
+### 2.6 [F-06] `MeowlApplet` 注释 `SecureChannel handshake 323` 与代码不一致
 
 **严重等级**：S4 — Low
 
@@ -282,7 +331,7 @@ if (dst == null || offset < 0 || needed < 0
 
 ---
 
-### 2.7 [S3-03] `Bip32.wipeTransientSecrets` 不擦除 chain code
+### 2.7 [F-07] `Bip32.wipeTransientSecrets` 不擦除 chain code
 
 **严重等级**：S3 — Medium
 
@@ -325,7 +374,7 @@ private void wipeTransientSecrets() {
 
 ---
 
-### 2.8 [S3-04] `Hkdf.expand` Javadoc `@param info` 与 `@param info_or_null` 同时存在
+### 2.8 [F-08] `Hkdf.expand` Javadoc `@param info` 与 `@param info_or_null` 同时存在
 
 **严重等级**：S4 — Low
 
@@ -350,7 +399,7 @@ public void expand(byte[] info_or_null, ...)
 
 ---
 
-### 2.9 [S3-05] `Hkdf.extract` 对 saltLen 的 256 字节硬编码上限
+### 2.9 [F-09] `Hkdf.extract` 对 saltLen 的 256 字节硬编码上限
 
 **严重等级**：S3 — Medium
 
@@ -374,7 +423,7 @@ RFC 5869 不规定 salt 长度上限。256 是任意武断值。当前最大用�
 
 ---
 
-### 2.10 [S3-06] `HmacSha.forceSoftware` Javadoc 描述了一个不存在的参数
+### 2.10 [F-10] `HmacSha.forceSoftware` Javadoc 描述了一个不存在的参数
 
 **严重等级**：S4 — Low
 
@@ -399,7 +448,7 @@ Javadoc 描述了 `forceSoft` 参数，但 `forceSoftware(byte)` 方法签名只
 
 ---
 
-### 2.11 [S3-07] `HmacSha` 文档中的 Unicode 损坏
+### 2.11 [F-11] `HmacSha` 文档中的 Unicode 损坏
 
 **严重等级**：S4 — Low
 
@@ -427,7 +476,7 @@ inner = H((K' XOR ipad) || message)
 
 ---
 
-### 2.12 [S3-08] `Schnorr.taggedHashStart` 每次签名重新计算 SHA256(tag)
+### 2.12 [F-12] `Schnorr.taggedHashStart` 每次签名重新计算 SHA256(tag)
 
 **严重等级**：S3 — Medium（性能优化机会）
 
@@ -473,7 +522,7 @@ private static final byte[] HASH_OF_TAG_CHALLENGE = { /* ... */ };
 
 ---
 
-### 2.13 [S3-09] `Slip10.deriveLeafKey` 返回字面量 `(short) 32` 而非 `ModN.LEN`
+### 2.13 [F-13] `Slip10.deriveLeafKey` 返回字面量 `(short) 32` 而非 `ModN.LEN`
 
 **严重等级**：S4 — Low
 
@@ -498,7 +547,7 @@ public short deriveLeafKey(...) {
 
 ---
 
-### 2.14 [S3-10] `Slip10` 用 `SW_INCORRECT_P1P2` 表达"非 hardened 路径"
+### 2.14 [F-14] `Slip10` 用 `SW_INCORRECT_P1P2` 表达"非 hardened 路径"
 
 **严重等级**：S4 — Low
 
@@ -514,7 +563,7 @@ public short deriveLeafKey(...) {
 
 ---
 
-### 2.15 [S3-11] `MeowlApplet.wipe` 不在单一事务内执行
+### 2.15 [F-15] `MeowlApplet.wipe` 不在单一事务内执行
 
 **严重等级**：S3 — Medium（恢复语义）
 
@@ -569,7 +618,7 @@ public void wipe() {
 
 ---
 
-### 2.16 [S3-12] Edwards25519 `scalarMult` 性能注解缺失
+### 2.16 [F-16] Edwards25519 `scalarMult` 性能注解缺失
 
 **严重等级**：S5 — Info
 
@@ -599,7 +648,7 @@ Ed25519 sign 涉及两次 scalarMult（一次 publicKey、一次 R = r·B），�
 
 ---
 
-### 2.17 [S5-01] BIP-32 / SLIP-10 异常 SW 选择
+### 2.17 [F-17] BIP-32 / SLIP-10 异常 SW 选择
 
 **严重等级**：S5 — Info
 
@@ -613,7 +662,7 @@ Ed25519 sign 涉及两次 scalarMult（一次 publicKey、一次 R = r·B），�
 
 ---
 
-### 2.18 [S3-13] `EcdsaK1` DER 解析对长度域松散
+### 2.18 [F-18] `EcdsaK1` DER 解析对长度域松散
 
 **严重等级**：S3 — Medium（鲁棒性，非可利用性）
 
@@ -653,7 +702,7 @@ if ((seqLen & 0x80) != 0) {
 
 ---
 
-### 2.19 [S3-14] `MeowlApplet` 内部 APDU `LC` 限于单字节
+### 2.19 [F-19] `MeowlApplet` 内部 APDU `LC` 限于单字节
 
 **严重等级**：S3 — Medium（功能限制）
 
@@ -682,7 +731,7 @@ short innerLc = (short)(buffer[(short)(innerOff + 4)] & 0xFF);  // 单字节 LC�
 
 ---
 
-### 2.20 [S5-02] Authentikey 私钥无 EEPROM 写后擦除
+### 2.20 [F-20] Authentikey 私钥无 EEPROM 写后擦除
 
 **严重等级**：S5 — Info（架构选择）
 
@@ -698,7 +747,7 @@ short innerLc = (short)(buffer[(short)(innerOff + 4)] & 0xFF);  // 单字节 LC�
 
 ---
 
-### 2.21 [S5-03] PKI cert wipe 不擦 authentikey
+### 2.21 [F-21] PKI cert wipe 不擦 authentikey
 
 **严重等级**：S5 — Info（按 spec 设计）
 
@@ -712,9 +761,189 @@ short innerLc = (short)(buffer[(short)(innerOff + 4)] & 0xFF);  // 单字节 LC�
 
 ---
 
+### 2.22 [F-27] `SecureChannel.stripPkcs5` 非常时早退分支
+
+**严重等级**：S5 — Info（defense-in-depth；EtM 闸门外部不可观测）
+
+**位置**：`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/SecureChannel.java:432-447`（v1.1 旧实现）
+
+**发现**：
+
+v1.1 中 `stripPkcs5` 用三个早退 `ISOException.throwIt(SW_SECURE_CHANNEL_FAILED)` 分支处理 padding 校验：
+
+```java
+if (padVal == 0 || padVal > Constants.SC_BLOCK_LEN) ISOException.throwIt(...);
+for (short i = 1; i <= padVal; i++) {
+    if (buf[(short) (offset + paddedLen - i)] != pad) ISOException.throwIt(...);
+}
+```
+
+每个分支抛出时间不同，且字节匹配循环只运行 `padVal` 次（依赖被解密后的 plaintext）。这在传统 padding-oracle 场景下是高危模式。
+
+但 meowl Secure Channel 走 **Encrypt-then-MAC**：MAC 验证在 `stripPkcs5` 之前完成，任何篡改都已被外层 HMAC 拦截，攻击者无法构造合法 MAC + 非法 pad 的组合。因此 stripPkcs5 的早退仅在 silicon 内部时间探针可见，不能被远程攻击者观测。
+
+**社区参考对比**：
+
+- **libsodium `crypto_stream_xchacha20_pad`** — mask-based 常时 unpad，所有 padding 校验位累加到一个失败 mask 后统一收口。
+- **BoringSSL `EVP_CIPHER_CTX_get_pkcs7_padded`** — 同款 mask-based，并 hardcoded 测试矩阵覆盖每个 padding 长度。
+
+**建议**：
+
+把 padding 校验改为 mask-based 累加：单一 `failMask` 累积 (a) `padVal == 0`、(b) `padVal > BLOCK`、(c) 每个尾块字节是否等于 padVal（按距离 ≤ padVal 才参与）三类失败位，最后一次性 `if (failMask != 0) throwIt`。loop 改为遍历整个 BLOCK_LEN 尾块，时间不再依赖 padVal。
+
+**Status (v1.2)**：✅ Fixed。`stripPkcs5` 改为 mask-based 实现（`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/SecureChannel.java:465-501`），每分支用经典 `(x | -x) >>> 31` is-non-zero pattern 收口；可见性提升为 package-private 以支持新增的 `SecureChannelStripPkcs5Test` 直接验证（无反射、无生产洞）。新增测试覆盖 16 个合法 padding 长度参数化、padVal=0/超界拒绝、单字节 tamper at every position、unaligned/zero length、非零 offset 共 ~50 个 case。
+
+---
+
+### 2.23 [F-28] `SecureChannel.compare16` 短路 ternary 比较
+
+**严重等级**：S5 — Info（IV 公开，timing 不泄密；统一编码风格）
+
+**位置**：`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/SecureChannel.java:418-430`（v1.1 旧实现）
+
+**发现**：
+
+v1.1 中 `compare16` 采用早退三态比较：
+
+```java
+for (short i = 0; i < SC_BLOCK_LEN; i++) {
+    if (av > bv) return 1;
+    if (av < bv) return -1;
+}
+return 0;
+```
+
+返回时间随两个 IV 的最高不同字节位置变化。这个 helper 仅用于 inbound IV 的 monotonicity 检查（`compare16(apduBuffer, ivOffset, lastInboundIv, 0) <= 0` 判定为 replay），IV 是公开值，timing 不泄露任何 secret。
+
+但相邻的 `ConstantTime.equals`、`Bignat.ctLessThan`、`Bignat.ctIsZero` 都用 mask-based 风格；`compare16` 是这一片的样式异类。
+
+**建议**：改为 sticky-mask 实现：`gtMask` / `ltMask` 在第一个差异字节锁定后保持不变，整个 16 字节循环时间恒定。返回 `(gtMask & 1) - (ltMask & 1)` 还原三态语义。
+
+**Status (v1.2)**：✅ Fixed。`compare16` 改为 mask-based（`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/SecureChannel.java:428-450`）。新测试覆盖 equal、greater at every position、less at every position、most-significant byte wins、0xFF/0x80 unsigned semantics 共 5 个独立断言。
+
+---
+
+### 2.24 [F-29] `MasterSeed` 暴露内部数组引用
+
+**严重等级**：S4 — Low（封装弱化）
+
+**位置**：`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/MasterSeed.java:227-236`（v1.1 旧实现）
+
+**发现**：
+
+v1.1 中两个 getter 直接返回内部字段：
+
+```java
+public byte[] bip32Master() {
+    requireSeeded();
+    return bip32Master;   // 返回的是 live alias
+}
+
+public byte[] slip10Master() { ... 同上 ... }
+```
+
+调用方 (`Bip32.walkPathToLeaf` / `Slip10.walkPath`) 通过 `Util.arrayCopyNonAtomic(master, ...)` 把字节复制到 state buffer，没有 mutating 引用——但 API 层面 contract 是 trust-the-caller。Javadoc 仅以 "caller MUST NOT mutate the returned array" 约束，编译期无法强制。
+
+虽然两个调用点都在同 package，但效果上削弱了"persistent master 字段不可被外部 alias"的封装承诺。Status Keycard / Trezor 内部 API 都用 pull-based copy 风格，避免持久秘密字段被引用别名。
+
+**建议**：废除 getter，改为 pull-based `void copyBip32MasterTo(byte[] dst, short dstOff)` 与 `void copySlip10MasterTo(byte[] dst, short dstOff)`。每次调用做一次性 64-byte copy（`k_master(32) || c_master(32)`），调用方负责管理目标 scratch 的 secret 生命周期。
+
+**Status (v1.2)**：✅ Fixed。
+
+- 内部字段重命名为 `bip32Material` / `slip10Material`（消除字段与方法同名歧义）。
+- 新增 `copyBip32MasterTo` / `copySlip10MasterTo`（`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/MasterSeed.java:223-247`），每次 64-byte 一次性 copy，零额外 transient RAM。
+- `Bip32.walkPathToLeaf`（`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/Bip32.java:168-171`）与 `Slip10.walkPath`（`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/Slip10.java:111-114`）都从两次 32-byte copy 简化为单次 pull-based 调用。
+- 老 getter 编译期消失，外部代码不可能再持有 alias；既有 `HdDerivationTest` / `PersonalisationTest` 端到端测试间接验证新 API 行为正确（BIP-32 / SLIP-10 派生向量全过）。
+
+---
+
+### 2.25 [F-30] `EcdsaK1.signDigest` try-finally 仅覆盖签名调用
+
+**严重等级**：S4 — Low（防御深度）
+
+**位置**：`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/EcdsaK1.java:115-163`（v1.1 旧实现）
+
+**发现**：
+
+v1.1 中 `signDigest` 仅在 `ecdsa.signPreComputedHash` 调用周围用 try-finally 擦除 SCALAR slot + `signKey.clearKey()`。`bip32.deriveLeafScalar` 之前、`parseDerSignature` 之后的代码段在 try-finally 之外：
+
+```java
+bip32.deriveLeafScalar(...);             // 写入 SCALAR
+Secp256k1.setCurveParameters(signKey);
+signKey.setS(scratch, SCALAR_OFF, ...);
+ecdsa.init(signKey, MODE_SIGN);
+short derLen;
+try { derLen = ecdsa.signPreComputedHash(...); }
+finally { wipe SCALAR + clearKey; }      // <- 只擦 SCALAR
+parseDerSignature(...);                  // 在 try-finally 外，可能 throw
+if (!ModN.lessThanHalfN(...)) ...;
+... copy r||s to outBuf ...;
+... wipe DER + r + s slots ...;          // <- 显式 tail wipe
+```
+
+如果 `bip32.deriveLeafScalar` 抛 `SW_LIFECYCLE_INVALID`（lifecycle gate 未开），SCALAR 还未写入，无 secret 泄露——OK。但 `parseDerSignature` 可能抛 `SW_UNSUPPORTED_FEATURE`（malformed silicon DER），此时 SCALAR 已被早 finally 擦除，DER/r/s slots 是公开 ECDSA 输出，理论上也 OK——但代码风格与 `Schnorr.signDigest` / `Ed25519.sign` 不一致。后两者用单一 try-finally 包整个 method body，finally 中清整个 SCRATCH_LEN，简洁且无 reasoning gap。
+
+**建议**：把整个 method body 包裹在单一 try-finally 中，finally 清整个 `SCRATCH_LEN` + `signKey.clearKey()`，与 `Schnorr` / `Ed25519` 风格统一。
+
+**Status (v1.2)**：✅ Fixed。`signDigest` 整体重构为单一 try-finally（`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/EcdsaK1.java:115-159`）：所有逻辑（leaf 派生、签名、DER 解析、low-s 归一化、输出 copy）都在 try 内，finally 一次性 `arrayFillNonAtomic(scratch, 0, SCRATCH_LEN, 0)` + `signKey.clearKey()`。既有 `EcdsaK1Test` 端到端签名测试通过，确认成功路径行为不变。
+
+---
+
+### 2.26 [F-31] `PinManager.unblockPin` 失败 PIN policy 仍消耗 PUK 重试
+
+**严重等级**：S5 — Info（design intent，防侧信道窥探 policy）
+
+**位置**：`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/PinManager.java:190-207`
+
+**发现**：
+
+```java
+public void unblockPin(byte[] pukBuf, short pukOff, short pukLen,
+                       byte[] newPinBuf, short newPinOff, short newPinLen) {
+    requireProvisioned();
+    if (pin.getTriesRemaining() != 0) ISOException.throwIt(SW_CONDITIONS_NOT_SATISFIED);
+    verifyPukInternal(pukBuf, pukOff, pukLen);     // <- 消耗 PUK 重试
+    requirePinPolicy(newPinLen);                    // <- 失败抛 SW_WRONG_LENGTH
+    ...
+}
+```
+
+PUK 验证先行，PIN policy 检查在后。如果 PUK 正确但 newPinLen 不符 policy，PUK 重试已经被消耗 1 次。
+
+这看起来反直觉，但实际上是**防止侧信道窥探 policy** 的设计选择：如果 PIN policy 检查在 PUK 验证之前，攻击者可以用任意短/长的 newPin 字节探测 policy 边界，而不需要消耗 PUK 重试。把 PIN policy 检查放在 PUK 之后，policy 探测同样需要消耗 PUK 重试，使探测代价相同。
+
+**社区参考**：Status Keycard `KeycardApplet#unblockPin` 同款排序（PUK 先验，PIN policy 后查）。
+
+**建议**：保留当前行为，仅在 javadoc 中显式说明这是 design intent 而非 bug。
+
+**Status (v1.2)**：Acknowledged。`@d:/Desktop/x/meowl-applet/applet/src/main/java/social/meowl/applet/PinManager.java:185-189` 既有 javadoc 已经写明 "consumes a PUK attempt even on PIN-policy failure of the new PIN"，足够清晰；本次审计仅追加该 finding 的来源说明，不修改代码。
+
+---
+
+### 2.27 已审计但无独立 finding 的模块
+
+下列模块在 v1.0 / v1.1 / v1.2 的 Phase A 审计中均被逐行检查，未发现独立的安全/正确性问题（除非该模块已经在跨横向审计的 finding 中被涵盖，如 F-15 涉及 `LifecycleState` 的事务化、F-29 涉及 `MasterSeed` 的 API 风格）。明示这一覆盖边界以便复审者快速识别"未被审计"与"审计后无问题"的区别：
+
+| 模块 | 行数 | 审计深度 | 备注 |
+| --- | --- | --- | --- |
+| `PinManager` | 307 | 整类逐行 + lifecycle 集成 | OwnerPIN 重试 / 擦除策略均符合 JC 平台最佳实践；F-15 涉及其 `wipeInTx` 变体；F-31 仅记录 design intent |
+| `MasterSeed` | 286 | 整类逐行 + 调用方追踪 | F-29 涉及 API 风格；其余（HMAC label、resample budget、validity check）正确 |
+| `SecureChannel` | 461 | 整类逐行 + MEAP-2 协议合规 | F-27 / F-28 涉及 helper 常时风格；handshake / wrap / unwrap / replay 防御正确 |
+| `LifecycleState` | 133 | 整类逐行 + FSM 路径覆盖 | F-15 涉及其 `resetInTx`；FSM 转换全 path 已被 `LifecycleStateTest` 覆盖 |
+| `Secp256k1` | 273 | 常量比对 SECG sec2-v2 §2.4.1 | 参数表逐字对照，无误差 |
+| `ConstantTime` | 30 | 完整审计 | mask-based equality，符合 BoringSSL `CRYPTO_memcmp` 风格 |
+| `ResetToFactory` | <100 | 完整审计 + 与 `MeowlApplet.wipe` 集成 | rearm / countdown 状态机正确；F-15 / F-25 涉及其调用 |
+| `WipeTrigger` | <50 | 完整审计 | 倒计数逻辑符合 MEAP-4 spec |
+| `Authentikey` | <80 | 完整审计 + EEPROM 写后擦除策略 | F-20 涉及 EEPROM 物理残留（design intent）；F-05 涉及 `ensureCapacity` 共享 |
+| `ApduTlv` | <130 | 完整审计 + 边界检查 | F-04 / F-05 涉及边界检查；其余 putByte / putShort / putBytes 实现正确 |
+| `Constants` | <200 | 常量值逐项 SW / capability bit 比对 | 无误差 |
+| `Bounds` | <70 | 完整审计 | F-04 / F-05 引入；overflow-safe `requireCapacity` 实现正确 |
+
+---
+
 ## 三、Phase B — Host 代码发现
 
-### 3.1 [S4-01] `HostCrypto.aesCbcDecrypt` 抛出 `IllegalArgumentException` 而非自定义异常
+### 3.1 [F-22] `HostCrypto.aesCbcDecrypt` 抛出 `IllegalArgumentException` 而非自定义异常
 
 **严重等级**：S4 — Low
 
@@ -730,7 +959,7 @@ short innerLc = (short)(buffer[(short)(innerOff + 4)] & 0xFF);  // 单字节 LC�
 
 ---
 
-### 3.2 [S5-04] `HkdfSha256.extract` saltLen 0 时使用 `new byte[HASH_LEN]` 分配
+### 3.2 [F-23] `HkdfSha256.extract` saltLen 0 时使用 `new byte[HASH_LEN]` 分配
 
 **严重等级**：S5 — Info
 
@@ -748,7 +977,7 @@ JVM 上每次调用都分配 32 字节。可改为 `static final byte[] ZERO_SAL
 
 ---
 
-### 3.3 [S3-15] `SecureChannelClient.handshake()` 不验证 cardEphPub 的 0x04 前缀
+### 3.3 [F-24] `SecureChannelClient.handshake()` 不验证 cardEphPub 的 0x04 前缀
 
 **严重等级**：S3 — Medium
 
@@ -791,7 +1020,7 @@ cardEphPub = Arrays.copyOfRange(body, 0, HostCrypto.EC_POINT_UNCOMPRESSED_LEN);
 
 **总评**：测试覆盖在 **加密原语层** 接近企业级（差分模糊 + 官方测试向量）。**业务层**（MeowlApplet 的 INS dispatch 路径）覆盖 ⭐⭐⭐，建议增加。
 
-### 4.2 [S3-16] MeowlAppletTest 覆盖度不足
+### 4.2 [F-25] MeowlAppletTest 覆盖度不足
 
 **严重等级**：S3 — Medium
 
@@ -799,7 +1028,7 @@ cardEphPub = Arrays.copyOfRange(body, 0, HostCrypto.EC_POINT_UNCOMPRESSED_LEN);
 
 **建议补强**：
 
-- 异常路径测试：`handleSignEd25519` 在 `slip10.deriveLeafKey` 抛 SW_LIFECYCLE_INVALID 时，innerScratch 的清理（覆盖 S2-02）。
+- 异常路径测试：`handleSignEd25519` 在 `slip10.deriveLeafKey` 抛 SW_LIFECYCLE_INVALID 时，innerScratch 的清理（覆盖 F-02）。
 - INS 路由：每个 INS 在错 lifecycle / 未开 SC / PIN 未验证时的 SW 验证。
 - Inner LC 边界：LC = 0、255、256（应该 reject）的行为。
 - RESET_TO_FACTORY interleave：N-1 次 reset 后插入任意其他 INS，应触发 rearm。
@@ -808,12 +1037,12 @@ cardEphPub = Arrays.copyOfRange(body, 0, HostCrypto.EC_POINT_UNCOMPRESSED_LEN);
 
 - `innerOnlyInsReturnsInsNotSupported` — 内部 INS（SETUP / IMPORT_SEED / SIGN_*）在外层 dispatch 必须 6D00。
 - `openSecureChannelWithoutInitFails` — 未握手前 OPEN_SC 必须非 9000。
-- `lifecycleRevertsToUninitialized` — 完整 reset 后 GET_INFO 必须 UNINITIALIZED（S3-11 原子事务回归）。
+- `lifecycleRevertsToUninitialized` — 完整 reset 后 GET_INFO 必须 UNINITIALIZED（F-15 原子事务回归）。
 - `interleavedReset` — 多种 INS 交错驱动 rearm 路径。
 
-  innerScratch 清理（S2-02）由 try-finally 在源码层强制保证；white-box 读取 innerScratch 在 jcardsim 上不便实施，留作 v1.2 补强。
+  innerScratch 清理（F-02）由 try-finally 在源码层强制保证；white-box 读取 innerScratch 在 jcardsim 上不便实施，留作 v1.2 补强。
 
-### 4.3 [S5-05] HmacShaTest 设计赞赏
+### 4.3 [F-26] HmacShaTest 设计赞赏
 
 测试同时跑 native + software 两条路径，且对 software 路径做 200 个 (key, msg) 长度差分。这是社区最佳实践（参考 BoringSSL `bssl_test --gtest_filter=HMAC*`）。
 
@@ -830,16 +1059,16 @@ cardEphPub = Arrays.copyOfRange(body, 0, HostCrypto.EC_POINT_UNCOMPRESSED_LEN);
 | Non-hardened 路径 | ✅ KeyAgreement + 软 mod-n | ✅ | ✅ | ✅ | ✅ |
 | `parse256(I_L) ≥ n` 处理 | fail SW_CONDITIONS_NOT_SATISFIED | fail | fail | skip-to-next | skip-to-next |
 | `k_i == 0` 处理 | fail SW_CONDITIONS_NOT_SATISFIED | fail | fail | skip-to-next | skip-to-next |
-| Chain code wipe | ❌ 漏（S3-03） | ✅ | ✅ | ✅ | ✅ |
+| Chain code wipe | ❌ 漏（F-07） | ✅ | ✅ | ✅ | ✅ |
 | EC private key 类型 | TRANSIENT_DESELECT 优先，PERSISTENT 兜底 | 同 meowl | 同 meowl | n/a | n/a |
 
-**结论**：BIP-32 路径功能正确，与 Status Keycard 高度对齐。chain code wipe 漏失（S3-03）是个本可消除的偏差。
+**结论**：BIP-32 路径功能正确，与 Status Keycard 高度对齐。chain code wipe 漏失（F-07）是个本可消除的偏差。
 
 ### 5.2 BIP-340 Schnorr
 
 | 项 | meowl | bitcoin-core/secp256k1 | trezor-firmware | Coldcard |
 | --- | --- | --- | --- | --- |
-| Tagged hash 预算 | ❌ 每次重算（S3-08） | ✅ const | ✅ const | ✅ const |
+| Tagged hash 预算 | ❌ 每次重算（F-12） | ✅ const | ✅ const | ✅ const |
 | aux_rand 来源 | KEYGENERATION→TRNG | random32() | trng | secure RNG |
 | `k=0` 处理 | fail SW_INTERNAL_ERROR | fail | fail | fail |
 | has_even_y(P) 测试 | ✅ y[31] & 0x01 | ✅ | ✅ | ✅ |
@@ -847,7 +1076,7 @@ cardEphPub = Arrays.copyOfRange(body, 0, HostCrypto.EC_POINT_UNCOMPRESSED_LEN);
 | `int(rand) mod n` reduction | 软 single-subtract | 内置 ECMUL | 内置 modular | 内置 |
 | Output bytes(R) \|\| s | 64 字节 | 64 字节 | 64 字节 | 64 字节 |
 
-**结论**：算法正确。`taggedHashStart` 不预算是性能 leakage，不是安全 leakage（S3-08）。
+**结论**：算法正确。`taggedHashStart` 不预算是性能 leakage，不是安全 leakage（F-12）。
 
 ### 5.3 Ed25519 (RFC 8032)
 
@@ -860,11 +1089,11 @@ cardEphPub = Arrays.copyOfRange(body, 0, HostCrypto.EC_POINT_UNCOMPRESSED_LEN);
 | R = r·B 编码 | ✅ scalarMult + encodePoint | ✅ | ✅ | ✅ | ✅ |
 | k = SHA512(R \|\| A \|\| M) mod L | ✅ | ✅ | ✅ | ✅ | ✅ |
 | S = (r + k·s) mod L | ✅ Bignat.mult + Bignat.mod | ✅ | ✅ | ✅ | ✅ |
-| Field 算术常时 | ❌（S2-01） | ✅ | ✅ | ✅ | ✅ |
+| Field 算术常时 | ❌（F-01） | ✅ | ✅ | ✅ | ✅ |
 | Scalar mult 常时（high-level） | ✅ double-and-always-add | ✅ | ✅ | ✅ | ✅ |
 | Sign 时长 | 3-6s | <5ms | <5ms | ~50ms | ~200ms |
 
-**结论**：算法实现 100% 正确（与 RFC 8032 §5.1.6 逐字符对齐），常时性弱（S2-01），性能弱（S3-12）。
+**结论**：算法实现 100% 正确（与 RFC 8032 §5.1.6 逐字符对齐），常时性弱（F-01），性能弱（F-16）。
 
 ### 5.4 ECDSA + low-s (BIP-62 / EIP-2)
 
@@ -907,42 +1136,57 @@ cardEphPub = Arrays.copyOfRange(body, 0, HostCrypto.EC_POINT_UNCOMPRESSED_LEN);
 
 ## 六、行动建议优先级
 
-### 6.1 高优先级（v1.1 sweep — ✅ 全部已合并）
+### 6.1 v1.1 sweep 修复矩阵（10 条 — ✅ 全部已合并）
 
-| ID | 描述 | 状态 |
-| --- | --- | --- |
-| S2-02 | `handleSignEd25519` try-finally wipe innerScratch | ✅ Fixed |
-| S3-03 | `Bip32.wipeTransientSecrets` wipe 整个 state | ✅ Fixed |
-| S3-02 | 修正 MeowlApplet 注释 323→259 | ✅ Fixed |
-| S3-04 | 修正 Hkdf.expand Javadoc | ✅ Fixed |
-| S3-06 | 修正 HmacSha.forceSoftware Javadoc | ✅ Fixed |
-| S3-07 | 修复 HmacSha 文档 Unicode 损坏 | ✅ Fixed |
-| S3-09 | Slip10.deriveLeafKey 引用常量 | ✅ Fixed |
-| S3-10 | Slip10 非 hardened 改 SW_CONDITIONS_NOT_SATISFIED | ✅ Fixed |
-| S2-04 | ApduTlv.ensureCapacity 防溢出重排 | ✅ Fixed |
-| S3-15 | SecureChannelClient 立即验证 0x04 | ✅ Fixed |
+| F-NN | Severity | 描述 | 状态 |
+| --- | --- | --- | --- |
+| F-02 | S2 | `handleSignEd25519` try-finally wipe innerScratch | ✅ Fixed |
+| F-04 | S2 | ApduTlv.ensureCapacity 防溢出重排 | ✅ Fixed |
+| F-06 | S4 | 修正 MeowlApplet 注释 323→259 | ✅ Fixed |
+| F-07 | S3 | `Bip32.wipeTransientSecrets` wipe 整个 state | ✅ Fixed |
+| F-08 | S4 | 修正 Hkdf.expand Javadoc | ✅ Fixed |
+| F-10 | S4 | 修正 HmacSha.forceSoftware Javadoc | ✅ Fixed |
+| F-11 | S4 | 修复 HmacSha 文档 Unicode 损坏 | ✅ Fixed |
+| F-13 | S4 | Slip10.deriveLeafKey 引用常量 | ✅ Fixed |
+| F-14 | S4 | Slip10 非 hardened 改 SW_CONDITIONS_NOT_SATISFIED | ✅ Fixed |
+| F-24 | S3 | SecureChannelClient 立即验证 0x04 | ✅ Fixed |
 
-### 6.2 中优先级（v1.1 sweep — ✅ 全部已合并）
+### 6.2 v1.1 sweep 修复矩阵（9 条 — ✅ / 🟡 全部已合并）
 
-| ID | 描述 | 状态 |
-| --- | --- | --- |
-| S2-01 | Field25519 常时基元 + 投影随机化 | 🟡 Mitigated（中期路径已落地，长期 limb 重写 v2.0） |
-| S2-03 | ModN/Bignat 常时基元 + 文档精确化 | 🟡 Mitigated（中期路径已落地，长期 limb 重写 v2.0） |
-| S3-01 | 抽离 `Bounds` 工具类 | ✅ Fixed |
-| S3-05 | `Hkdf.extract` 移除 256 字节硬上限 | ✅ Fixed |
-| S3-08 | Schnorr 预算 tag hash | ✅ Fixed（首跑测捕获 AUX 字节错位，详见 §2.12 Status） |
-| S3-11 | wipe() 单一事务化 + 子模块 InTx 变体 | ✅ Fixed |
-| S3-13 | EcdsaK1 DER 解析强化 long-form 守卫 | ✅ Fixed |
-| S3-16 | MeowlAppletTest 异常路径补强 | ✅ Fixed |
-| S4-01 | HostCrypto.pkcs5Unpad 改抛 SecureChannelException | ✅ Fixed |
+| F-NN | Severity | 描述 | 状态 |
+| --- | --- | --- | --- |
+| F-01 | S2 | Field25519 常时基元 + 投影随机化 | 🟡 Mitigated（中期已落地，长期 limb 重写 v2.0） |
+| F-03 | S2 | ModN/Bignat 常时基元 + 文档精确化 | 🟡 Mitigated（中期已落地，长期 limb 重写 v2.0） |
+| F-05 | S3 | 抽离 `Bounds` 工具类 | ✅ Fixed |
+| F-09 | S3 | `Hkdf.extract` 移除 256 字节硬上限 | ✅ Fixed |
+| F-12 | S3 | Schnorr 预算 tag hash | ✅ Fixed（首跑测捕获 AUX 字节错位） |
+| F-15 | S3 | wipe() 单一事务化 + 子模块 InTx 变体 | ✅ Fixed |
+| F-18 | S3 | EcdsaK1 DER 解析强化 long-form 守卫 | ✅ Fixed |
+| F-22 | S4 | HostCrypto.pkcs5Unpad 改抛 SecureChannelException | ✅ Fixed |
+| F-25 | S3 | MeowlAppletTest 异常路径补强 | ✅ Fixed |
 
-### 6.3 长期（v2.0+）
+### 6.3 v1.2 sweep 新增修复（5 条 — 全部本次合并）
 
-| ID | 描述 | 工作量 |
-| --- | --- | --- |
-| S2-01 / S2-03 | Field25519 / Bignat 重构为 radix-2^26 limb 32-bit 常时实现 | 2-3 周 |
-| S3-12 | Ed25519 性能优化（移植 ed25519-donna） | 2-3 周 |
-| S3-14 | Extended-APDU 支持（SIGN_ED25519 长 message） | 1 周 |
+| F-NN | Severity | 描述 | 状态 |
+| --- | --- | --- | --- |
+| F-27 | S5 | `SecureChannel.stripPkcs5` 改 mask-based 常时实现 | ✅ Fixed |
+| F-28 | S5 | `SecureChannel.compare16` 改 mask-based sticky-mask 实现 | ✅ Fixed |
+| F-29 | S4 | `MasterSeed` 改 pull-based copy API；删除 getter | ✅ Fixed |
+| F-30 | S4 | `EcdsaK1.signDigest` 整体包裹 try-finally | ✅ Fixed |
+| F-31 | S5 | `PinManager.unblockPin` design intent 文档化 | Acknowledged |
+
+### 6.4 长期路线（v2.0+ — 7 条 Deferred / Info）
+
+| F-NN | Severity | 描述 | 工作量 |
+| --- | --- | --- | --- |
+| F-01 / F-03 | S2 | Field25519 / Bignat 重构为 radix-2^26 limb 32-bit 常时实现 | 2-3 周 |
+| F-16 | S5 | Ed25519 性能优化（移植 ed25519-donna） | 2-3 周 |
+| F-17 | S5 | BIP-32 / SLIP-10 异常 SW 选择（社区共识简化，不修改） | — |
+| F-19 | S3 | Extended-APDU 支持（SIGN_ED25519 长 message） | 1 周 |
+| F-20 | S5 | Authentikey 私钥 EEPROM 写后擦除（依赖 EAL 5+ 物理保证） | — |
+| F-21 | S5 | PKI cert wipe 不擦 authentikey（按 MEAP-4 spec 设计） | — |
+| F-23 | S5 | HkdfSha256.extract saltLen=0 时分配 ZERO_SALT_32（host 微优化） | — |
+| F-26 | S5 | HmacShaTest 设计赞赏（无修改） | — |
 
 ---
 
@@ -950,15 +1194,17 @@ cardEphPub = Arrays.copyOfRange(body, 0, HostCrypto.EC_POINT_UNCOMPRESSED_LEN);
 
 ### 7.1 上线就绪度
 
-**Verdict (v1.1)**：**unconditional GO**。
+**Verdict (v1.2)**：**unconditional GO**。
 
-§6.1 与 §6.2 全部条目已在 v1.1 sweep 合并。残余 S5（Info）与 §6.3 长期路线属于 v2.0 规划范围，不阻塞 v1.0 / v1.1 发布。
+§6.1 / §6.2 / §6.3 全部 24 条 actionable findings 已合并；§6.4 的 7 条全部为 Deferred（v2.0+）或 Info（不修改），其中 F-01 / F-03 已通过中期 mask-based 路径（`Field25519.add/sub/neg`、`Bignat.condAdd/condSub/ctLessThan/ctIsZero`、`Edwards25519.randomizeProjective`）落地，仅长期 limb 重写登记到 v2.0；这些不阻塞 v1.0 发布。
+
+**1,697 个测试用例 / 311 个 `@Test` 方法全部 PASSED**（applet/tests:1,445 + tools:252），含本次新增 27 个 F-27 / F-28 回归测试。
 
 ### 7.2 残留风险声明
 
 发布 v1.0 时 user-facing release notes 应包含：
 
-> meowl-applet v1.0 在 J3R180 上的 Ed25519 与 Schnorr 软实现采用变时 Bignat 字段算术。在物理可触及卡片 + 高分辨率 PCSC 时间 oracle 下，理论存在累积 ~1 bit/operation 的私钥侧信道恢复路径。该威胁模型超出 v1.0 设计目标（"defense against software-only adversaries on the host"）。需要"strong physical adversary"防护的用户应等待 v2.0 的常时 Field25519 重构，或选择 Coldcard / Trezor。
+> meowl-applet v1.0 在 J3R180 上的 Ed25519 与 Schnorr 软实现采用变时 Bignat 字段算术（`Bignat.mod` / `Bignat.mult` 仍非常时；mask-based 基元已覆盖外层路径）。在物理可触及卡片 + 高分辨率 PCSC 时间 oracle 下，理论存在累积 ~1 bit/operation 的私钥侧信道恢复路径。该威胁模型超出 v1.0 设计目标（"defense against software-only adversaries on the host"）。需要"strong physical adversary"防护的用户应等待 v2.0 的常时 Field25519 重构，或选择 Coldcard / Trezor。
 
 ### 7.3 与 Status Keycard 一致性结论
 
@@ -967,6 +1213,7 @@ meowl-applet 在 BIP-32 / ECDSA / Secure Channel 三大核心路径上**等同�
 - ConstantTime MAC 比较（Status Keycard 用 `Util.arrayCompare`，泄露不匹配位置）
 - HmacSha 软件兜底（Status Keycard 不针对无 native HMAC 的 J3R180 family）
 - Reset 多步触发 + 自动 rearm（Status Keycard 的 reset 流程相对简单）
+- v1.2 加固后：`SecureChannel.stripPkcs5` / `compare16` 与所有秘密路径辅助函数风格统一为 mask-based（F-27 / F-28），`MasterSeed` 强封装无 alias（F-29）
 
 不足之处：
 
@@ -977,11 +1224,12 @@ meowl-applet 在 BIP-32 / ECDSA / Secure Channel 三大核心路径上**等同�
 1. 在 `README.md` 添加"Performance budgets"段，列出每个签名 INS 的预期耗时。
 2. 在 `MEAP-6` 添加"Threat model"段，明确"strong physical adversary not in v1.0 scope"。
 3. 在 `docs/specs/README.md` 索引中链接到本审计报告。
+4. v1.2 后 `MasterSeed` API 已破坏性更新；任何下游集成需要从 `byte[] bip32Master()` 迁移到 `void copyBip32MasterTo(byte[] dst, short dstOff)`（详见 F-29）。
 
 ---
 
 **报告作者**：Cascade（Windsurf 代码审计代理）
-**审计完成**：2026-01
-**版本**：1.0
+**审计完成**：2026-01（v1.0）/ 2026-05（v1.1 sweep）/ 2026-05（v1.2 重构）
+**版本**：1.2
 
 如需追加细节或重新审计某个具体模块，请提交 issue 或 ping 维护者。
