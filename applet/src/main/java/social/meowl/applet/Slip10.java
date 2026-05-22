@@ -125,10 +125,14 @@ public final class Slip10 {
         }
     }
 
+    /**
+     * Wipes the entire walk-state scratch in one call. The three sub-regions {@code k_cur}, {@code
+     * c_cur} and {@code I} are contiguous and together span exactly {@link #STATE_LEN} bytes, so a
+     * single {@code arrayFillNonAtomic} suffices (audit F-39, style-aligned with {@link
+     * Bip32#wipeTransientSecrets}).
+     */
     private void wipeWalkState() {
-        Util.arrayFillNonAtomic(state, STATE_K_OFF, SECRET_KEY_LEN, (byte) 0);
-        Util.arrayFillNonAtomic(state, STATE_C_OFF, Constants.CHAIN_CODE_LEN, (byte) 0);
-        Util.arrayFillNonAtomic(state, STATE_I_OFF, HASH_LEN, (byte) 0);
+        Util.arrayFillNonAtomic(state, (short) 0, STATE_LEN, (byte) 0);
     }
 
     private void ckdPriv(byte[] pathBuf, short idxOff) {
