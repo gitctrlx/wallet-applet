@@ -66,12 +66,6 @@ Every signing primitive runs in **software** on the J3R180 SECID stack — there
 
 The Schnorr / Ed25519 budgets dominate the wallet UX. Wallets that need sub-second Ed25519 signatures should either use the secp256k1 curve (`SIGN_ECDSA_K1` / `SIGN_SCHNORR_K1`) or wait for the v2.0 `Field25519` limb-radix rewrite tracked in [`docs/AUDIT-REPORT.md` §6.3](./docs/AUDIT-REPORT.md).
 
-## Audit and threat model
-
-`meowl-applet` undergoes per-release line-by-line audits. The latest report — including findings, fix status (✅ Fixed, 🟡 Mitigated, ⏸ Deferred), reference-implementation comparisons (Status Keycard, Satochip, Trezor, Coldcard) and the v1.1 sweep summary — lives in [`docs/AUDIT-REPORT.md`](./docs/AUDIT-REPORT.md).
-
-The v1.0 / v1.1 release threat model targets a **software-only adversary on the host** (malware, networked APIs, host-side memory disclosure). Strong physical adversaries with sub-millisecond timing oracles on the PCSC link are explicitly **out of scope** for v1.x; users in that threat model should wait for v2.0's constant-time `Field25519` rewrite or pick a vendor with hardware-resistance certification at the EAL 6+ level. See [MEAP-6 §Threat model](./docs/specs/meap-6.md) for the full statement.
-
 ## License
 
 Licensed under the GNU Affero General Public License Version 3.0 ([LICENSE](LICENSE) or <https://www.gnu.org/licenses/agpl-3.0.html>).
