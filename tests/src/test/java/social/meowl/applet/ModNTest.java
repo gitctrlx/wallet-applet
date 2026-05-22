@@ -5,6 +5,7 @@
 package social.meowl.applet;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -215,6 +216,104 @@ class ModNTest {
         byte[] outSlice = new byte[32];
         System.arraycopy(backing, 128, outSlice, 0, 32);
         assertArrayEquals(bigIntToFixed(BigInteger.ONE, 32), outSlice);
+    }
+
+    /* ── negateMod (audit F-34) ──────────────────────────────────────────────────────────── */
+
+    @Test
+    @DisplayName("negateMod: (n − 1) → 1 and back (involution on [1, n))")
+    void negateInvertsBack() {
+        byte[] a = bigIntToFixed(BigInteger.ONE, 32);
+        ModN.negateMod(a, (short) 0);
+        assertArrayEquals(bigIntToFixed(N.subtract(BigInteger.ONE), 32), a);
+        ModN.negateMod(a, (short) 0);
+        assertArrayEquals(bigIntToFixed(BigInteger.ONE, 32), a);
+    }
+
+    @Test
+    @DisplayName("negateMod: ⌊n/2⌋ → ⌈n/2⌉ (boundary of the low-s test)")
+    void negateAtHalfN() {
+        BigInteger halfN = N.subtract(BigInteger.ONE).shiftRight(1);
+        byte[] a = bigIntToFixed(halfN, 32);
+        ModN.negateMod(a, (short) 0);
+        assertArrayEquals(bigIntToFixed(N.subtract(halfN), 32), a);
+    }
+
+    @Test
+    @DisplayName("negateMod: 50 randomised scalars match BigInteger reference (n − x)")
+    void negateRandomized() {
+        SecureRandom rng = new SecureRandom();
+        for (int trial = 0; trial < 50; trial++) {
+            BigInteger x = randomScalar(rng);
+            if (x.signum() == 0) {
+                continue;
+            }
+            byte[] a = bigIntToFixed(x, 32);
+            ModN.negateMod(a, (short) 0);
+            assertArrayEquals(
+                    bigIntToFixed(N.subtract(x), 32), a, "trial " + trial + " x=" + x.toString(16));
+        }
+    }
+
+    @Test
+    @DisplayName("negateMod: honours non-zero offset within a larger backing buffer")
+    void negateOffset() {
+        byte[] backing = new byte[64];
+        BigInteger x = BigInteger.valueOf(42);
+        System.arraycopy(bigIntToFixed(x, 32), 0, backing, 16, 32);
+        ModN.negateMod(backing, (short) 16);
+        byte[] outSlice = new byte[32];
+        System.arraycopy(backing, 16, outSlice, 0, 32);
+        assertArrayEquals(bigIntToFixed(N.subtract(x), 32), outSlice);
+    }
+
+    /* ── lessThanHalfN (audit F-34) ──────────────────────────────────────────────────────── */
+
+    @Test
+    @DisplayName("lessThanHalfN: 0 ≤ ⌊n/2⌋ is true")
+    void lessHalfZero() {
+        assertTrue(ModN.lessThanHalfN(repeat((byte) 0), (short) 0));
+    }
+
+    @Test
+    @DisplayName("lessThanHalfN: 1 ≤ ⌊n/2⌋ is true")
+    void lessHalfOne() {
+        assertTrue(ModN.lessThanHalfN(bigIntToFixed(BigInteger.ONE, 32), (short) 0));
+    }
+
+    @Test
+    @DisplayName("lessThanHalfN: ⌊n/2⌋ ≤ ⌊n/2⌋ is true (equality counts as low-s per BIP-62)")
+    void lessHalfAtBoundary() {
+        BigInteger halfN = N.subtract(BigInteger.ONE).shiftRight(1);
+        assertTrue(ModN.lessThanHalfN(bigIntToFixed(halfN, 32), (short) 0));
+    }
+
+    @Test
+    @DisplayName("lessThanHalfN: ⌊n/2⌋ + 1 is NOT ≤ ⌊n/2⌋ (just above the boundary)")
+    void lessHalfBoundaryPlus1() {
+        BigInteger halfN = N.subtract(BigInteger.ONE).shiftRight(1);
+        assertFalse(ModN.lessThanHalfN(bigIntToFixed(halfN.add(BigInteger.ONE), 32), (short) 0));
+    }
+
+    @Test
+    @DisplayName("lessThanHalfN: n − 1 (largest valid scalar) is NOT ≤ ⌊n/2⌋")
+    void lessHalfNMinus1() {
+        assertFalse(ModN.lessThanHalfN(bigIntToFixed(N.subtract(BigInteger.ONE), 32), (short) 0));
+    }
+
+    @Test
+    @DisplayName("lessThanHalfN: 50 randomised scalars agree with BigInteger.compareTo(halfN)")
+    void lessHalfRandomized() {
+        SecureRandom rng = new SecureRandom();
+        BigInteger halfN = N.subtract(BigInteger.ONE).shiftRight(1);
+        for (int trial = 0; trial < 50; trial++) {
+            BigInteger x = randomScalar(rng);
+            boolean expected = x.compareTo(halfN) <= 0;
+            assertEquals(
+                    expected,
+                    ModN.lessThanHalfN(bigIntToFixed(x, 32), (short) 0),
+                    "trial " + trial + " x=" + x.toString(16));
+        }
     }
 
     /* ── helpers ──────────────────────────────────────────────────────────────────────────── */

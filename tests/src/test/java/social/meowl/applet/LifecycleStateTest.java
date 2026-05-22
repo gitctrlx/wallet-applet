@@ -11,6 +11,7 @@ import com.licel.jcardsim.smartcardio.CardSimulator;
 import com.licel.jcardsim.utils.AIDUtil;
 import javacard.framework.AID;
 import javacard.framework.ISOException;
+import javacard.framework.JCSystem;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -143,6 +144,87 @@ class LifecycleStateTest {
             s.transitionTo(LifecycleState.PERSONALIZED);
             s.transitionTo(LifecycleState.SETUP_DONE);
             s.reset();
+            assertEquals(LifecycleState.UNINITIALIZED, s.current());
+        }
+    }
+
+    /**
+     * InTx variants — used by {@link MeowlApplet#wipe()} and {@code handleSetup} so the lifecycle
+     * mutation joins the caller's already-open transaction (audit F-15 atomic-wipe support API).
+     * The integration coverage in {@code MeowlAppletTest.lifecycleRevertsToUninitialized} pins the
+     * end-to-end outcome; the unit tests below pin the FSM-level invariants — illegal-jump
+     * rejection and the four-step legal forward chain — without the applet routing layer in front
+     * of them (audit F-40).
+     */
+    @Nested
+    @DisplayName("transitionToInTx() / resetInTx(): F-15 InTx variants")
+    class InTxVariants {
+
+        private LifecycleState newInstance() {
+            CardSimulator simulator = new CardSimulator();
+            AID aid = AIDUtil.create(new byte[] {(byte) 0xF0, 0x6D, 0x65, 0x6F, 0x77, 0x6C, 0x01});
+            simulator.installApplet(aid, MeowlApplet.class);
+            simulator.selectApplet(aid);
+            return new LifecycleState();
+        }
+
+        @Test
+        @DisplayName("transitionToInTx accepts each legal forward step")
+        void inTxLegalForward() {
+            LifecycleState s = newInstance();
+            JCSystem.beginTransaction();
+            try {
+                s.transitionToInTx(LifecycleState.PERSONALIZED);
+                JCSystem.commitTransaction();
+            } catch (RuntimeException e) {
+                JCSystem.abortTransaction();
+                throw e;
+            }
+            assertEquals(LifecycleState.PERSONALIZED, s.current());
+
+            JCSystem.beginTransaction();
+            try {
+                s.transitionToInTx(LifecycleState.SETUP_DONE);
+                JCSystem.commitTransaction();
+            } catch (RuntimeException e) {
+                JCSystem.abortTransaction();
+                throw e;
+            }
+            assertEquals(LifecycleState.SETUP_DONE, s.current());
+        }
+
+        @Test
+        @DisplayName("transitionToInTx rejects illegal jumps with SW_LIFECYCLE_INVALID")
+        void inTxRejectsIllegal() {
+            LifecycleState s = newInstance();
+            JCSystem.beginTransaction();
+            try {
+                ISOException ex =
+                        assertThrows(
+                                ISOException.class,
+                                () -> s.transitionToInTx(LifecycleState.SEEDED));
+                assertEquals(Constants.SW_LIFECYCLE_INVALID, ex.getReason());
+            } finally {
+                JCSystem.abortTransaction();
+            }
+            assertEquals(LifecycleState.UNINITIALIZED, s.current());
+        }
+
+        @Test
+        @DisplayName("resetInTx returns the FSM to UNINITIALIZED from any forward state")
+        void inTxResetFromSeeded() {
+            LifecycleState s = newInstance();
+            s.transitionTo(LifecycleState.PERSONALIZED);
+            s.transitionTo(LifecycleState.SETUP_DONE);
+            s.transitionTo(LifecycleState.SEEDED);
+            JCSystem.beginTransaction();
+            try {
+                s.resetInTx();
+                JCSystem.commitTransaction();
+            } catch (RuntimeException e) {
+                JCSystem.abortTransaction();
+                throw e;
+            }
             assertEquals(LifecycleState.UNINITIALIZED, s.current());
         }
     }

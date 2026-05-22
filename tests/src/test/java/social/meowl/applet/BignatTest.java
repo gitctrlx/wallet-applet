@@ -151,6 +151,159 @@ class BignatTest {
         assertEquals(expected, got);
     }
 
+    /* ── mask-based constant-time primitives (audit F-35) ────────────────────────────────── */
+
+    @Test
+    @DisplayName("condSubInPlace: mask=0 is a no-op, mask=-1 subtracts")
+    void condSubMaskedBranches() {
+        byte[] xCopy = bigIntToFixed(BigInteger.valueOf(100), 32);
+        byte[] y = bigIntToFixed(BigInteger.valueOf(30), 32);
+        byte[] x = xCopy.clone();
+        Bignat.condSubInPlace(x, (short) 0, y, (short) 0, (short) 32, (short) 0);
+        assertArrayEquals(xCopy, x, "mask=0 must leave x unchanged");
+        Bignat.condSubInPlace(x, (short) 0, y, (short) 0, (short) 32, (short) -1);
+        assertArrayEquals(bigIntToFixed(BigInteger.valueOf(70), 32), x);
+    }
+
+    @Test
+    @DisplayName("condSubInPlace: borrow propagates across all 32 byte positions")
+    void condSubFullBorrow() {
+        byte[] x = new byte[32];
+        x[0] = 1;
+        byte[] y = new byte[32];
+        for (int i = 1; i < 32; i++) {
+            y[i] = (byte) 0xFF;
+        }
+        Bignat.condSubInPlace(x, (short) 0, y, (short) 0, (short) 32, (short) -1);
+        byte[] expected = new byte[32];
+        expected[31] = 1;
+        assertArrayEquals(expected, x, "0x0100…00 − 0x00FF…FF must equal 0x0000…01");
+    }
+
+    @RepeatedTest(50)
+    @DisplayName("condSubInPlace: mask=-1 matches BigInteger subtraction modulo 2²⁵⁶")
+    void condSubRandomized() {
+        byte[] x = randomBytes(32);
+        byte[] y = randomBytes(32);
+        BigInteger expected = unsigned(x).subtract(unsigned(y)).mod(BigInteger.ONE.shiftLeft(256));
+        byte[] result = x.clone();
+        Bignat.condSubInPlace(result, (short) 0, y, (short) 0, (short) 32, (short) -1);
+        assertEquals(expected, unsigned(result));
+    }
+
+    @Test
+    @DisplayName("condAddInPlace: mask=0 is a no-op, mask=-1 adds")
+    void condAddMaskedBranches() {
+        byte[] xCopy = bigIntToFixed(BigInteger.valueOf(100), 32);
+        byte[] y = bigIntToFixed(BigInteger.valueOf(30), 32);
+        byte[] x = xCopy.clone();
+        Bignat.condAddInPlace(x, (short) 0, y, (short) 0, (short) 32, (short) 0);
+        assertArrayEquals(xCopy, x, "mask=0 must leave x unchanged");
+        Bignat.condAddInPlace(x, (short) 0, y, (short) 0, (short) 32, (short) -1);
+        assertArrayEquals(bigIntToFixed(BigInteger.valueOf(130), 32), x);
+    }
+
+    @Test
+    @DisplayName("condAddInPlace: carry propagates from LSB up through every byte")
+    void condAddFullCarry() {
+        byte[] x = new byte[32];
+        for (int i = 0; i < 32; i++) {
+            x[i] = (byte) 0xFF;
+        }
+        byte[] y = new byte[32];
+        y[31] = 1;
+        Bignat.condAddInPlace(x, (short) 0, y, (short) 0, (short) 32, (short) -1);
+        assertArrayEquals(new byte[32], x, "0xFF…FF + 1 mod 2²⁵⁶ must equal 0");
+    }
+
+    @RepeatedTest(50)
+    @DisplayName("condAddInPlace: mask=-1 matches BigInteger addition modulo 2²⁵⁶")
+    void condAddRandomized() {
+        byte[] x = randomBytes(32);
+        byte[] y = randomBytes(32);
+        BigInteger expected = unsigned(x).add(unsigned(y)).mod(BigInteger.ONE.shiftLeft(256));
+        byte[] result = x.clone();
+        Bignat.condAddInPlace(result, (short) 0, y, (short) 0, (short) 32, (short) -1);
+        assertEquals(expected, unsigned(result));
+    }
+
+    @Test
+    @DisplayName("ctLessThan: three-way verdict (a<b, a==b, a>b)")
+    void ctLessThanThreeWay() {
+        byte[] one = bigIntToFixed(BigInteger.ONE, 32);
+        byte[] two = bigIntToFixed(BigInteger.TWO, 32);
+        assertEquals((short) -1, Bignat.ctLessThan(one, (short) 0, two, (short) 0, (short) 32));
+        assertEquals((short) 0, Bignat.ctLessThan(two, (short) 0, one, (short) 0, (short) 32));
+        assertEquals((short) 0, Bignat.ctLessThan(one, (short) 0, one, (short) 0, (short) 32));
+    }
+
+    @Test
+    @DisplayName("ctLessThan: most-significant differing byte wins (sticky-mask property)")
+    void ctLessThanMsbWins() {
+        byte[] a = new byte[32];
+        byte[] b = new byte[32];
+        a[0] = (byte) 0x01;
+        a[1] = (byte) 0xFF;
+        b[0] = (byte) 0x02;
+        b[1] = (byte) 0x00;
+        assertEquals((short) -1, Bignat.ctLessThan(a, (short) 0, b, (short) 0, (short) 32));
+    }
+
+    @Test
+    @DisplayName("ctLessThan: unsigned semantics — 0xFF is larger than 0x80")
+    void ctLessThanUnsignedHighBytes() {
+        byte[] a = new byte[32];
+        byte[] b = new byte[32];
+        a[0] = (byte) 0x80;
+        b[0] = (byte) 0xFF;
+        assertEquals((short) -1, Bignat.ctLessThan(a, (short) 0, b, (short) 0, (short) 32));
+        assertEquals((short) 0, Bignat.ctLessThan(b, (short) 0, a, (short) 0, (short) 32));
+    }
+
+    @RepeatedTest(50)
+    @DisplayName("ctLessThan: matches BigInteger.compareTo on random 32-byte pairs")
+    void ctLessThanRandomized() {
+        byte[] a = randomBytes(32);
+        byte[] b = randomBytes(32);
+        short expected = unsigned(a).compareTo(unsigned(b)) < 0 ? (short) -1 : (short) 0;
+        assertEquals(expected, Bignat.ctLessThan(a, (short) 0, b, (short) 0, (short) 32));
+    }
+
+    @Test
+    @DisplayName("ctIsZero: all-zero buffer returns -1 (0xFFFF mask)")
+    void ctIsZeroAllZero() {
+        assertEquals((short) -1, Bignat.ctIsZero(new byte[32], (short) 0, (short) 32));
+    }
+
+    @Test
+    @DisplayName("ctIsZero: non-zero at any of the 32 positions returns 0")
+    void ctIsZeroEveryPosition() {
+        for (int pos = 0; pos < 32; pos++) {
+            byte[] a = new byte[32];
+            a[pos] = 1;
+            assertEquals(
+                    (short) 0,
+                    Bignat.ctIsZero(a, (short) 0, (short) 32),
+                    "non-zero at position " + pos + " must report non-zero");
+        }
+    }
+
+    @Test
+    @DisplayName("ctIsZero: honours offset — sentinels outside the window are ignored")
+    void ctIsZeroOffset() {
+        byte[] buf = new byte[64];
+        buf[10] = 1;
+        assertEquals(
+                (short) -1,
+                Bignat.ctIsZero(buf, (short) 16, (short) 32),
+                "sentinel outside [16, 48) must not influence the verdict");
+        buf[20] = 1;
+        assertEquals(
+                (short) 0,
+                Bignat.ctIsZero(buf, (short) 16, (short) 32),
+                "sentinel inside the window must flip the verdict");
+    }
+
     private static byte[] randomBytes(int n) {
         byte[] b = new byte[n];
         RNG.nextBytes(b);
