@@ -8,32 +8,17 @@ import javacard.framework.ISOException;
 import javacard.framework.Util;
 
 /**
- * Helpers for writing simple BER-TLV (single-byte tag, single-byte length) records into a
- * destination buffer.
- *
- * <p>Usage is intentionally restricted to the simplified form {@code [tag(1) | length(1) |
+ * Helpers for writing simplified BER-TLV records of the form {@code [tag(1) | length(1) |
  * value(length)]} with {@code length ∈ [0, 255]} per {@code docs/specs/meap-1.md §TLV-encoding}.
- * This deliberately departs from strict BER-TLV (which mandates long-form {@code 0x81 LL} for
- * length ≥ 128); the meowl wire trades strict ISO compliance for parser simplicity, since every TLV
- * value is well below 256 bytes. Audit F-36 corrected an earlier {@code length ≤ 127} claim that
- * contradicted both the spec and the {@link #MAX_VALUE_LEN} constant.
  *
  * <p>Every method returns the offset immediately past the last byte written, so call sites can
- * chain writes without keeping a separate cursor variable. Misuse (oversized value, illegal offset,
- * source/destination overrun) raises {@link Constants#SW_WRONG_LENGTH} rather than a silent
- * buffer-corruption bug.
+ * chain writes without keeping a separate cursor. Misuse (oversized value, illegal offset,
+ * source/destination overrun) raises {@link Constants#SW_WRONG_LENGTH}.
  */
 public final class ApduTlv {
 
     /**
-     * Maximum value length supported by the simplified single-byte length form.
-     *
-     * <p>The single-byte length encodes the inclusive range {@code [0, 255]} per MEAP-1
-     * §TLV-encoding; previously this constant was {@code 0x7F} (audit M-1.06), which over-
-     * restricted the cap below what the spec and the host parser accept. Today every value the
-     * applet emits is well below 128 bytes (the largest is the 33-byte compressed authentikey), but
-     * raising the cap to {@code 0xFF} aligns the three TLV touch-points (spec, applet,
-     * tools/core/Tlv) so a future field with 128+ bytes is unblocked.
+     * Maximum value length supported by the single-byte length form (inclusive {@code [0, 255]}).
      */
     public static final short MAX_VALUE_LEN = (short) 0xFF;
 
@@ -94,12 +79,10 @@ public final class ApduTlv {
     }
 
     /**
-     * Reserves a TLV header at {@code offset}, returning the offset where the caller should start
-     * writing the value. After the caller has written {@code length} bytes the header is back-
-     * patched via {@link #finishReserved(byte[], short, short)}.
-     *
-     * <p>This two-step API is the JavaCard equivalent of streaming TLV: the value is built directly
-     * inside the destination buffer with no intermediate copy.
+     * Reserves a TLV header at {@code offset}, returning the offset where the value should be
+     * written. After {@code length} value bytes have been emitted the header is back-patched via
+     * {@link #finishReserved(byte[], short, short)} — the streaming-TLV equivalent that lets the
+     * value be built directly in the destination buffer with no intermediate copy.
      *
      * @return the offset immediately after the reserved 2-byte header
      */

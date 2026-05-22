@@ -17,25 +17,18 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Composes the apdu4j {@link BIBO} decorator stack used by the {@code meowl} CLI.
- *
- * <p>The stack is built bottom-up so the wire-side end of the chain is the raw transport, and the
- * application-side end is what subcommands {@code transmit()} against. From bottom to top:
+ * Composes the apdu4j {@link BIBO} decorator stack used by the {@code meowl} CLI. Bottom-up:
  *
  * <ol>
- *   <li>raw transport (PC/SC channel, MockBIBO replay, JCardSim, …)
- *   <li>{@link RetryWithRightLengthWrapper} — re-issues commands automatically when the card
- *       answers {@code 6CXX} indicating the host underestimated the response length
- *   <li>{@link GetResponseWrapper} — turns the multi-APDU {@code GET RESPONSE} dance for {@code
- *       61XX} into a single logical exchange
- *   <li>{@link DumpingBIBO} (optional) — records every APDU pair to a text file in {@link
- *       apdu4j.core.MockBIBO}'s replay format so a debug session can be re-run offline
- *   <li>{@link LoggingBIBO} (optional) — emits one TRACE-level SLF4J line per APDU exchange
+ *   <li>raw transport (PC/SC, MockBIBO replay, JCardSim, …)
+ *   <li>{@link RetryWithRightLengthWrapper} — auto-retries {@code 6CXX} length mismatches
+ *   <li>{@link GetResponseWrapper} — coalesces {@code 61XX} GET-RESPONSE chains
+ *   <li>{@link DumpingBIBO} (optional) — appends every APDU pair to a MockBIBO-replay file
+ *   <li>{@link LoggingBIBO} (optional) — emits one TRACE SLF4J line per exchange
  * </ol>
  *
- * <p>Layering matters: logging and dumping must observe the <em>logical</em> exchange (after retry
- * + GET-RESPONSE coalescing), so they sit on top. Dumping is below logging so the log can include a
- * single tracer line per command even when dumping is also active.
+ * <p>Logging and dumping sit on top so they observe the logical exchange after retry / GET-RESPONSE
+ * coalescing; dumping is below logging so a single trace line covers each command.
  */
 public final class BiboStack {
 
@@ -63,10 +56,8 @@ public final class BiboStack {
             bibo = bibo.then(b -> LoggingBIBO.wrap(b, LOG::trace));
         }
         if (dumpStream != null) {
-            // Outermost wrapper so a `close()` call on the returned BIBO is guaranteed to flush
-            // and release the dump file's OutputStream, even if the inner apdu4j decorators do
-            // not propagate close() to their delegate (DumpingBIBO does not own the stream's
-            // lifecycle by design — see its javadoc).
+            // Outermost wrapper so close() flushes the dump file; DumpingBIBO does not own its
+            // stream's lifecycle by design.
             bibo = new ClosingBibo(bibo, dumpStream);
         }
         return bibo;
@@ -82,10 +73,7 @@ public final class BiboStack {
         }
     }
 
-    /**
-     * BIBO decorator whose only responsibility is to close an external resource (the dump file's
-     * {@link FileOutputStream}) when the chain is closed. Transceives are forwarded verbatim.
-     */
+    /** BIBO decorator that closes an external {@link FileOutputStream} when the chain is closed. */
     private static final class ClosingBibo implements BIBO {
         private final BIBO delegate;
         private final FileOutputStream owned;
@@ -108,8 +96,7 @@ public final class BiboStack {
                 try {
                     owned.close();
                 } catch (IOException ignored) {
-                    // We are already on the close path; deliberately swallow so the close() of the
-                    // outer transport chain remains exception-free, matching the BIBO contract.
+                    // Swallow: BIBO.close() must be exception-free.
                 }
             }
         }

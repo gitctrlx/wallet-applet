@@ -13,15 +13,10 @@ import java.util.Arrays;
 import java.util.Objects;
 
 /**
- * Host-side client for the MEAP-2 Secure Channel.
+ * Host-side client for the MEAP-2 Secure Channel. One instance corresponds to one open session,
+ * identified by the ephemeral keypair generated at {@link #handshake} time.
  *
- * <p>One instance corresponds to one open Secure Channel session, identified by the ephemeral
- * keypair generated at {@link #handshake} time. The client tracks the {@code IV} counter, MAC key
- * and encryption key in plain Java fields; we do not attempt cryptographic memory hygiene on the
- * host because the underlying {@link String} / {@code byte[]} primitives the JDK provides cannot
- * give us reliable scrubbing anyway.
- *
- * <p>The implementation strictly mirrors the wire layout in {@code docs/specs/meap-2.md}:
+ * <p>Wire layout (see {@code docs/specs/meap-2.md}):
  *
  * <ul>
  *   <li>handshake: {@code [client_eph_pub(65)]} → {@code [card_eph_pub(65) | sigLen(2 BE) | sig]}
@@ -31,6 +26,9 @@ import java.util.Objects;
  *   <li>inbound MAC = HMAC-SHA-256(K_mac, [CLA INS P1 P2 LC] ‖ IV ‖ CT)[0..16]
  *   <li>outbound MAC = HMAC-SHA-256(K_mac, 0xFF ‖ IV ‖ CT)[0..16]
  * </ul>
+ *
+ * <p>Keys live in plain Java fields; the JDK offers no reliable {@code byte[]} scrubbing, so we do
+ * not attempt cryptographic memory hygiene on the host.
  */
 public final class SecureChannelClient {
 
@@ -81,13 +79,12 @@ public final class SecureChannelClient {
     }
 
     /**
-     * Drives the {@code INIT_SECURE_CHANNEL} handshake to completion, verifies the card's ECDSA
-     * signature with the supplied authentikey, and derives the session keys.
+     * Drives the {@code INIT_SECURE_CHANNEL} handshake, verifies the card's ECDSA signature with
+     * the supplied authentikey, and derives the session keys.
      *
-     * @return a snapshot of the session state — the same fields are also accessible via {@link
-     *     #cardEphPub()} / {@link #handshakeSignature()}, but returning them here makes the
-     *     handshake side-effect explicit
-     * @throws SecureChannelException if any of the wire / cryptographic checks fail
+     * @return a snapshot of the session state (also accessible via {@link #cardEphPub} / {@link
+     *     #handshakeSignature})
+     * @throws SecureChannelException on any wire or cryptographic failure
      */
     public Handshake handshake() throws BIBOException {
         var keys = HostCrypto.generateEphKeyPair();
@@ -109,11 +106,8 @@ public final class SecureChannelClient {
         }
 
         cardEphPub = Arrays.copyOfRange(body, 0, HostCrypto.EC_POINT_UNCOMPRESSED_LEN);
-        // Audit F-24: validate the SEC1 0x04 prefix immediately after parsing the handshake
-        // body. ECDH (HostCrypto.ecdhSharedX) would also catch this, but failing here lets the
-        // host log the precise wire-format mismatch instead of an ECDH-side
-        // IllegalArgumentException
-        // that could be confused with an off-curve peer key.
+        // Validate the SEC1 0x04 prefix here so a wire-format mismatch surfaces with a clear
+        // diagnostic instead of an ECDH-side IllegalArgumentException further downstream.
         if ((cardEphPub[0] & 0xFF) != 0x04) {
             throw new SecureChannelException(
                     0,
@@ -156,10 +150,8 @@ public final class SecureChannelClient {
         kMac = Arrays.copyOfRange(okm, HostCrypto.AES_KEY_LEN, HostCrypto.AES_KEY_LEN * 2);
         ivBase = Arrays.copyOfRange(okm, HostCrypto.AES_KEY_LEN * 2, HKDF_OKM_LEN);
         inboundCounter = 0L;
-        // outboundCounter starts at 0 on the card and is incremented to 1 before the first
-        // wrap, so the first IV we expect on inbound (host-side outbound from the card) has
-        // counter = 1. The strict-greater monotonicity check requires lastOutboundCounter
-        // to start at 0 (anything > 0 passes).
+        // Card increments outboundCounter to 1 before the first wrap; lastOutboundCounter
+        // starts at 0 so the strict-greater check accepts the first IV.
         lastOutboundCounter = 0L;
         invalidated = false;
 
@@ -167,12 +159,9 @@ public final class SecureChannelClient {
     }
 
     /**
-     * Encrypts the given inner APDU, sends it inside an {@code OPEN_SECURE_CHANNEL} envelope, and
-     * decrypts the card's response.
-     *
-     * @param innerApdu the plaintext inner APDU bytes (ISO 7816-4 short-form, including header)
-     * @return the decrypted inner response data; the outer SW is verified to be 0x9000 — any other
-     *     value triggers {@link SecureChannelException}
+     * Encrypts {@code innerApdu}, sends it inside an {@code OPEN_SECURE_CHANNEL} envelope, and
+     * returns the decrypted inner response. The outer SW must be {@code 0x9000} — any other value
+     * triggers {@link SecureChannelException}.
      */
     public byte[] sendInner(byte[] innerApdu) throws BIBOException {
         requireSession();
@@ -183,11 +172,9 @@ public final class SecureChannelClient {
         byte[] ciphertext = HostCrypto.aesCbcEncrypt(kEnc, iv, innerApdu);
 
         int lc = iv.length + ciphertext.length + HostCrypto.MAC_LEN;
-        // MEAP-2 envelopes ride short-form APDUs; if lc would exceed the single-byte LC
-        // field, the host's MAC input (which packs lc into a single byte below) would diverge
-        // from what the card observes on the wire and the envelope would be silently
-        // rejected with an obscure MAC mismatch. Reject explicitly so callers get an
-        // actionable error. (Audit H-1.05.)
+        // MEAP-2 envelopes ride short-form APDUs; if lc exceeds the single-byte LC field, the
+        // host's MAC input (which packs lc into one byte) would diverge from what the card sees
+        // and the envelope would be silently rejected with an obscure MAC mismatch.
         if (lc > 0xFF) {
             throw new SecureChannelException(
                     0,
@@ -202,9 +189,8 @@ public final class SecureChannelClient {
         ResponseAPDU resp =
                 bibo.transmit(new CommandAPDU(CLA_MEOWL, INS_OPEN_SC, 0x00, 0x00, envelope));
         if (resp.getSW() != 0x9000) {
-            // The card has already torn down its session on its end; mirror that on the host
-            // so a subsequent sendInner() fails fast rather than encrypting under stale keys.
-            // (Audit H-1.12.)
+            // The card has already torn down its session; mirror that on the host so a
+            // subsequent sendInner() fails fast rather than encrypting under stale keys.
             invalidate();
             throw new SecureChannelException(
                     resp.getSW(),
@@ -254,10 +240,8 @@ public final class SecureChannelClient {
 
     /**
      * Wipes the host-side session keys and marks the session invalidated; subsequent {@link
-     * #sendInner} calls will fail fast with {@link IllegalStateException}. Called whenever a
-     * cryptographic check on the inbound or outbound side fails — the card has already torn down
-     * its end at that point, so any further attempt to send under the current keys would only
-     * produce a confusing chain of MAC mismatches.
+     * #sendInner} calls fail fast with {@link IllegalStateException}. Called on any cryptographic
+     * failure so further sends do not produce a confusing chain of MAC mismatches.
      */
     private void invalidate() {
         if (kEnc != null) Arrays.fill(kEnc, (byte) 0);
@@ -270,10 +254,9 @@ public final class SecureChannelClient {
     }
 
     /**
-     * Builds the inbound IV from a 64-bit counter: the counter occupies the low 8 bytes of a
-     * 16-byte big-endian buffer, with the high 8 bytes left zero. The card's strict {@code IV >
-     * last_inbound_IV} check operates on the full 16-byte buffer, so this layout makes the IV
-     * monotonic in the obvious way.
+     * Builds the inbound IV from a 64-bit counter: counter occupies the low 8 bytes of a 16-byte
+     * big-endian buffer, high 8 bytes zero. This makes the IV monotonic for the card's strict
+     * {@code IV > last_inbound_IV} check.
      */
     private static byte[] ivFromCounter(long counter) {
         byte[] iv = new byte[HostCrypto.AES_BLOCK_LEN];
@@ -307,10 +290,9 @@ public final class SecureChannelClient {
             throw new SecureChannelException(0, "outbound envelope MAC mismatch");
         }
 
-        // Defense in depth (audit M-1.13): the outbound counter packed into IV ⊕ IV_base must
-        // be strictly greater than the previously observed one. The MAC check above already
-        // gates this on integrity, but a compromised silicon that re-used a counter would
-        // slip past — so we mirror the card's strict-greater rule on the host side too.
+        // Defence in depth: the outbound counter packed into IV ⊕ IV_base must be strictly
+        // greater than the previously observed one. The MAC check already gates on integrity,
+        // but a compromised silicon could replay; mirror the card's strict-greater rule here.
         long observed = extractOutboundCounter(iv, ivBase);
         if (Long.compareUnsigned(observed, lastOutboundCounter) <= 0) {
             invalidate();
@@ -327,10 +309,9 @@ public final class SecureChannelClient {
     }
 
     /**
-     * Recovers the 64-bit outbound counter packed into the low 8 bytes of an outbound IV. The card
-     * constructs the IV as {@code IV_base XOR counter} where {@code counter} occupies the low 8
-     * bytes of a 16-byte buffer (high 8 bytes zero); XOR-ing with {@code IV_base} reverses the
-     * mask.
+     * Recovers the 64-bit outbound counter from the IV. The card encodes {@code IV = IV_base XOR
+     * counter} with the counter in the low 8 bytes (high 8 zero); XOR-ing with {@code IV_base}
+     * reverses the mask.
      */
     private static long extractOutboundCounter(byte[] iv, byte[] ivBase) {
         long counter = 0L;
@@ -342,10 +323,7 @@ public final class SecureChannelClient {
         return counter;
     }
 
-    /**
-     * Constant-time equality check; mirrors the applet-side {@code ConstantTime.equals} so a timing
-     * attacker observing the host has no easier path than observing the card.
-     */
+    /** Constant-time equality; mirrors the applet-side {@code ConstantTime.equals}. */
     private static boolean constantTimeEquals(byte[] a, byte[] b) {
         if (a.length != b.length) return false;
         int diff = 0;

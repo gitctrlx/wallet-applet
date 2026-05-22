@@ -149,15 +149,14 @@ class LifecycleStateTest {
     }
 
     /**
-     * InTx variants — used by {@link MeowlApplet#wipe()} and {@code handleSetup} so the lifecycle
-     * mutation joins the caller's already-open transaction (audit F-15 atomic-wipe support API).
-     * The integration coverage in {@code MeowlAppletTest.lifecycleRevertsToUninitialized} pins the
-     * end-to-end outcome; the unit tests below pin the FSM-level invariants — illegal-jump
-     * rejection and the four-step legal forward chain — without the applet routing layer in front
-     * of them (audit F-40).
+     * InTx variants used by {@link MeowlApplet#wipe()} and {@code handleSetup} so the lifecycle
+     * mutation joins the caller's already-open transaction (atomic-wipe support API). The
+     * integration coverage in {@code MeowlAppletTest.lifecycleRevertsToUninitialized} pins the
+     * end-to-end outcome; these unit tests pin the FSM-level invariants — illegal-jump rejection
+     * and the four-step legal forward chain.
      */
     @Nested
-    @DisplayName("transitionToInTx() / resetInTx(): F-15 InTx variants")
+    @DisplayName("transitionToInTx() / resetInTx(): InTx variants")
     class InTxVariants {
 
         private LifecycleState newInstance() {

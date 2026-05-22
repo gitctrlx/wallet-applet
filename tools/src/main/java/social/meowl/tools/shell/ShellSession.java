@@ -21,16 +21,9 @@ import social.meowl.tools.proto.SecureChannelClient;
 
 /**
  * Stateful REPL backend for {@code meowl shell}: holds the long-lived {@link APDUBIBO} and any open
- * {@link SecureChannelClient} across multiple user inputs, dispatching each command line through a
- * tiny built-in parser.
- *
- * <p>Intentionally not picocli: the shell loop is a hot path that benefits from the lower
- * allocation and simpler error handling of a direct dispatcher. Picocli's reflective parsing is
- * also awkward when the same instance has to parse hundreds of commands per session — every
- * subcommand object is constructed once per call.
- *
- * <p>Threading: a single instance is owned by exactly one shell loop. There is no synchronisation
- * because every method runs on the JLine reader thread.
+ * {@link SecureChannelClient} across user inputs, dispatching each line through a tiny built-in
+ * parser (deliberately not picocli, which would re-instantiate every subcommand per call).
+ * Single-threaded: one instance per shell loop, no synchronisation.
  */
 public final class ShellSession {
 
@@ -65,10 +58,7 @@ public final class ShellSession {
         sc = null;
     }
 
-    /**
-     * Dispatches a single command line. The grammar is intentionally tiny — see {@link #help} for
-     * the full set. Unknown commands are reported to {@code err}.
-     */
+    /** Dispatches one command line; see {@link #help} for the full grammar. */
     public void execute(String line) throws BIBOException {
         String trimmed = line.trim();
         if (trimmed.isEmpty()) return;

@@ -31,21 +31,10 @@ import social.meowl.tools.shell.ShellSession;
 import social.meowl.tools.transport.ReaderPreferences;
 
 /**
- * {@code meowl shell} — interactive REPL with persistent PC/SC connection and SC session.
- *
- * <p>Differs from one-shot subcommands in three ways:
- *
- * <ol>
- *   <li>The card connection lives for the duration of the shell, so a {@code sc handshake} command
- *       is followed by any number of {@code sc send} commands without re-running the handshake.
- *   <li>Inputs go through a JLine {@link LineReader} with persistent history (default at {@code
- *       ~/.meowl/history}), tab-completion of the verb set, and standard editing keys.
- *   <li>The prompt reflects the current session state — {@code meowl[sc]>} when an SC session is
- *       open, {@code meowl[disconnected]>} on startup, otherwise plain {@code meowl>}.
- * </ol>
- *
- * <p>Pressing {@code Ctrl-D} or typing {@code exit} / {@code quit} terminates the loop and releases
- * the card.
+ * {@code meowl shell} — interactive REPL with persistent PC/SC connection and Secure Channel
+ * session, JLine line editing, persistent history at {@code ~/.meowl/history}, and tab-completion
+ * of the verb set. Prompt reflects session state. {@code Ctrl-D} / {@code exit} / {@code quit} tear
+ * it down.
  */
 @Command(
         name = "shell",

@@ -109,11 +109,8 @@ public final class SecureChannel {
     private final HmacSha hmac;
 
     /**
-     * Session MAC key {@code K_mac}. Lives in {@link JCSystem#CLEAR_ON_DESELECT} transient memory;
-     * written by {@link #initHandshake} from the HKDF output and consumed by every {@link #unwrap}
-     * / {@link #wrap} via {@link HmacSha#init}. Using a plain byte array (rather than {@code
-     * HMACKey}) lets the same code path work on cards that omit {@code TYPE_HMAC*} from their key
-     * builder catalogue (notably J3R180).
+     * Session MAC key {@code K_mac} (CLEAR_ON_DESELECT). Stored as a byte array rather than {@code
+     * HMACKey} so the same code path works on cards (J3R180) that omit {@code TYPE_HMAC*}.
      */
     private final byte[] macKey;
 
@@ -139,12 +136,10 @@ public final class SecureChannel {
     private final byte[] openFlag;
 
     /**
-     * @param sharedHmac256 shared HMAC-SHA-256 engine reused by HKDF and the envelope MAC; safe to
-     *     share because APDU dispatch is single-threaded.
-     * @param sharedScratch singleton transient buffer (allocated by {@link MeowlApplet}) of at
-     *     least {@link #HS_SCRATCH_LEN} bytes, repurposed as handshake scratch and — since the
-     *     consumers never overlap on a single-threaded dispatcher — reused by {@link EcdsaK1},
-     *     {@link Schnorr} and {@link Ed25519}.
+     * @param sharedHmac256 shared HMAC-SHA-256 engine reused by HKDF and the envelope MAC
+     * @param sharedScratch singleton transient buffer of at least {@link #HS_SCRATCH_LEN} bytes,
+     *     repurposed as handshake scratch; reused by {@link EcdsaK1}, {@link Schnorr} and {@link
+     *     Ed25519} since APDU dispatch is single-threaded
      */
     public SecureChannel(Authentikey authentikey, HmacSha sharedHmac256, byte[] sharedScratch) {
         if ((short) sharedScratch.length < HS_SCRATCH_LEN) {
@@ -162,9 +157,8 @@ public final class SecureChannel {
         this.aesCbc = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
         this.ecdsa = Signature.getInstance(Signature.ALG_ECDSA_SHA_256, false);
 
-        // Every session-scoped buffer lives in CLEAR_ON_DESELECT memory — the canonical lifecycle
-        // for SCP-style session state, and a hard requirement on cards whose install-time
-        // CLEAR_ON_RESET pool is too small to host this many parallel allocations (J3R180).
+        // CLEAR_ON_DESELECT for every session-scoped buffer — standard SCP lifecycle, and a hard
+        // requirement on cards (J3R180) whose CLEAR_ON_RESET pool is too small.
         this.encKey =
                 (AESKey)
                         KeyBuilder.buildKey(
@@ -270,21 +264,19 @@ public final class SecureChannel {
                 Constants.EC_SCALAR_LEN);
         hkdf.expand(HKDF_INFO, (short) 0, (short) HKDF_INFO.length, okm, (short) 0, OKM_LEN);
         encKey.setKey(okm, (short) 0);
-        // K_mac lives in transient byte storage so the same code path works on cards without
-        // TYPE_HMAC* in their key builder catalogue (J3R180).
+        // K_mac in transient byte storage: the same code path works on cards without TYPE_HMAC*
+        // in their key builder catalogue (J3R180).
         Util.arrayCopyNonAtomic(okm, Constants.SC_KEY_LEN, macKey, (short) 0, Constants.SC_KEY_LEN);
 
         Util.arrayFillNonAtomic(lastInboundIv, (short) 0, Constants.SC_BLOCK_LEN, (byte) 0);
         Util.arrayFillNonAtomic(outboundCounter, (short) 0, Constants.SC_BLOCK_LEN, (byte) 0);
         openFlag[0] = (byte) 1;
 
-        // Sign (card_eph_pub ‖ client_eph_pub) with the authentikey. The two pubkeys live in
-        // separate non-adjacent regions of hsScratch, so we feed them via Signature.update +
-        // Signature.sign rather than copying them contiguously.
+        // Sign (card_eph_pub ‖ client_eph_pub) with the authentikey via update + sign so the two
+        // non-adjacent regions of hsScratch are concatenated without an intermediate copy.
         ecdsa.init(authentikey.privateKey(), Signature.MODE_SIGN);
         ecdsa.update(hsScratch, HS_CARD_PUB, CLIENT_EPH_PUB_LEN);
-        // sign() output goes into the APDU buffer at the final response offset (cardPub + 2-byte
-        // length field), so we don't need an intermediate copy.
+        // sign() output goes directly into the APDU buffer at the final response offset.
         short sigOffset = (short) (CLIENT_EPH_PUB_LEN + 2);
         short sigLen =
                 ecdsa.sign(hsScratch, HS_CLIENT_PUB, CLIENT_EPH_PUB_LEN, apduBuffer, sigOffset);
@@ -323,9 +315,8 @@ public final class SecureChannel {
         short ctOffset = (short) (ivOffset + Constants.SC_BLOCK_LEN);
         short macOffset = (short) (ctOffset + ctLen);
 
-        // Replay defense before MAC verification: a non-monotonic IV is a hard reject without
-        // burning an HMAC computation, and IV bytes are public so a non-constant-time compare is
-        // fine here.
+        // Replay defense before MAC verification: reject non-monotonic IVs cheaply. IV bytes are
+        // public, so a non-constant-time compare is fine.
         if (compare16(apduBuffer, ivOffset, lastInboundIv, (short) 0) <= 0) {
             reset();
             ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
@@ -416,26 +407,16 @@ public final class SecureChannel {
     }
 
     /**
-     * Lexicographic 16-byte big-endian comparison used solely for the inbound IV monotonicity
-     * check. Returns {@code > 0} if {@code a > b}, {@code 0} on equality, {@code < 0} otherwise.
-     *
-     * <p>IV bytes are public — they ride in the clear at the head of every inbound envelope — so
-     * timing-based side channels reveal nothing secret. Even so, audit F-28 brings this helper into
-     * the same constant-time mask-based style the rest of the channel uses ({@link
-     * ConstantTime#equals}, {@link Bignat#ctLessThan}) so the codebase speaks one defence-in-depth
-     * dialect; the previous early-return ternary was a stylistic outlier.
+     * Constant-time 16-byte big-endian three-way comparison: returns {@code > 0} iff {@code a > b},
+     * {@code 0} on equality, {@code < 0} otherwise. Used solely for the inbound IV monotonicity
+     * check; mask-based to keep the channel speaking one defence-in-depth dialect with {@link
+     * ConstantTime#equals} and {@link Bignat#ctLessThan}.
      */
     static short compare16(byte[] a, short aOff, byte[] b, short bOff) {
-        // gtMask / ltMask each track "have we already proven a > b / a < b at some earlier
-        // (more significant) byte?". Once one of them is set, the per-byte comparison must not
-        // overwrite the earlier verdict — masks are sticky.
-        //
-        // Per-byte mask extraction stays inside the short domain so the JC 3.0.5 CAP converter
-        // accepts the code without an int-support directive: a short's bit 15 is the sign bit,
-        // {@code (s >>> 15) & 1} returns 1 iff {@code s < 0}, and negating broadcasts that bit
-        // into the {@code 0x0000} / {@code 0xFFFF} mask we want. The previous {@code (s >> 31) &
-        // 0xFFFF} formulation relied on a 32-bit shift and a {@code 0xFFFF} int literal — both
-        // are int-only operations on default-profile JC cards (audit F-46, follow-up to F-28).
+        // gtMask / ltMask track "have we already proven a > b / a < b at a more significant
+        // byte?". Once set, a downstream byte must not overwrite the verdict — masks are sticky.
+        // Sign-bit extraction stays in the short domain so the JC 3.0.5 CAP converter accepts
+        // it without an int-support directive.
         short gtMask = 0;
         short ltMask = 0;
         for (short i = 0; i < Constants.SC_BLOCK_LEN; i++) {
@@ -445,66 +426,47 @@ public final class SecureChannel {
             short diffBA = (short) (bv - av);
             short ltHere = (short) -((diffAB >>> 15) & 1);
             short gtHere = (short) -((diffBA >>> 15) & 1);
-            // Promote ltHere/gtHere only if neither verdict was reached at a more significant
-            // byte. ~(gtMask | ltMask) is 0xFFFF iff "still tied so far".
+            // Promote ltHere/gtHere only while still tied at every more significant byte.
             short stillTied = (short) ~(gtMask | ltMask);
             ltMask |= (short) (ltHere & stillTied);
             gtMask |= (short) (gtHere & stillTied);
         }
-        // Materialise the three-way result without a branch: +1 / -1 / 0.
+        // Branch-free three-way result: +1 / -1 / 0.
         return (short) ((gtMask & 1) - (ltMask & 1));
     }
 
     /**
-     * Validates and strips PKCS#5/#7 padding from an AES-CBC plaintext block in place. Returns the
-     * unpadded length. On any malformed pad raises {@link Constants#SW_SECURE_CHANNEL_FAILED}.
+     * Validates and strips PKCS#5/#7 padding from an AES-CBC plaintext block in place; returns the
+     * unpadded length. Any malformed pad raises {@link Constants#SW_SECURE_CHANNEL_FAILED}.
      *
-     * <p>Per audit F-27 every padding-error branch — bad block alignment, pad byte zero, pad byte
-     * larger than the block size, or a body byte that does not equal the pad byte — folds into a
-     * single accumulator {@code failMask} that is checked once at the end. This eliminates the
-     * three early-return {@code ISOException.throwIt} calls and their associated timing fan-out
-     * over the secret-derived plaintext bytes. The Encrypt-then-MAC layer above already gates any
-     * externally-observable signal by rejecting tampered ciphertexts before this method runs, so
-     * the change is defence-in-depth — but it also matches the discipline used by every other
-     * secret-touching helper in the codebase ({@link ConstantTime#equals}, {@link Bignat}).
+     * <p>Every padding-error branch folds into a single accumulator {@code failMask} checked once
+     * at the end, so the time taken here is independent of which pad invariant failed.
+     * Encrypt-then-MAC above already gates externally-observable signals; the constant-time walk is
+     * defence-in-depth aligned with the rest of the secret-touching code.
      */
     static short stripPkcs5(byte[] buf, short offset, short paddedLen) {
-        // The block-alignment check stays branchful: it operates on plaintext length only, which
-        // is structural metadata derived from the ciphertext length the AES engine accepted, not
-        // from any secret byte. Returning early here also keeps the loop bound below well-defined.
+        // Block-alignment is structural metadata (ciphertext length the AES engine accepted),
+        // not a secret-derived byte, so an early return is safe here.
         if (paddedLen <= 0 || (short) (paddedLen % Constants.SC_BLOCK_LEN) != 0) {
             ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
         }
         short padVal = (short) (buf[(short) (offset + paddedLen - 1)] & 0xFF);
-        // failMask: 0 = OK, non-zero = at least one pad invariant failed. Bits are OR-accumulated
-        // from per-check sub-masks so the time spent here is independent of which (or how many)
-        // invariants were violated.
-        //
-        // All sign-bit extractions stay inside the short domain — see compare16 (F-46) for the
-        // rationale — so the JC 3.0.5 CAP converter accepts the code without an int-support
-        // directive. For any short {@code s}, {@code (s >>> 15) & 1} is 1 iff {@code s < 0}, and
-        // negating broadcasts that into a {@code 0xFFFF} mask.
+        // failMask: 0 = OK, non-zero = at least one invariant failed. All sign-bit extractions
+        // stay inside the short domain so the JC 3.0.5 CAP converter accepts them; for any short
+        // {@code s}, {@code (s >>> 15) & 1} is 1 iff {@code s < 0}.
         short failMask = 0;
-        // padVal == 0 → reject. (padVal | -padVal) is non-zero iff padVal != 0; its sign bit is
-        // set iff padVal != 0 (because -padVal is negative for padVal ∈ [1, 255]). Subtracting
-        // that bit from 1 yields the failure bit.
+        // padVal == 0 → reject. (padVal | -padVal) has sign bit set iff padVal != 0.
         short padNonZeroBit = (short) (((short) (padVal | -padVal) >>> 15) & 1);
         failMask |= (short) (1 - padNonZeroBit);
         // padVal > BLOCK_LEN → reject. (BLOCK_LEN - padVal) is negative iff padVal > BLOCK_LEN.
         failMask |= (short) (((short) (Constants.SC_BLOCK_LEN - padVal) >>> 15) & 1);
-        // For every byte in the trailing block (the only positions that could legitimately hold
-        // pad bytes), check that it equals padVal whenever its distance from the end is ≤ padVal.
-        // Iterating over the full SC_BLOCK_LEN tail keeps the loop count constant; per-byte
-        // contribution to failMask is gated by the "this position must match" mask.
+        // Walk the full trailing block at constant cost; per-byte contribution is gated by the
+        // "this position must equal padVal" mask.
         for (short i = 0; i < Constants.SC_BLOCK_LEN; i++) {
             short distFromEnd = (short) (i + 1); // 1..BLOCK_LEN
-            // mustMatch = -1 iff distFromEnd ≤ padVal, else 0. (padVal - distFromEnd) is
-            // non-negative iff the byte is inside the pad region; sign bit detects it.
             short outsidePad = (short) (((short) (padVal - distFromEnd) >>> 15) & 1);
             short mustMatch = (short) (outsidePad - 1);
             short bv = (short) (buf[(short) (offset + paddedLen - distFromEnd)] & 0xFF);
-            // mismatch: bv ⊕ padVal ∈ [0, 255]; gated by mustMatch, then collapsed to a single
-            // bit via the same is-non-zero pattern used for padVal == 0 above.
             short mismatchHere = (short) ((bv ^ padVal) & mustMatch);
             failMask |= (short) (((short) (mismatchHere | -mismatchHere) >>> 15) & 1);
         }

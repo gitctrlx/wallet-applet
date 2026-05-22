@@ -12,15 +12,11 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Spec;
 
 /**
- * Root command for the {@code meowl} CLI.
+ * Root command for the {@code meowl} CLI. Owns the subcommand tree and the {@link GlobalOptions}
+ * mixin every subcommand inherits.
  *
- * <p>Owns the subcommand tree and the {@link GlobalOptions} mixin that every subcommand inherits.
- * Calling {@code meowl} without a subcommand prints the usage banner and exits with the picocli
- * "missing command" exit code, matching POSIX conventions.
- *
- * <p>Subcommands are explicitly enumerated rather than auto-discovered: explicit registration is
- * GraalVM-native-image-friendly (no service-loader scan at startup) and surfaces command name
- * collisions at compile time rather than at first invocation.
+ * <p>Subcommands are explicitly enumerated for GraalVM native-image compatibility (no
+ * service-loader scan at startup) and to surface command-name collisions at compile time.
  */
 @Command(
         name = "meowl",
@@ -49,10 +45,7 @@ public final class MeowlCli implements Callable<Integer> {
 
     @Spec public CommandLine.Model.CommandSpec spec;
 
-    /**
-     * Default behaviour when invoked without a subcommand: print the usage banner so users learn
-     * the available verbs without having to type {@code meowl --help}.
-     */
+    /** Default behaviour when invoked without a subcommand: print the usage banner. */
     @Override
     public Integer call() {
         spec.commandLine().usage(System.out);

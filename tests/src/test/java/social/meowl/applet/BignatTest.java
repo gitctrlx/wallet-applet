@@ -151,8 +151,6 @@ class BignatTest {
         assertEquals(expected, got);
     }
 
-    /* ── mask-based constant-time primitives (audit F-35) ────────────────────────────────── */
-
     @Test
     @DisplayName("condSubInPlace: mask=0 is a no-op, mask=-1 subtracts")
     void condSubMaskedBranches() {

@@ -12,18 +12,12 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * The complete set of meowl applet INS bytes mirrored from {@code social.meowl.applet.Constants}.
+ * Host-side mirror of the meowl applet INS bytes (the applet module targets Java 8 bytecode for the
+ * JavaCard converter, which rejects {@code java.lang.Enum} and cannot expose enums to host code).
+ * Each entry carries the wire byte, kebab-case CLI name, channel placement, and a one-line
+ * description for {@code --help} / shell completion.
  *
- * <p>Why duplicate? The applet module targets Java 8 bytecode for the JavaCard converter, so it
- * cannot expose enums to the host code (the converter rejects {@code java.lang.Enum}). This enum is
- * therefore the host-side authoritative copy: every value is annotated with its applet counterpart,
- * the wire byte, the kebab-case CLI name, whether the operation must be wrapped in a Secure Channel
- * envelope, and a one-line description for {@code --help} / shell completion.
- *
- * <p><strong>Maintenance contract:</strong> if you add an INS byte to the applet, add the matching
- * entry here and run {@code MeowlInsnTest#everyConstantsInsHasAnEnumEntry} (forthcoming reflection
- * test) — it walks the applet {@code Constants} class and fails if any {@code INS_*} field has no
- * counterpart in this enum.
+ * <p><strong>Maintenance:</strong> any new applet INS byte must be mirrored here.
  */
 public enum MeowlInsn {
     GET_INFO(

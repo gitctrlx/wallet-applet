@@ -8,27 +8,17 @@ import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
 
 /**
- * Coordinates the {@code RESET_TO_FACTORY} multi-step trigger specified in {@code
- * docs/specs/meap-3.md}.
+ * Multi-step {@code RESET_TO_FACTORY} trigger per {@code docs/specs/meap-3.md}.
  *
- * <p>Semantics:
+ * <p>Each {@code RESET_TO_FACTORY} APDU decrements an internal counter via {@link
+ * #recordInvocation}; any other APDU re-arms it via {@link #rearm()}. The status word returned to
+ * the host is always {@code SW_RESET_COUNTDOWN_BASE + remaining}, communicating the countdown
+ * verbatim. When {@code remaining} reaches zero the {@link WipeTrigger} is invoked, the counter is
+ * re-armed, and {@code SW_RESET_COUNTDOWN_BASE + 0} is thrown.
  *
- * <ul>
- *   <li>Each {@code RESET_TO_FACTORY} APDU calls {@link #recordInvocation(WipeTrigger)} which
- *       decrements an internal counter.
- *   <li>Any non-{@code RESET_TO_FACTORY} APDU calls {@link #rearm()} to reset the counter back to
- *       {@link Constants#RESET_REQUIRED_INVOCATIONS}.
- *   <li>The status word returned to the host is always {@code SW_RESET_COUNTDOWN_BASE + remaining},
- *       communicating the countdown verbatim.
- *   <li>When {@code remaining} reaches zero the supplied {@link WipeTrigger} is invoked to perform
- *       the destructive wipe, the counter is rearmed, and the terminal status word {@code
- *       SW_RESET_COUNTDOWN_BASE + 0} is thrown.
- * </ul>
- *
- * <p>The counter lives in a {@link JCSystem#CLEAR_ON_RESET}-typed transient byte array, so a power
- * loss between invocations rearms the trigger. Combined with the rearming rule, this means a
- * passive contact-only attack must hold the card for the duration of {@code N} full APDU round
- * trips with no interleaved traffic, which is the explicit design goal.
+ * <p>The counter lives in {@link JCSystem#CLEAR_ON_RESET} transient memory: a power loss
+ * mid-sequence resets the count, so an attacker must hold the card across {@code N} uninterrupted
+ * APDU round trips with no interleaved traffic — the explicit design goal.
  */
 public final class ResetToFactory {
 
@@ -46,18 +36,15 @@ public final class ResetToFactory {
     }
 
     /**
-     * Records one {@code RESET_TO_FACTORY} invocation.
-     *
-     * <p>This method always throws {@link ISOException}; it never returns normally. Callers should
-     * treat it as a tail call.
+     * Records one {@code RESET_TO_FACTORY} invocation. Always throws {@link ISOException}; never
+     * returns normally. Treat as a tail call.
      */
     public void recordInvocation(WipeTrigger trigger) {
         byte step = (byte) (remaining[0] - 1);
         remaining[0] = step;
         if (step == 0) {
-            // Rearm BEFORE invoking wipe(): if wipe() throws (it shouldn't in practice, but the
-            // failure mode otherwise leaves remaining[0] = 0 and the next recordInvocation
-            // computes step = -1 = 0xFF, emitting a spurious 0x6FFF status word). Audit L-2.01.
+            // Re-arm BEFORE wipe() so a wipe() throw doesn't leave remaining[0] = 0; otherwise
+            // the next invocation would compute step = -1 = 0xFF and emit 0x6FFF.
             remaining[0] = Constants.RESET_REQUIRED_INVOCATIONS;
             trigger.wipe();
             ISOException.throwIt(Constants.SW_RESET_COUNTDOWN_BASE);
@@ -65,7 +52,7 @@ public final class ResetToFactory {
         ISOException.throwIt((short) (Constants.SW_RESET_COUNTDOWN_BASE + (step & 0xFF)));
     }
 
-    /** Returns the current countdown value, primarily for unit-test assertions. */
+    /** Returns the current countdown value; primarily for unit-test assertions. */
     public byte remaining() {
         return remaining[0];
     }

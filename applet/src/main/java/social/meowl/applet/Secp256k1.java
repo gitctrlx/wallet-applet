@@ -7,30 +7,25 @@ package social.meowl.applet;
 import javacard.security.ECKey;
 
 /**
- * Curve parameters and helpers for {@code secp256k1}.
+ * Curve parameters and helpers for {@code secp256k1}, per <a
+ * href="https://www.secg.org/sec2-v2.pdf">SEC 2 v2.0</a> §2.4.1. The byte layout matches the {@link
+ * ECKey#setFieldFP setFieldFP / setA / setB / setG / setR / setK} API exposed by JavaCard 3.0.5 so
+ * the same backing array can be sliced and handed to every setter.
  *
- * <p>Constants are taken verbatim from <a href="https://www.secg.org/sec2-v2.pdf">SEC 2 v2.0</a>
- * §2.4.1. The byte layout matches the {@link ECKey#setFieldFP setFieldFP / setA / setB / setG /
- * setR / setK} API exposed by JavaCard 3.0.5, so the same backing array can be sliced and handed to
- * every setter.
- *
- * <p>The constants and the dispatch shape of {@link #setCurveParameters(ECKey)} are derived from
- * Toporin's Satochip applet (AGPL-3.0-or-later); they are otherwise standard SECG values.
+ * <p>The dispatch shape of {@link #setCurveParameters} is derived from Toporin's Satochip applet
+ * (AGPL-3.0-or-later); the constants are standard SECG values.
  */
 public final class Secp256k1 {
 
     /**
-     * Length of an EC scalar (private key / hash / x-coordinate).
-     *
-     * <p>Package-private and only used internally by {@link #setCurveParameters(ECKey)}; external
-     * callers must use {@link Constants#EC_SCALAR_LEN} instead so the size constant has a single
-     * authoritative definition.
+     * EC scalar length. Private; external callers must use {@link Constants#EC_SCALAR_LEN} so the
+     * size constant has a single authoritative definition.
      */
     private static final short SCALAR_LEN = (short) 32;
 
     /**
-     * Length of an uncompressed EC point ({@code 0x04 || x || y}). Same single-source rationale as
-     * {@link #SCALAR_LEN}; external callers must use {@link Constants#EC_POINT_UNCOMPRESSED_LEN}.
+     * Uncompressed EC point length. Private; external callers must use {@link
+     * Constants#EC_POINT_UNCOMPRESSED_LEN}.
      */
     private static final short POINT_UNCOMPRESSED_LEN = (short) 65;
 
@@ -42,17 +37,12 @@ public final class Secp256k1 {
     private static final short OFFSET_B = (short) 64;
     private static final short OFFSET_N = (short) 96;
 
-    /**
-     * Offset of the uncompressed base point {@code G} inside {@link #PARAMS}. Package-private so
-     * the BIP-32 derivation in {@code Bip32.java} can hand the base point directly to {@code
-     * KeyAgreement} without duplicating it as a separate constant.
-     */
+    /** Offset of {@code G} inside {@link #PARAMS}; exposed for {@link Bip32}'s scalarMult. */
     static final short OFFSET_G = (short) 128;
 
     /**
-     * Packed curve parameters: {@code p ‖ a ‖ b ‖ n ‖ G(uncompressed)}. Package-private so
-     * companion classes (e.g. {@code Bip32}) can slice the base point out for EC scalar
-     * multiplication without copying it into a fresh array.
+     * Packed curve parameters {@code p ‖ a ‖ b ‖ n ‖ G(uncompressed)}. Exposed so companions can
+     * slice the base point out without an intermediate copy.
      */
     static final byte[] PARAMS = {
         // p — 32 bytes, offset 0
@@ -257,10 +247,7 @@ public final class Secp256k1 {
 
     private Secp256k1() {}
 
-    /**
-     * Configures {@code key} with the SECG secp256k1 parameters. Applicable to both {@code
-     * ECPrivateKey} and {@code ECPublicKey} instances (both extend {@code ECKey}).
-     */
+    /** Configures {@code key} with the SECG secp256k1 parameters (works on both private/public). */
     public static void setCurveParameters(ECKey key) {
         key.setFieldFP(PARAMS, OFFSET_P, SCALAR_LEN);
         key.setA(PARAMS, OFFSET_A, SCALAR_LEN);

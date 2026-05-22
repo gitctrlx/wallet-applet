@@ -13,27 +13,16 @@ import javacard.security.Signature;
 /**
  * secp256k1 ECDSA signing primitive.
  *
- * <p>Given a BIP-32 path and a 32-byte digest, this class derives the leaf private scalar via
- * {@link Bip32#deriveLeafScalar}, signs the digest with the JC native {@code
- * Signature.ALG_ECDSA_SHA_256} algorithm (using {@link Signature#signPreComputedHash} so the applet
- * treats the host-supplied bytes as a pre-computed hash and does not re-hash them — the hash-only
- * invariant of {@code docs/specs/meap-6.md}), parses the DER-encoded result, normalises {@code s}
- * into the low half of {@code n} per <a
- * href="https://github.com/bitcoin/bips/blob/master/bip-0062.mediawiki">BIP-62</a> / <a
- * href="https://eips.ethereum.org/EIPS/eip-2">EIP-2</a>, and writes a fixed-length {@code r(32) ‖
- * s(32)} response.
+ * <p>Given a BIP-32 path and a 32-byte digest, derives the leaf scalar via {@link
+ * Bip32#deriveLeafScalar}, signs through the JC native {@code Signature.ALG_ECDSA_SHA_256} using
+ * {@link Signature#signPreComputedHash} (hash-only per MEAP-6), parses the DER signature,
+ * normalises {@code s} into the low half of {@code n} per BIP-62 / EIP-2, and writes a fixed-length
+ * {@code r(32) ‖ s(32)} response.
  *
- * <p>The host is responsible for recovering the public-key recovery byte {@code v} from {@code (r,
- * s, digest, expected_pubkey)}; the rationale lives in {@code docs/specs/meap-6.md} (computing
- * {@code v} on-card requires a modular square root that JavaCard 3.0.5 does not expose, and an
- * off-card recovery is both trivial and cheap given that the host already has the pubkey from a
- * prior {@code EXPORT_XPUB}).
- *
- * <p>Nonce: JavaCard 3.0.5 does not provide an interface for installing an RFC 6979 deterministic
- * nonce, so the JC ECDSA implementation generates a fresh random nonce per signature. {@code
- * docs/specs/meap-6.md} accepts this as the v1.0 reality: random-nonce ECDSA is fully
- * spec-compliant on every chain meowl signs for, and deterministic-nonce reproducibility is a
- * host-side concern that the host SDK can implement independently if it wants to.
+ * <p>The host is responsible for the recovery byte {@code v}: JC 3.0.5 exposes no modular square
+ * root, and the host already holds the pubkey from a prior {@code EXPORT_XPUB}. The nonce is
+ * platform-random (JC 3.0.5 has no RFC 6979 hook); random-nonce ECDSA is fully spec-compliant on
+ * every chain meowl signs for.
  */
 public final class EcdsaK1 {
 
@@ -64,11 +53,9 @@ public final class EcdsaK1 {
     private static final short SCRATCH_LEN = (short) (S_OFF + ModN.LEN);
 
     /**
-     * @param sharedScratch the singleton transient scratch buffer allocated by {@link MeowlApplet}.
-     *     Must be at least {@link #SCRATCH_LEN} bytes. The same buffer is reused across signing INS
-     *     handlers ({@link Schnorr}, {@link Ed25519}, this class) and the handshake scratch in
-     *     {@link SecureChannel}, since APDU dispatch is single-threaded and no two of those flows
-     *     can run concurrently.
+     * @param sharedScratch singleton transient scratch (≥ {@link #SCRATCH_LEN} bytes) allocated by
+     *     {@link MeowlApplet}; reused by every signing INS and the {@link SecureChannel} handshake
+     *     since APDU dispatch is single-threaded.
      */
     public EcdsaK1(Bip32 bip32, byte[] sharedScratch) {
         if ((short) sharedScratch.length < SCRATCH_LEN) {
@@ -77,10 +64,8 @@ public final class EcdsaK1 {
         this.bip32 = bip32;
         try {
             this.ecdsa = Signature.getInstance(Signature.ALG_ECDSA_SHA_256, false);
-            // Prefer the RAM-backed transient flavour so the derived leaf scalar never touches
-            // EEPROM (audit C-2.02): clearKey() at the tail of signDigest only invalidates the
-            // JC platform's view, not necessarily the underlying EEPROM cells. Fall back to
-            // persistent only on silicon that refuses the transient form.
+            // Prefer RAM-backed transient so the leaf scalar never lands in EEPROM; clearKey()
+            // alone does not necessarily wipe EEPROM cells. Persistent only as a fallback.
             ECPrivateKey signKey;
             try {
                 signKey =
@@ -106,11 +91,11 @@ public final class EcdsaK1 {
     }
 
     /**
-     * Signs the 32-byte {@code digest} under the secp256k1 private key derived at {@code pathBuf[
-     * pathOff..pathOff + 4*depth]} and writes {@code r(32) ‖ s(32)} to {@code outBuf} at {@code
-     * outOff}, with {@code s} guaranteed to lie in the low half of {@code n}.
+     * Signs the 32-byte {@code digest} under the secp256k1 key derived at {@code
+     * pathBuf[pathOff..pathOff + 4*depth]}, writing {@code r(32) ‖ s(32)} with low-{@code s}
+     * normalised.
      *
-     * @return the number of bytes written, {@link Constants#SIG_LEN_R_S}
+     * @return {@link Constants#SIG_LEN_R_S}
      */
     public short signDigest(
             byte[] pathBuf,
@@ -147,23 +132,19 @@ public final class EcdsaK1 {
 
             return Constants.SIG_LEN_R_S;
         } finally {
-            // Per audit F-30 the entire method body now runs inside this single try-finally so
-            // every exit path — successful return, parseDerSignature ISOException on a malformed
-            // silicon DER, or a signature-engine failure — wipes the same set of state. The
-            // SCALAR_OFF slot is the only secret in scratch; the DER and r/s slots are public
-            // post-signature material but get cleared anyway so the transient buffer carries no
-            // residue past the call boundary, matching the discipline used by Schnorr and Ed25519.
+            // SCALAR_OFF is the only secret; the DER and r/s slots are post-signature public
+            // material but get wiped anyway so no residue survives the call boundary.
             Util.arrayFillNonAtomic(scratch, (short) 0, SCRATCH_LEN, (byte) 0);
             signKey.clearKey();
         }
     }
 
     /**
-     * Parses the DER-encoded ECDSA signature in {@code der[derOff..derOff + derLen]} and writes the
-     * {@code r} and {@code s} INTEGER values to {@link #R_OFF} and {@link #S_OFF} of {@link
-     * #scratch}, left-padded to 32 bytes each.
+     * Parses the DER-encoded ECDSA signature in {@code der[derOff..+derLen]} and writes {@code r}
+     * and {@code s} into {@link #R_OFF} / {@link #S_OFF} of {@link #scratch}, left-padded to 32
+     * bytes each.
      *
-     * <p>DER layout (per RFC 3279 §2.2.3 / SEC 1 §C.5):
+     * <p>DER layout (RFC 3279 §2.2.3 / SEC 1 §C.5):
      *
      * <pre>
      *   ECDSA-Sig-Value ::= SEQUENCE {
@@ -172,14 +153,8 @@ public final class EcdsaK1 {
      *   }
      * </pre>
      *
-     * <p>{@code r} and {@code s} may carry a single leading {@code 0x00} byte when the top bit of
-     * the magnitude would otherwise look negative under DER's signed-INTEGER convention; we strip
-     * that byte during the left-pad step.
-     *
-     * <p>The parser is strict: anything outside the well-formed encoding produced by JC's {@code
-     * Signature.ALG_ECDSA_SHA_256} raises {@link Constants#SW_UNSUPPORTED_FEATURE}, on the basis
-     * that such an output indicates a buggy silicon implementation rather than caller-induced bad
-     * input.
+     * <p>Strict parser: anything outside the well-formed encoding produced by JC's native ECDSA
+     * raises {@link Constants#SW_UNSUPPORTED_FEATURE}, signalling a buggy silicon implementation.
      */
     private void parseDerSignature(byte[] der, short derOff, short derLen) {
         if (derLen < (short) (DER_INT_HEADER + 1 + DER_INT_HEADER + 1)
@@ -188,10 +163,8 @@ public final class EcdsaK1 {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
         short cursor = (short) (derOff + 1);
-        // DER length field: short-form covers 0..127 in a single byte; long-form (0x81 LL ...)
-        // is required for any length >= 128. JC's native ECDSA outputs at most 72 bytes of DER
-        // (always < 128), so we never legitimately see long-form here. Rejecting the high bit
-        // upfront prevents an off-by-one parse against a malformed silicon output (audit F-18).
+        // JC native ECDSA produces ≤ 72 bytes of DER (always < 128), so the length field is
+        // short-form. Reject long-form (high bit set) upfront to harden against off-by-one parse.
         short seqLen = (short) (der[cursor++] & 0xFF);
         if ((seqLen & 0x80) != 0) {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
@@ -207,17 +180,10 @@ public final class EcdsaK1 {
     }
 
     /**
-     * Reads one DER {@code INTEGER} element starting at {@code der[cursor]} and writes its
-     * magnitude, left-padded to 32 bytes, to {@code out[outOff..outOff+32]}. The returned cursor is
-     * positioned immediately after the element on the basis of the encoded (raw) length — stripping
-     * the optional leading {@code 0x00} sign byte must not shrink the structural advance, only the
-     * copied magnitude.
-     *
-     * <p>Strict DER (X.690 §8.3.2): the encoding must be minimal — a leading {@code 0x00} byte is
-     * permitted only when the next byte's MSB is set (otherwise the {@code 0x00} would be
-     * redundant). The function also rejects an INTEGER value of zero, since ECDSA components {@code
-     * r = 0} or {@code s = 0} are invalid by definition (an attacker-supplied DER with {@code r =
-     * 0} or {@code s = 0} is a malformed signature, not a valid one). Audit F-42 / F-43.
+     * Reads one DER {@code INTEGER} starting at {@code der[cursor]} and writes its magnitude,
+     * left-padded to 32 bytes, into {@code out[outOff..+32]}. Strict minimal DER (X.690 §8.3.2): a
+     * leading {@code 0x00} sign byte is allowed only when the next byte's MSB would otherwise make
+     * the INTEGER look negative; {@code r = 0} or {@code s = 0} are rejected.
      *
      * @return the next cursor position after the element
      */
@@ -225,9 +191,7 @@ public final class EcdsaK1 {
         if (der[cursor++] != DER_TAG_INTEGER) {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
-        // Reject DER long-form length here too; an ECDSA INTEGER over secp256k1 is at most 33
-        // bytes (32 magnitude + optional leading 0x00 sign byte), so the high bit of the length
-        // octet is always clear (audit F-18).
+        // Same long-form rejection as parseDerSignature: an ECDSA INTEGER is at most 33 bytes.
         short rawLen = (short) (der[cursor++] & 0xFF);
         if ((rawLen & 0x80) != 0) {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
@@ -236,7 +200,7 @@ public final class EcdsaK1 {
         short nextCursor = (short) (cursor + rawLen);
         short copyLen = rawLen;
         if (rawLen == 33 && der[valStart] == 0) {
-            // Legal sign-byte: the magnitude is 32 bytes and its MSB must be set, otherwise the
+            // Legal sign byte: magnitude is 32 bytes and its MSB must be set; otherwise the
             // 0x00 is non-minimal per X.690 §8.3.2.
             if ((der[(short) (valStart + 1)] & 0x80) == 0) {
                 ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
@@ -250,8 +214,7 @@ public final class EcdsaK1 {
         if (copyLen <= 0 || copyLen > ModN.LEN) {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
-        // Reject INTEGER value == 0 (r = 0 or s = 0 are invalid ECDSA components). Constant-time
-        // OR-fold of every magnitude byte; tests against zero in one go.
+        // Constant-time OR-fold to reject r = 0 / s = 0.
         short orAll = 0;
         for (short i = 0; i < copyLen; i++) {
             orAll |= (short) (der[(short) (valStart + i)] & 0xFF);

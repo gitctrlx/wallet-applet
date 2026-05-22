@@ -14,8 +14,8 @@ import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 
 /**
- * Audit F-41 regression: pin the invariants of the random projective-coordinate blinding that
- * underpins {@link Ed25519#sign}'s residual-SPA countermeasure (Coron CHES 1999 §3.1).
+ * Pins the invariants of the random projective-coordinate blinding that underpins {@link
+ * Ed25519#sign}'s residual-SPA countermeasure (Coron CHES 1999 §3.1).
  *
  * <p>The Edwards25519 group element {@code (X, Y, Z, T)} represents the affine point {@code (X/Z,
  * Y/Z)}. Multiplying every coordinate by a non-zero field element {@code r} produces an equivalent

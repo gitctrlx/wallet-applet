@@ -11,27 +11,13 @@ import apdu4j.pcsc.ReaderSelector;
 import apdu4j.pcsc.Readers;
 
 /**
- * Bridges picocli subcommands to the apdu4j {@link ReaderSelector} visitor without forcing each
- * command to re-implement the connect → execute → close lifecycle.
+ * Bridges picocli subcommands to the apdu4j {@link ReaderSelector} visitor: configures the selector
+ * from {@link ReaderPreferences}, installs the {@link BiboStack} decorators (retry, GET-RESPONSE,
+ * dump, trace), and propagates {@link BIBOException} as an unchecked {@link CardIoException} for
+ * picocli's exit-code mapping.
  *
- * <p>{@link ReaderSelector#run(java.util.function.Function)} is the canonical apdu4j 26.x entry
- * point: it acquires a PC/SC channel, hands it to the supplied function as an {@link APDUBIBO}, and
- * guarantees the channel is released even if the function throws. {@link #run(ReaderPreferences,
- * CardAction)} is a thin wrapper that
- *
- * <ol>
- *   <li>configures a {@link ReaderSelector} from {@link ReaderPreferences},
- *   <li>installs the {@link BiboStack} of decorators (retry, GET-RESPONSE, dump, trace),
- *   <li>re-exposes the result as an {@link APDUBIBO} so subcommands keep using the typed {@code
- *       transmit(CommandAPDU)} API,
- *   <li>and propagates {@link BIBOException} as an unchecked {@link CardIoException} so picocli's
- *       exception handler can format it.
- * </ol>
- *
- * <p>The transport intentionally does not expose a long-lived {@code AutoCloseable} handle. The
- * visitor model is the safer default — one PC/SC connection per logical operation — and matches how
- * the {@code meowl shell} REPL is implemented (each shell command re-acquires the card so that
- * physically removing the card between two commands surfaces immediately).
+ * <p>No long-lived {@code AutoCloseable} — the visitor model gives one PC/SC connection per logical
+ * operation, matching how {@code meowl shell} re-acquires the card per command.
  */
 public final class CardTransport {
 
@@ -50,14 +36,9 @@ public final class CardTransport {
     }
 
     /**
-     * Opens a card per {@code prefs}, decorates the transport with {@link BiboStack#decorate}, and
-     * runs {@code action} against the resulting APDU-typed BIBO.
+     * Opens a card per {@code prefs}, decorates the transport, and runs {@code action}.
      *
-     * @return whatever {@code action} returned
-     * @throws CardIoException if the card layer raised a {@link BIBOException} (wrapped to keep the
-     *     exit-code mapping in {@code MeowlCli} simple)
-     * @throws RuntimeException any unchecked exception thrown by the action is rethrown unchanged
-     *     so picocli's {@code IExecutionExceptionHandler} can format it
+     * @throws CardIoException if the card layer raises a {@link BIBOException}
      */
     public static <T> T run(ReaderPreferences prefs, CardAction<T> action) {
         ReaderSelector selector = configureReader(prefs);

@@ -11,17 +11,16 @@ import javacard.security.MessageDigest;
 import javacard.security.RandomData;
 
 /**
- * Software RFC 8032 Ed25519 signing primitive. JavaCard 3.0.5 ships no native Ed25519, so the
- * entire pipeline runs in user code: SHA-512 expansion + clamping of the SLIP-10 leaf seed,
- * scalar-mult against the base point for both the public key and the nonce point {@code R}, two
- * tagged SHA-512 invocations for {@code r} and the challenge {@code k}, and the software
- * big-integer reduction {@code S = (r + k · s) mod ℓ}.
+ * Software RFC 8032 Ed25519 signing primitive (JavaCard 3.0.5 ships no native Ed25519). Pipeline:
+ * SHA-512 expansion + clamping of the SLIP-10 leaf seed, scalar-mult against the base point for
+ * {@code A} and the nonce point {@code R}, two tagged SHA-512 invocations for {@code r} and {@code
+ * k}, and the software big-integer reduction {@code S = (r + k · s) mod ℓ}.
  *
- * <p>Wire contract: input is {@code [SLIP-10 leaf priv(32), message(*)]} — the message is hashed
- * inside the algorithm so the card never parses payloads (MEAP-6 hash-only invariant). Output is
+ * <p>Wire contract — input {@code [SLIP-10 leaf priv(32), message(*)]}; the algorithm hashes the
+ * message internally so the card never parses payloads (MEAP-6 hash-only invariant). Output is
  * {@code R(32) ‖ S(32)} in RFC 8032 §5.1.2 little-endian compressed form. All intermediate state
- * lives in a single {@link JCSystem#CLEAR_ON_DESELECT} scratch and is wiped by a {@code finally} in
- * {@link #sign} so a subsequent same-session call cannot observe stale secrets.
+ * lives in a single {@link JCSystem#CLEAR_ON_DESELECT} scratch, wiped by a {@code finally} on every
+ * code path.
  */
 public final class Ed25519 {
 
@@ -39,8 +38,7 @@ public final class Ed25519 {
 
     /**
      * Group order {@code ℓ = 2²⁵² + 27742317777372353535851937790883648493} as a 32-byte big-endian
-     * constant. Used as the modulus when reducing the SHA-512-derived ephemeral scalar {@code r}
-     * and the final {@code S = (r + k · s) mod ℓ}.
+     * constant. Modulus when reducing the ephemeral scalar {@code r} and the final {@code S}.
      */
     public static final byte[] GROUP_L = {
         (byte) 0x10, (byte) 0x00, (byte) 0x00, (byte) 0x00,
@@ -91,12 +89,9 @@ public final class Ed25519 {
     private final byte[] scratch;
 
     /**
-     * @param sharedScratch the singleton transient scratch buffer allocated by {@link MeowlApplet}.
-     *     Must be at least {@link #SCRATCH_LEN} bytes. The same buffer is reused across signing INS
-     *     handlers ({@link EcdsaK1}, {@link Schnorr}, this class) and the handshake scratch in
-     *     {@link SecureChannel}, since APDU dispatch is single-threaded and no two of those flows
-     *     can run concurrently. Of all four consumers Ed25519 has the largest scratch requirement
-     *     ({@link #SCRATCH_LEN} = 1056 bytes), so the shared buffer is sized to match.
+     * @param sharedScratch singleton transient scratch (≥ {@link #SCRATCH_LEN} = 1056 bytes)
+     *     allocated by {@link MeowlApplet}. Ed25519 has the largest scratch requirement of all
+     *     consumers so the shared buffer is sized to match.
      */
     public Ed25519(byte[] sharedScratch) {
         if ((short) sharedScratch.length < SCRATCH_LEN) {
@@ -108,8 +103,7 @@ public final class Ed25519 {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
             throw new RuntimeException(); // unreachable
         }
-        // Per MEAP-6: prefer ALG_KEYGENERATION (universal on JC 3.0.4+) for the projective
-        // blinding scalar; fall back to ALG_TRNG on cards that restrict the keygen class.
+        // MEAP-6: ALG_KEYGENERATION first (universal on JC 3.0.4+), ALG_TRNG fallback.
         RandomData candidate;
         try {
             candidate = RandomData.getInstance(RandomData.ALG_KEYGENERATION);
@@ -121,9 +115,9 @@ public final class Ed25519 {
     }
 
     /**
-     * Derives the compressed Ed25519 public key from the supplied 32-byte leaf private key and
-     * writes the 32-byte encoding to {@code outBuf} at {@code outOff}. Returns {@link
-     * #PUBLIC_KEY_LEN}.
+     * Derives the compressed Ed25519 public key from the 32-byte leaf private key.
+     *
+     * @return {@link #PUBLIC_KEY_LEN}
      */
     public short publicKey(byte[] skBuf, short skOff, byte[] outBuf, short outOff) {
         try {
@@ -136,10 +130,10 @@ public final class Ed25519 {
     }
 
     /**
-     * RFC 8032 §5.1.6 sign operation. Produces a 64-byte {@code R ‖ S} signature for the message
-     * {@code msgBuf[msgOff..msgOff+msgLen]} under the SLIP-10 leaf private key {@code
-     * skBuf[skOff..skOff+32]}. Writes the signature to {@code outBuf} at {@code outOff} and returns
-     * {@link #SIGNATURE_LEN}.
+     * RFC 8032 §5.1.6 sign. Produces the 64-byte {@code R ‖ S} signature of {@code
+     * msgBuf[msgOff..msgOff+msgLen]} under the SLIP-10 leaf private key {@code skBuf[skOff..+32]}.
+     *
+     * @return {@link #SIGNATURE_LEN}
      */
     public short sign(
             byte[] skBuf,
@@ -165,9 +159,8 @@ public final class Ed25519 {
             Util.arrayCopyNonAtomic(
                     scratch, (short) (HASH_OFF + 32), scratch, R_BE_OFF, (short) 32);
 
-            //  3. R = r · B; R_enc = encode(R). Reset the base point to its canonical projective
-            //     form and re-randomise it with a fresh blind so the second scalar ladder uses a
-            //     coordinate trajectory uncorrelated with the first one (audit F-01).
+            //  3. R = r · B; R_enc = encode(R). Reset the base point and re-blind it so the second
+            //     scalar ladder runs on a coordinate trajectory uncorrelated with the first.
             Edwards25519.setBase(scratch, BASE_PT_OFF);
             blindBasePoint();
             Edwards25519.scalarMult(
@@ -192,9 +185,8 @@ public final class Ed25519 {
             Util.arrayCopyNonAtomic(scratch, R_BE_OFF, scratch, S_OUT_BE_OFF, (short) 32);
             boolean carry =
                     Bignat.add(scratch, S_OUT_BE_OFF, scratch, (short) (HASH_OFF + 32), (short) 32);
-            //     Result is in [0, 2ℓ). Reduce: subtract ℓ iff (carry == 1) OR (out >= ℓ).
-            //     Implemented branch-free so the timing of the final reduce does not depend on
-            //     the secret-derived intermediate value (audit F-01 mitigation).
+            //     Result is in [0, 2ℓ). Reduce: subtract ℓ iff (carry == 1) OR (out >= ℓ). Branch-
+            //     free so the timing does not depend on the secret-derived intermediate.
             short carryMask = (short) (carry ? -1 : 0);
             short lessMask =
                     Bignat.ctLessThan(scratch, S_OUT_BE_OFF, GROUP_L, (short) 0, (short) 32);
@@ -214,11 +206,10 @@ public final class Ed25519 {
     }
 
     /**
-     * Common path of {@link #publicKey} and {@link #sign} — populates {@code scratch[S_BE_OFF]}
-     * with the clamped private scalar (BE), {@code scratch[HASH_OFF+32..HASH_OFF+64]} with the RFC
-     * 8032 §5.1.6 prefix (h[32..64], reused in step 4 of the sign flow), and {@code
-     * scratch[A_ENC_OFF]} with the compressed public-key encoding. Caller is responsible for the
-     * {@link #wipeScratch} cleanup in a {@code finally} clause.
+     * Shared path for {@link #publicKey} and {@link #sign} — populates {@code scratch[S_BE_OFF]}
+     * with the clamped private scalar (BE), {@code scratch[HASH_OFF+32..+64]} with the RFC 8032
+     * prefix (reused by the sign r-hash step), and {@code scratch[A_ENC_OFF]} with the compressed
+     * pubkey. Caller is responsible for the {@link #wipeScratch} finally clause.
      */
     private void computePublicKey(byte[] skBuf, short skOff) {
         // h = SHA-512(sk), kept in scratch[HASH_OFF..HASH_OFF+64].
@@ -237,9 +228,7 @@ public final class Ed25519 {
         }
         // A = s · B, then encode A into scratch[A_ENC_OFF]. The base point is freshly randomised
         // in projective coordinates before every scalarMult call so the variable-time Bignat.mod
-        // kernel sees a different bit pattern on every iteration of the 256-bit ladder, which is
-        // the Coron CHES 1999 §3.1 projective coordinate randomisation countermeasure against the
-        // residual SPA leak in Field25519.mul/sqr (audit F-01 mitigation).
+        // kernel sees a different bit pattern per ladder iteration (Coron CHES 1999 §3.1).
         Edwards25519.setBase(scratch, BASE_PT_OFF);
         blindBasePoint();
         Edwards25519.scalarMult(
@@ -251,23 +240,14 @@ public final class Ed25519 {
     }
 
     /**
-     * Generates a fresh non-zero field element {@code r ∈ [1, p)} at {@code scratch[BLIND_FE_OFF]}
-     * and applies the projective coordinate randomisation {@code (X, Y, Z, T) ↦ (rX, rY, rZ, rT)}
-     * to the base point parked at {@code scratch[BASE_PT_OFF]}. Caller MUST have populated {@code
-     * BASE_PT} with a canonical point via {@link Edwards25519#setBase} (or equivalent) before
-     * invoking this helper.
+     * Samples a non-zero field element {@code r ∈ [1, p)} into {@code scratch[BLIND_FE_OFF]} and
+     * applies the projective randomisation {@code (X, Y, Z, T) ↦ (rX, rY, rZ, rT)} to the base
+     * point at {@code scratch[BASE_PT_OFF]}. Caller MUST have populated {@code BASE_PT} via {@link
+     * Edwards25519#setBase} first.
      *
-     * <p>The blind is sampled by drawing 32 random bytes, clearing the top bit (so the result is
-     * less than {@code 2²⁵⁵}, comfortably below {@code p = 2²⁵⁵ − 19} with probability {@code 1 −
-     * 19/2²⁵⁵ ≈ 1 − 2⁻²⁵⁰}), and re-rolling on both the {@code r ≥ p} and {@code r == 0} corner
-     * cases. The resulting blind is uniform on {@code [1, p)} by construction, and the rejection-
-     * sampling loop terminates after one draw with probability {@code 1 − 20/2²⁵⁵}.
-     *
-     * <p>Audit F-32: the previous implementation used {@code do { ... if (r ≥ p) continue; } while
-     * (r == 0)} where {@code continue} jumped to the {@code while} condition instead of the loop
-     * top. When {@code r ∈ [p, 2²⁵⁵)} (~2⁻²⁵¹ probability), the loop exited with the out-of-range
-     * blind, violating the {@code [1, p)} contract. Rewritten with a single {@code while (true)}
-     * body so both rejection branches actually iterate.
+     * <p>The blind is drawn by clearing the top bit (so {@code r < 2²⁵⁵}, below {@code p = 2²⁵⁵ −
+     * 19} with probability {@code 1 − 2⁻²⁵⁰}) and re-rolling on the {@code r ≥ p} and {@code r ==
+     * 0} corner cases. Rejection probability per draw is {@code ≈ 20/2²⁵⁵}.
      */
     private void blindBasePoint() {
         while (true) {

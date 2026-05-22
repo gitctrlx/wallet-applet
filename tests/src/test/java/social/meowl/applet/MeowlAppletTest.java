@@ -83,7 +83,7 @@ class MeowlAppletTest {
             // SETUP / IMPORT_SEED / SIGN_xxx must only be reachable through OPEN_SECURE_CHANNEL.
             // The outer-frame switch must reject them with 6D00 even though the underlying handler
             // exists, since the handler is gated on a live SC session and the dispatcher does not
-            // route there. Audit F-25: regression coverage for that gating.
+            // route there.
             int[] innerOnlyIns = {
                 INS_SETUP, INS_IMPORT_SEED, INS_SIGN_ECDSA_K1, INS_SIGN_SCHNORR_K1, INS_SIGN_ED25519
             };
@@ -103,9 +103,9 @@ class MeowlAppletTest {
                         + " state on a fresh card")
         void openSecureChannelWithoutInitFails() {
             // Sending OPEN_SC immediately after select() must not crash and must not dispatch any
-            // inner handler. The applet's secure-channel layer rejects with a non-9000 SW. Audit
-            // F-25: the test is defensive against silent fall-through to dispatchInner with stale
-            // session keys.
+            // inner handler. The applet's secure-channel layer rejects with a non-9000 SW; this
+            // test is defensive against silent fall-through to dispatchInner with stale session
+            // keys.
             byte[] bogusEnvelope = new byte[16 + 16 + 16]; // IV || one-block CT || MAC
             ResponseAPDU resp = send(CLA, INS_OPEN_SC, 0x00, 0x00, bogusEnvelope);
             assertTrue(
@@ -263,11 +263,11 @@ class MeowlAppletTest {
 
         @Test
         @DisplayName(
-                "lifecycle reverts to UNINITIALIZED after a complete reset (audit F-15 atomic"
-                        + " wipe regression)")
+                "lifecycle reverts to UNINITIALIZED after a complete reset (atomic-wipe"
+                        + " regression)")
         void lifecycleRevertsToUninitialized() {
-            // Audit F-15: every persistent wipe runs inside a single beginTransaction so a torn
-            // power-off cannot leave the card with a half-wiped lifecycle. The post-condition that
+            // Every persistent wipe runs inside a single beginTransaction so a torn power-off
+            // cannot leave the card with a half-wiped lifecycle. The post-condition that
             // observably verifies the success path is "after the fourth invocation, GET_INFO
             // reports UNINITIALIZED" — the same state a fresh install would expose. A regression
             // that forgot to reset the lifecycle (or that ran the four wipes outside the same
@@ -286,9 +286,9 @@ class MeowlAppletTest {
         @Test
         @DisplayName("RESET_TO_FACTORY interleaved with multiple distinct INS rearms cleanly")
         void interleavedReset() {
-            // Audit F-25: drive the rearm path with a variety of INS values, including the inner-
-            // only ones (which return 6D00 but still rearm) and one that returns 9000. The counter
-            // must restart at RESET_REQUIRED_INVOCATIONS each time a non-RESET INS comes through.
+            // Drive the rearm path with a variety of INS values, including the inner-only ones
+            // (which return 6D00 but still rearm) and one that returns 9000. The counter must
+            // restart at RESET_REQUIRED_INVOCATIONS each time a non-RESET INS comes through.
             int[] interleaveIns = {INS_GET_INFO, INS_GET_AUTHENTIKEY, INS_SETUP, INS_SIGN_ECDSA_K1};
             for (int ins : interleaveIns) {
                 send(CLA, INS_RESET_TO_FACTORY, 0x00, 0x00, null); // 0x6FA3

@@ -128,9 +128,8 @@ class HostCryptoTest {
             // Tamper with the last block to break the pad.
             byte[] tampered = ciphertext.clone();
             tampered[tampered.length - 1] ^= (byte) 0xFF;
-            // Audit F-22: padding errors now surface as SecureChannelException, the same family
-            // already produced by every other host-side cryptographic check, instead of the
-            // generic IllegalArgumentException raised by the previous implementation.
+            // PKCS#5 padding errors surface as SecureChannelException, matching the family
+            // produced by every other host-side cryptographic check.
             SecureChannelException ex =
                     assertThrows(
                             SecureChannelException.class,
@@ -212,7 +211,7 @@ class HostCryptoTest {
         }
 
         @Test
-        @DisplayName("overflow diagnostic does not leak the offending value (audit L-1.09)")
+        @DisplayName("overflow diagnostic does not leak the offending value")
         void overflowDiagnosticDoesNotLeakValue() {
             // The helper could plausibly be called with private scalar material in the future.
             // Its overflow diagnostic must NOT include BigInteger.toString(value), which would

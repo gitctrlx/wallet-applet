@@ -45,21 +45,17 @@ public final class Hkdf {
     private final byte[] scratch;
 
     /**
-     * One-byte transient buffer holding the HKDF counter byte {@code i} fed into the {@code T(i) =
-     * HMAC(PRK, T(i-1) ‖ info ‖ i)} computation in {@link #expand}. Dedicated so we do not mutate
-     * {@link #scratch} between {@code hmac.update(scratch, …)} and {@code hmac.doFinal(…)} — JC's
-     * underlying {@code Signature.update} is allowed by the spec to defer ingestion until the next
-     * sign(), and that deferred ingestion would observe the post-mutation byte if we wrote into the
-     * same buffer (audit M-1.14).
+     * One-byte transient buffer for the HKDF counter byte {@code i} fed into {@code T(i) =
+     * HMAC(PRK, T(i-1) ‖ info ‖ i)}. Dedicated so we do not mutate {@link #scratch} between {@code
+     * hmac.update} and {@code hmac.doFinal} — JC's underlying {@code Signature.update} may defer
+     * ingestion, which would observe the post-mutation byte.
      */
     private final byte[] counterBuf;
 
     /**
-     * @param sharedHmac256 a shared {@link HmacSha} engine configured for HMAC-SHA-256. Hkdf does
-     *     not own the engine — the surrounding {@link SecureChannel} hands the same instance to
-     *     this constructor and to its envelope-MAC code path so a single software-fallback engine
-     *     suffices on cards without native HMAC. APDU dispatch is single-threaded, so sharing is
-     *     safe.
+     * @param sharedHmac256 a shared HMAC-SHA-256 engine. Hkdf does not own it: {@link
+     *     SecureChannel} reuses the same instance for its envelope MAC. Safe because APDU dispatch
+     *     is single-threaded.
      */
     public Hkdf(HmacSha sharedHmac256) {
         this.hmac = sharedHmac256;
@@ -69,22 +65,11 @@ public final class Hkdf {
     }
 
     /**
-     * HKDF-Extract — derives a 32-byte pseudo-random key from input keying material.
+     * HKDF-Extract — derives the 32-byte PRK from input keying material, stored internally for the
+     * subsequent {@link #expand} call. PRK lives in transient memory and is wiped on deselect.
      *
-     * <p>Stores the resulting PRK internally so the subsequent {@link #expand(byte[], short,
-     * byte[], short, short)} call uses it without an extra parameter. The PRK lives in transient
-     * memory and is wiped on deselect.
-     *
-     * @param salt buffer holding the salt; if {@code saltLen == 0} a zero-filled buffer is used as
-     *     per RFC 5869 §2.2
-     * @param saltOffset offset of the salt within {@code salt}
-     * @param saltLen length of the salt in bytes ({@code >= 0}); RFC 5869 places no upper bound on
-     *     the salt — the underlying HMAC absorbs arbitrary lengths and either pre-hashes the salt
-     *     when {@code |salt| > B} or pads it to {@code B} when {@code |salt| <= B}. Audit F-09
-     *     removed the previous arbitrary 256-byte cap.
-     * @param ikm buffer holding the input keying material
-     * @param ikmOffset offset of the IKM
-     * @param ikmLen length of the IKM in bytes
+     * @param salt buffer; {@code saltLen == 0} substitutes a zero-filled buffer per RFC 5869 §2.2
+     * @param saltLen any non-negative length; the underlying HMAC absorbs arbitrary salt lengths
      */
     public void extract(
             byte[] salt,
@@ -107,17 +92,10 @@ public final class Hkdf {
     }
 
     /**
-     * HKDF-Expand — derives {@code length} bytes of output keying material from the PRK previously
-     * computed via {@link #extract}.
+     * HKDF-Expand — derives {@code length} bytes of OKM from the PRK previously computed via {@link
+     * #extract}.
      *
-     * @param info context / application-specific info buffer; may be {@code null} when {@code
-     *     infoLen == 0} and is otherwise read for {@code infoLen} bytes starting at {@code
-     *     infoOffset}
-     * @param infoOffset offset of the info string
-     * @param infoLen length of the info string in bytes; {@code 0} signals an empty info per RFC
-     *     5869 §2.3
-     * @param out destination buffer for the OKM
-     * @param outOffset offset within {@code out} where the OKM is written
+     * @param info may be {@code null} when {@code infoLen == 0} (RFC 5869 §2.3 empty info)
      * @param length requested OKM length in bytes; {@code 0 ≤ length ≤ 255 × HashLen}
      */
     public void expand(
@@ -133,10 +111,6 @@ public final class Hkdf {
         if (info == null && infoLen != 0) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        // Audit F-37: delegate the destination range check to Bounds.requireCapacity so the
-        // overflow-safe arithmetic (needed > dst.length - offset) replaces the prior hand-rolled
-        // (short)(outOffset + length) > out.length which silently wraps under JC's 16-bit signed
-        // short when the sum exceeds 0x7FFF.
         Bounds.requireCapacity(out, outOffset, length);
 
         // T(0) is empty; T(i) = HMAC(PRK, T(i-1) ‖ info ‖ i).

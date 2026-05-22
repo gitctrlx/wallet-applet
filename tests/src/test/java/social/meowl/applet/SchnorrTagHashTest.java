@@ -13,10 +13,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Audit F-12 sanity check: every {@code SHA256(tag)} constant baked into {@link Schnorr} must match
- * the runtime {@code SHA-256} of the literal tag bytes specified by BIP-340 §3.2. A typo in any of
- * the three constants would silently produce signatures that fail BIP-340 verification on every
- * wallet on the planet, so we pin the expectation here so the build trips on the first compile.
+ * Sanity check that every {@code SHA256(tag)} constant baked into {@link Schnorr} matches the
+ * runtime {@code SHA-256} of the literal tag bytes specified by BIP-340 §3.2. A typo in any of the
+ * three constants would silently produce signatures that fail BIP-340 verification on every wallet
+ * on the planet, so the expectation is pinned here.
  *
  * <p>The constants themselves are package-private to keep the public API of {@link Schnorr}
  * minimal; this test lives in the same Java package so it can read them directly.

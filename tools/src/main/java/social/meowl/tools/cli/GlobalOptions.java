@@ -10,15 +10,9 @@ import picocli.CommandLine.Option;
 import social.meowl.tools.transport.ReaderPreferences;
 
 /**
- * Mixin holding the picocli options that every {@code meowl} subcommand inherits.
- *
- * <p>Subcommands receive an instance via {@code @Mixin} and forward it to {@link
- * #toReaderPreferences()} when they need to talk to a card. Keeping the mixin in its own type means
- * new global options can be added without recompiling every subcommand.
- *
- * <p>This class does not itself depend on the {@code transport} package's record at parse time —
- * the conversion happens lazily in {@link #toReaderPreferences()} so unit tests that exercise
- * subcommand parsing without an actual card path stay fast.
+ * Mixin holding the picocli options that every {@code meowl} subcommand inherits. Subcommands
+ * receive an instance via {@code @Mixin} and forward it to {@link #toReaderPreferences()} when they
+ * need to talk to a card.
  */
 public final class GlobalOptions {
 

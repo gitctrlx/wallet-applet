@@ -5,11 +5,10 @@
 package social.meowl.applet;
 
 /**
- * Callback hook supplied to {@link ResetToFactory#recordInvocation(WipeTrigger)} which performs the
- * actual destruction of seed, PINs and PKI material when the reset counter reaches zero.
+ * Wipe callback handed to {@link ResetToFactory#recordInvocation}. Implemented by the applet's wipe
+ * routine which destroys seed, PIN/PUK and PKI material once the reset counter reaches zero.
  *
- * <p>Defined inside the applet package because JavaCard 3.0.5 does not expose {@code
- * java.lang.Runnable}.
+ * <p>JavaCard 3.0.5 does not expose {@code java.lang.Runnable}, so we declare our own SAM.
  */
 public interface WipeTrigger {
 

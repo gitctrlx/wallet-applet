@@ -12,10 +12,8 @@ import javacard.security.KeyAgreement;
 import javacard.security.KeyBuilder;
 
 /**
- * BIP-32 hierarchical deterministic key derivation for secp256k1.
- *
- * <p>Implements {@code CKDpriv((k_par, c_par), i)} per <a
- * href="https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki">BIP-32</a>:
+ * BIP-32 hierarchical deterministic key derivation for secp256k1 ({@code CKDpriv} per <a
+ * href="https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki">BIP-32</a>):
  *
  * <pre>
  *   hardened (i ≥ 2³¹):
@@ -25,18 +23,15 @@ import javacard.security.KeyBuilder;
  *   I_L = I[0..32], I_R = I[32..64]
  *   k_i = (parse256(I_L) + k_par) mod n
  *   c_i = I_R
- *   require parse256(I_L) < n  AND  k_i != 0   (else: fail)
+ *   require parse256(I_L) < n  AND  k_i != 0
  * </pre>
  *
- * <p>The non-hardened branch computes {@code serP(point(k_par))} by running an EC scalar
- * multiplication {@code k_par * G} via {@code KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY}: the parent
- * private key is set as the agreement private, the base point {@code G} is fed as the "other-party
- * public key", and the resulting uncompressed point is the parent public key, which we compress to
- * {@code serP} form.
+ * <p>The non-hardened branch reuses {@code KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY} as a generic
+ * scalar-multiplication primitive: feed the parent private key plus the base point {@code G},
+ * recover the uncompressed parent pubkey and compress to {@code serP} form.
  *
- * <p>{@link #derivePath} walks an arbitrary-depth path. Intermediate scalars live in a {@code
- * CLEAR_ON_DESELECT} scratch so they vanish on deselect even if the caller forgets to wipe; the
- * public output is written into the caller-supplied buffer.
+ * <p>Intermediate state lives in a {@code CLEAR_ON_DESELECT} scratch so secrets vanish on deselect
+ * even if the caller forgets to wipe.
  */
 public final class Bip32 {
 
@@ -49,10 +44,7 @@ public final class Bip32 {
     /** HMAC-SHA-512 output length. */
     private static final short HASH_LEN = (short) 64;
 
-    /**
-     * BIP-32 hardened derivation prefix byte ({@code 0x00}). Held as a static one-byte array so the
-     * per-iteration HMAC does not allocate a fresh array on the JC heap each time.
-     */
+    /** Hardened derivation prefix byte ({@code 0x00}); static so HMAC does not re-allocate. */
     private static final byte[] HARDENED_PREFIX = {(byte) 0x00};
 
     private final MasterSeed masterSeed;
@@ -74,20 +66,17 @@ public final class Bip32 {
             (short) (STATE_PUB_OFF + Constants.EC_POINT_UNCOMPRESSED_LEN);
 
     /**
-     * @param sharedHmac512 the same engine handed to {@link MasterSeed} and {@link Slip10};
-     *     instance reuse is safe because all consumers run on the single APDU dispatch thread.
+     * @param sharedHmac512 same engine handed to {@link MasterSeed} and {@link Slip10}; safe to
+     *     share because APDU dispatch is single-threaded.
      */
     public Bip32(MasterSeed masterSeed, HmacSha sharedHmac512) {
         this.masterSeed = masterSeed;
         this.hmac = sharedHmac512;
         try {
             this.scalarMult = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY, false);
-            // Prefer the RAM-backed transient flavour so the derived leaf scalar never touches
-            // EEPROM (audit C-2.02: a plain clearKey() does not necessarily wipe EEPROM cells on
-            // every silicon, leaving a residue an attacker with physical access could recover).
-            // Fall back to the persistent flavour only on cards that refuse the transient form
-            // (some pre-3.0.5 JC silicon, and a handful of recent cards that restrict
-            // TRANSIENT_DESELECT to symmetric keys).
+            // Prefer RAM-backed transient so the leaf scalar never lands in EEPROM; clearKey()
+            // alone does not necessarily wipe EEPROM cells. Persistent only as a fallback for
+            // cards that restrict TRANSIENT_DESELECT to symmetric keys.
             ECPrivateKey scalarKey;
             try {
                 scalarKey =
@@ -115,11 +104,9 @@ public final class Bip32 {
 
     /**
      * Derives the BIP-32 child at the given path and writes {@code [compressed_pubkey(33) ‖
-     * chain_code(32)]} into {@code outBuf} at {@code outOff}.
+     * chain_code(32)]}. {@code depth == 0} returns the master xpub itself.
      *
-     * <p>If {@code depth == 0} the master xpub itself is returned.
-     *
-     * @return the number of bytes written, i.e. {@code 65}
+     * @return {@code 65}
      */
     public short derivePath(
             byte[] pathBuf, short pathOff, short depth, byte[] outBuf, short outOff) {
@@ -136,17 +123,11 @@ public final class Bip32 {
     }
 
     /**
-     * Derives the BIP-32 child private scalar at the given path and writes the 32-byte big-endian
-     * scalar to {@code outBuf} at {@code outOff}.
+     * Secret-exposing variant of {@link #derivePath}: writes the 32-byte big-endian leaf scalar to
+     * {@code outBuf[outOff..+32]}. Caller MUST wipe the destination as soon as the scalar has been
+     * consumed so it does not linger past the signing primitive's own scope.
      *
-     * <p>This is the secret-exposing variant of {@link #derivePath}; it exists so that {@link
-     * EcdsaK1} (and the upcoming Schnorr / pubkey-recovery callers) can pull the leaf scalar into
-     * their own transient buffer just long enough to load it into an {@link ECPrivateKey} or to
-     * feed it into a software signer. The caller MUST wipe {@code outBuf[outOff..+32]} as soon as
-     * it has consumed the scalar — preferably alongside its own per-call cleanup, so the scalar
-     * never lingers past the signing primitive's own scope.
-     *
-     * @return the number of bytes written, i.e. {@link ModN#LEN}
+     * @return {@link ModN#LEN}
      */
     public short deriveLeafScalar(
             byte[] pathBuf, short pathOff, short depth, byte[] outBuf, short outOff) {
@@ -157,17 +138,15 @@ public final class Bip32 {
     }
 
     /**
-     * Walks the BIP-32 chain from the master to the leaf indicated by {@code pathBuf[pathOff ..
-     * pathOff + 4*depth]}, leaving the leaf scalar in {@code state[STATE_K_OFF..K+32]} and the leaf
-     * chain code in {@code state[STATE_C_OFF..C+32]}.
+     * Walks the BIP-32 chain from the master to the leaf, leaving the leaf scalar in {@code
+     * state[STATE_K_OFF..+32]} and the chain code in {@code state[STATE_C_OFF..+32]}.
      */
     private void walkPathToLeaf(byte[] pathBuf, short pathOff, short depth) {
         if (depth < 0 || depth > Constants.HD_MAX_DEPTH) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        // Seed the working scalar+chain code from the master in one shot. STATE_K_OFF and
-        // STATE_C_OFF are contiguous (0, 32) so the 64-byte pull-based copy lands the
-        // k_master(32) || c_master(32) layout directly into state[0..64] (audit F-29).
+        // STATE_K_OFF and STATE_C_OFF are contiguous, so this 64-byte copy lands k(32) || c(32)
+        // directly into state[0..64] in one shot.
         masterSeed.copyBip32MasterTo(state, STATE_K_OFF);
 
         for (short level = 0; level < depth; level++) {
@@ -177,31 +156,16 @@ public final class Bip32 {
     }
 
     /**
-     * Wipes every transient slot the BIP-32 walk touched, including the chain code and the
-     * uncompressed public-key scratch.
-     *
-     * <ul>
-     *   <li>{@code state[K_OFF..]} — the leaf private scalar.
-     *   <li>{@code state[C_OFF..]} — the leaf chain code. Chain codes are usually treated as
-     *       semi-public, but the BIP-32 derivation rule ({@code chain code + parent pubkey} → all
-     *       sibling pubkeys; {@code chain code + one secret} → all sibling secrets) means a stale
-     *       chain code lingering in transient memory across an APDU is a defense-in-depth gap.
-     *       Trezor's {@code hdnode_clear} wipes everything; we mirror that, and align with {@link
-     *       Slip10}'s wipe path which already does so (audit F-07).
-     *   <li>{@code state[I_OFF..]} — the last HMAC-SHA-512 output (its left half is a secret scalar
-     *       candidate).
-     *   <li>{@code state[PUB_OFF..]} — the uncompressed public-key scratch used by the non-hardened
-     *       branch. Public material, but wiped for the same defense-in-depth rationale.
-     *   <li>{@code scalarKey} — the {@link ECPrivateKey} holding the (transient or persistent) leaf
-     *       scalar used by the non-hardened branch.
-     * </ul>
+     * Wipes every BIP-32 walk-state slot: the leaf scalar, the chain code (defence-in-depth — chain
+     * code + parent pubkey derives all siblings), the last HMAC-SHA-512 output, the uncompressed
+     * pubkey scratch, and the {@link ECPrivateKey} cell.
      */
     private void wipeTransientSecrets() {
         Util.arrayFillNonAtomic(state, (short) 0, STATE_LEN, (byte) 0);
         scalarKey.clearKey();
     }
 
-    /** One iteration of {@code CKDpriv}: state.k/state.c → state.k/state.c. */
+    /** One iteration of {@code CKDpriv}: state.{k,c} → state.{k,c}. */
     private void ckdPriv(byte[] pathBuf, short idxOff) {
         boolean hardened = (pathBuf[idxOff] & HARDENED_MASK) != 0;
 
@@ -219,8 +183,7 @@ public final class Bip32 {
         }
         hmac.doFinal(pathBuf, idxOff, INDEX_LEN, state, STATE_I_OFF);
 
-        // Validate I_L < n and k_i != 0; on failure surface a clean SW so the host can retry
-        // with a different index.
+        // Reject I_L >= n and k_i == 0 (BIP-32 mandates retry with a different index).
         if (!ModN.lessThanN(state, STATE_I_OFF)) {
             ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
         }
@@ -239,23 +202,19 @@ public final class Bip32 {
     }
 
     /**
-     * Writes the SEC 1 §2.3.3 compressed encoding of {@code scalar * G} into {@code outBuf}
-     * starting at {@code outOff}.
+     * SEC 1 §2.3.3 compressed encoding of {@code scalar · G}.
      *
-     * @return number of bytes written, {@link Constants#EC_POINT_COMPRESSED_LEN}
+     * @return {@link Constants#EC_POINT_COMPRESSED_LEN}
      */
     public short computePubkey(byte[] scalar, short scalarOff, byte[] outBuf, short outOff) {
         return computeCompressedPubkey(scalar, scalarOff, outBuf, outOff);
     }
 
     /**
-     * Writes the uncompressed encoding {@code 0x04 ‖ x ‖ y} of {@code scalar * G} into {@code
-     * outBuf} starting at {@code outOff}, and returns 65. The BIP-340 Schnorr signer needs the
-     * {@code y}-coordinate to test the parity of the nonce point and the public key, so the
-     * uncompressed form is exposed as a public helper rather than thrown away by {@link
-     * #computeCompressedPubkey}.
+     * Uncompressed encoding {@code 0x04 ‖ x ‖ y} of {@code scalar · G}; exposed for {@link Schnorr}
+     * which needs the {@code y}-coordinate parity.
      *
-     * @return number of bytes written, {@link Constants#EC_POINT_UNCOMPRESSED_LEN}
+     * @return {@link Constants#EC_POINT_UNCOMPRESSED_LEN}
      */
     public short scalarMultG(byte[] scalar, short scalarOff, byte[] outBuf, short outOff) {
         Secp256k1.setCurveParameters(scalarKey);
@@ -276,8 +235,7 @@ public final class Bip32 {
 
     private short computeCompressedPubkey(
             byte[] scalar, short scalarOff, byte[] outBuf, short outOff) {
-        // Run scalar*G into outBuf, then compress in place per SEC 1 §2.3.3: parity prefix
-        // derived from y_LSB, trailing y zeroed.
+        // scalar·G into outBuf, then compress in place per SEC 1 §2.3.3: parity prefix from y_LSB.
         scalarMultG(scalar, scalarOff, outBuf, outOff);
         byte yLsb = outBuf[(short) (outOff + Constants.EC_POINT_UNCOMPRESSED_LEN - 1)];
         outBuf[outOff] = ((yLsb & 0x01) == 0) ? (byte) 0x02 : (byte) 0x03;

@@ -13,32 +13,24 @@ import pro.javacard.gp.keys.PlaintextKeys;
 import social.meowl.tools.core.Hex;
 
 /**
- * Picocli mixin contributing the GlobalPlatform Issuer Security Domain (ISD) authentication keys to
- * the {@code meowl gp} subcommands.
+ * Picocli mixin contributing the GlobalPlatform ISD authentication keys to {@code meowl gp}.
  *
- * <p>Three modes are supported, in decreasing order of operator-friendliness:
+ * <p>Three modes:
  *
  * <ul>
- *   <li><b>None</b> — fall back to the well-known development static keys ({@code 40 41 ... 4F}),
- *       matching the legacy {@code meowl gp ...} behaviour.
- *   <li><b>{@code --key-master HEX}</b> — single 16-byte master key. The library applies the
- *       default GP-CPS diversification (per-card derivation from CIN/IIN). Suitable for most cards
- *       that expose a single master key in the datasheet.
+ *   <li><b>None</b> — well-known development static keys ({@code 40 41 ... 4F}).
+ *   <li><b>{@code --key-master HEX}</b> — 16-byte master key; library applies default GP-CPS
+ *       per-card diversification.
  *   <li><b>{@code --key-enc HEX --key-mac HEX --key-kek HEX}</b> — pre-diversified ENC / MAC / KEK
- *       triple, each 16 bytes. Bypasses any further on-host derivation; used when the vendor ships
- *       per-card "Card Diversification Keys" already derived from a master.
+ *       triple, used when the vendor ships per-card derived keys.
  * </ul>
  *
- * <p>The two non-default modes are mutually exclusive: providing {@code --key-master} together with
- * any of the triple, or providing only one or two of the triple, raises a picocli {@link
- * ParameterException} so the user sees a clear error rather than silently authenticating against
- * the wrong key set.
+ * <p>The two non-default modes are mutually exclusive; mixing them or supplying a partial triple
+ * raises {@link ParameterException}.
  *
- * <p><b>Security note.</b> The development default and most factory-provided "default" key sets are
- * <i>not secret</i> — they are publicly known and reused across all unprovisioned cards from a
- * given vendor. Production deployments MUST replace the ISD keys via {@code PUT KEY} before loading
- * any sensitive applet. See {@code tools/README.md §Production hardening} for the full
- * personalisation flow.
+ * <p><b>Security:</b> the development default and most factory-default keys are publicly known.
+ * Production deployments MUST replace the ISD keys via {@code PUT KEY} before loading sensitive
+ * applets (see {@code tools/README.md §Production hardening}).
  */
 public final class GpKeysOption {
 

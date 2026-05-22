@@ -8,7 +8,7 @@ import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
 
 /**
- * Tracks the applet lifecycle as a four-state finite state machine.
+ * Applet lifecycle as a four-state finite state machine.
  *
  * <pre>
  *   UNINITIALIZED ──personalise──▶ PERSONALIZED ──setup──▶ SETUP_DONE ──importSeed──▶ SEEDED
@@ -16,14 +16,10 @@ import javacard.framework.JCSystem;
  *         └──────────────────────────────reset-to-factory─────────────────────────────────┘
  * </pre>
  *
- * <p>Forward edges are linear: each state advances to the next ordinal via {@link
- * #transitionTo(byte)}. The only retrograde edge is {@link #reset()}, called from the
- * reset-to-factory flow, which collapses straight back to {@link #UNINITIALIZED}.
- *
- * <p>The current state is held in a single persistent {@code byte} field. Writes go through a
- * {@link JCSystem#beginTransaction() JavaCard transaction} so a torn power-off cannot leave the
- * card in a half-transitioned state. The {@code authentikey} keypair, however, survives every
- * transition — see {@code docs/specs/meap-4.md}.
+ * <p>Forward edges advance one ordinal via {@link #transitionTo}; the only retrograde edge is
+ * {@link #reset()}, taken by the reset-to-factory flow. Writes execute inside a {@link
+ * JCSystem#beginTransaction() JavaCard transaction} so a torn power-off cannot wedge the card
+ * mid-transition. The {@code authentikey} keypair survives every transition (MEAP-4).
  */
 public final class LifecycleState {
 
@@ -53,12 +49,10 @@ public final class LifecycleState {
     }
 
     /**
-     * Advances to {@code target}, which must equal {@code current + 1} and stay within the legal
-     * range. Throws {@link Constants#SW_LIFECYCLE_INVALID} if the move is not permitted.
-     *
-     * <p>This variant manages its own transaction. Use {@link #transitionToInTx(byte)} when the
-     * caller already holds a {@link JCSystem#beginTransaction() transaction} and wants the
-     * lifecycle advance to commit atomically with sibling mutations.
+     * Advances to {@code target}, which must equal {@code current + 1}. Manages its own
+     * transaction; use {@link #transitionToInTx} when the caller already holds an open one and
+     * wants the lifecycle advance to commit atomically with sibling mutations. Throws {@link
+     * Constants#SW_LIFECYCLE_INVALID} if the move is illegal.
      */
     public void transitionTo(byte target) {
         if (!isLegalForward(current, target)) {
@@ -70,10 +64,8 @@ public final class LifecycleState {
     }
 
     /**
-     * Atomicity-aware variant of {@link #transitionTo(byte)} that does not open its own
-     * transaction. The caller is responsible for wrapping this call in {@code
-     * JCSystem.beginTransaction / commitTransaction} so the lifecycle advance commits together with
-     * any companion state mutations.
+     * Transaction-less variant of {@link #transitionTo}. Caller MUST already hold a {@link
+     * JCSystem#beginTransaction()} block.
      */
     public void transitionToInTx(byte target) {
         if (!isLegalForward(current, target)) {
@@ -82,11 +74,7 @@ public final class LifecycleState {
         current = target;
     }
 
-    /**
-     * Force-resets the state machine to {@link #UNINITIALIZED}. Reserved for the reset-to-factory
-     * flow which is itself a privileged path; ordinary code paths must use {@link
-     * #transitionTo(byte)}.
-     */
+    /** Force-resets to {@link #UNINITIALIZED}. Reserved for the reset-to-factory flow. */
     public void reset() {
         JCSystem.beginTransaction();
         resetInTx();
@@ -95,16 +83,15 @@ public final class LifecycleState {
 
     /**
      * Transaction-less reset variant. Caller MUST hold a {@link JCSystem#beginTransaction()} block;
-     * used by {@link MeowlApplet#wipe()} to bundle the lifecycle reset into the single
-     * reset-to-factory transaction (audit F-15).
+     * used by {@link MeowlApplet#wipe()} to bundle the lifecycle reset into the single atomic
+     * reset-to-factory commit.
      */
     public void resetInTx() {
         current = UNINITIALIZED;
     }
 
     /**
-     * Asserts that the current state equals {@code required}, otherwise throws {@link
-     * Constants#SW_LIFECYCLE_INVALID}. Used by inner handlers to gate state-specific commands.
+     * Asserts {@code current == required}; throws {@link Constants#SW_LIFECYCLE_INVALID} otherwise.
      */
     public void require(byte required) {
         if (current != required) {
@@ -113,8 +100,7 @@ public final class LifecycleState {
     }
 
     /**
-     * Asserts that the current state is at least {@code minimum} in the forward FSM order,
-     * otherwise throws {@link Constants#SW_LIFECYCLE_INVALID}.
+     * Asserts {@code current >= minimum}; throws {@link Constants#SW_LIFECYCLE_INVALID} otherwise.
      */
     public void requireAtLeast(byte minimum) {
         if (current < minimum) {
@@ -122,10 +108,7 @@ public final class LifecycleState {
         }
     }
 
-    /**
-     * Pure decision function for {@link #transitionTo(byte)}. Package-private so unit tests can
-     * exercise it without engaging the JavaCard transaction machinery.
-     */
+    /** Pure decision function for {@link #transitionTo}, exposed package-private for unit tests. */
     static boolean isLegalForward(byte from, byte to) {
         return to == (byte) (from + 1) && from >= UNINITIALIZED && from < SEEDED && to <= SEEDED;
     }

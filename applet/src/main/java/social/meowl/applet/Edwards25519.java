@@ -7,29 +7,20 @@ package social.meowl.applet;
 import javacard.framework.Util;
 
 /**
- * Twisted-Edwards group operations for {@code edwards25519}.
+ * Twisted-Edwards group operations for {@code edwards25519} ({@code -x² + y² = 1 + d·x²·y² mod p}).
  *
- * <p>The curve is {@code -x² + y² = 1 + d·x²·y² (mod p)} with {@code d = -121665/121666 mod p}.
- * Points are stored in extended projective coordinates {@code (X, Y, Z, T)} with {@code x = X/Z},
- * {@code y = Y/Z}, {@code T = X·Y/Z}; this lets the addition and doubling formulas dispense with
- * inversions until the final encoding step. The class is purely static and stateless: all working
- * memory is provided by the caller, and {@link Field25519} owns the underlying field arithmetic.
+ * <p>Points use extended projective coordinates {@code (X, Y, Z, T)}; {@link #POINT_LEN} = 128
+ * contiguous big-endian bytes laid out as {@code X(32) ‖ Y(32) ‖ Z(32) ‖ T(32)}. {@link #pointAdd}
+ * and {@link #pointDouble} materialise their output last so the caller may alias output with either
+ * input. The class is stateless; all working memory is caller-supplied.
  *
- * <p>Memory layout — every point occupies {@link #POINT_LEN} = 128 contiguous big-endian bytes laid
- * out as {@code X(32) ‖ Y(32) ‖ Z(32) ‖ T(32)}. The output of {@link #pointAdd} and {@link
- * #pointDouble} is materialised at the very end (after every input byte has been read into
- * scratch), so the caller may freely alias the output with either input.
+ * <p>Formulas — addition {@code add-2008-hwcd-3} (9M) and doubling {@code dbl-2008-hwcd} (3S+4M)
+ * from <a href="https://hyperelliptic.org/EFD/g1p/auto-twisted-extended.html">EFD</a>, specialised
+ * for {@code a = -1}.
  *
- * <p>Formulas — addition {@code add-2008-hwcd-3} (9 multiplications) and doubling {@code
- * dbl-2008-hwcd} (3 squarings + 4 multiplications) from the Explicit-Formulas Database, specialised
- * for {@code a = -1}. Both are listed at <a
- * href="https://hyperelliptic.org/EFD/g1p/auto-twisted-extended.html">EFD</a>.
- *
- * <p>Scalar multiplication is a constant-time double-and-always-add over the full 256-bit scalar
- * range, which subsumes both the BIP-340-style 253-bit reduced scalars and the RFC 8032 secret
- * scalars (clamped into {@code [2²⁵⁴, 2²⁵⁵ − 8)}). Each of the 256 iterations performs exactly one
- * doubling and one addition, with the addend selected via byte-wise masking between the input point
- * and the identity element so the secret bit never branches the control flow.
+ * <p>{@link #scalarMult} is constant-time double-and-always-add over the full 256-bit scalar range:
+ * each iteration unconditionally doubles and adds either the input or the identity, selected via
+ * byte-wise masking so the secret bit never branches the control flow.
  */
 public final class Edwards25519 {
 
@@ -47,22 +38,19 @@ public final class Edwards25519 {
     public static final short PT_T_OFF = (short) 96;
 
     /**
-     * Scratch budget for {@link #pointAdd} and {@link #pointDouble} — 9 field-element slots for
-     * intermediates {@code A‥H + spare} plus a {@link Field25519#SCRATCH_LEN}-byte slot for every
-     * field multiplication / inversion the formulas perform.
+     * Scratch budget for {@link #pointAdd} / {@link #pointDouble}: 9 field-element slots ({@code
+     * A‥H + spare}) plus a {@link Field25519#SCRATCH_LEN}-byte slot for each field op.
      */
     public static final short POINT_OP_SCRATCH_LEN = (short) (9 * 32 + Field25519.SCRATCH_LEN);
 
     /**
-     * Scratch budget for {@link #scalarMult} — the {@link #POINT_OP_SCRATCH_LEN} buffer used by the
-     * inner add/double pair plus a 128-byte scratch slot for the conditionally selected addend
-     * point.
+     * Scratch budget for {@link #scalarMult}: {@link #POINT_OP_SCRATCH_LEN} plus a 128-byte slot
+     * for the conditionally selected addend point.
      */
     public static final short SCALAR_MULT_SCRATCH_LEN = (short) (POINT_OP_SCRATCH_LEN + POINT_LEN);
 
     /**
-     * Scratch budget for {@link #encodePoint} — one Field25519 inversion buffer plus two field-
-     * element slots ({@code Z⁻¹} and the affine {@code x}).
+     * Scratch budget for {@link #encodePoint}: one Field25519 buffer plus two field-element slots.
      */
     public static final short ENCODE_SCRATCH_LEN = (short) (Field25519.SCRATCH_LEN + 2 * 32);
 
@@ -96,8 +84,8 @@ public final class Edwards25519 {
     };
 
     /**
-     * Pre-doubled curve constant {@code 2d mod p}, big-endian. Used by {@link #pointAdd} for the
-     * {@code C ← T1 · 2d · T2} step so we save one field-multiplication per addition.
+     * Pre-doubled curve constant {@code 2d mod p}, big-endian. Saves one field-multiplication per
+     * {@link #pointAdd}.
      *
      * <p>{@code 2d = 0x2406d9dc56dffce7198e80f2eef3d13000e0149a8283b156ebd69b9426b2f159}.
      */
@@ -363,27 +351,10 @@ public final class Edwards25519 {
     }
 
     /**
-     * Re-randomises the projective coordinates of a point in place: {@code (X, Y, Z, T) ← (r·X,
-     * r·Y, r·Z, r·T)} for a caller-supplied non-zero field element {@code r}. The affine projection
-     * {@code (X/Z, Y/Z)} is invariant under this map, so the group element is unchanged; only the
-     * bit pattern of every intermediate field element fed into the variable-time {@link Bignat#mod}
-     * kernel during a subsequent {@link #scalarMult} is now statistically decorrelated from the
-     * secret scalar across calls.
-     *
-     * <p>This is the {@em projective coordinate randomisation} side-channel countermeasure
-     * described by Coron (CHES 1999, §3.1). Combined with the {@link #scalarMult} double-and-add
-     * ladder it raises the cost of a remote timing attack from "average n calls to recover one bit"
-     * to "the attacker must additionally undo a fresh random {@code r} per call", which is
-     * statistically infeasible without an in-card oracle. {@code blindFE} MUST be in {@code [1, p)}
-     * — any zero or {@code ≥ p} value yields an output that, while still on the curve, may collapse
-     * to the identity or otherwise leak information.
-     *
-     * @param point a {@link #POINT_LEN}-byte extended-coordinate point buffer (mutated in place)
-     * @param pointOff start of the point inside {@code point}
-     * @param blindFE 32-byte big-endian field element {@code r} in {@code [1, p)}
-     * @param blindOff start of {@code r} inside {@code blindFE}
-     * @param scratch scratch buffer with at least {@link #POINT_OP_SCRATCH_LEN} bytes
-     * @param scratchOff start of the scratch slice
+     * Projective coordinate randomisation (Coron, CHES 1999): {@code (X, Y, Z, T) ← (r·X, r·Y, r·Z,
+     * r·T)} for a non-zero field element {@code r ∈ [1, p)}. The affine projection is invariant, so
+     * the group element is unchanged — only the bit patterns fed into {@link Bignat#mod} during a
+     * subsequent {@link #scalarMult} are decorrelated from the secret scalar across calls.
      */
     public static void randomizeProjective(
             byte[] point,
@@ -432,9 +403,8 @@ public final class Edwards25519 {
     }
 
     /**
-     * Constant-time conditional copy: {@code dst ← (mask ? a : b)}. {@code mask} must be either
-     * {@code 0xFF} (select {@code a}) or {@code 0x00} (select {@code b}); the bytewise AND/OR
-     * pattern leaks no timing information about which branch was taken.
+     * Constant-time conditional copy: {@code dst ← (mask ? a : b)}. {@code mask} is {@code 0xFF} to
+     * select {@code a}, {@code 0x00} to select {@code b}.
      */
     private static void conditionalCopy(
             byte[] dst,
@@ -454,14 +424,8 @@ public final class Edwards25519 {
     }
 
     /**
-     * {@code out ← scalar · in} where {@code scalar} is interpreted as a 256-bit big-endian
-     * unsigned integer. Output must not alias either {@code in} or {@code scalar}.
-     *
-     * <p>The implementation is a constant-time double-and-always-add over all 256 scalar bits: each
-     * iteration unconditionally doubles the accumulator and adds either the input point or the
-     * identity (selected via a {@link #conditionalCopy} of two equal-cost masks). This makes the
-     * running time independent of the scalar's Hamming weight or value, which matters because the
-     * same routine is invoked with secret scalars in {@link Ed25519}.
+     * {@code out ← scalar · in} (constant-time double-and-always-add over 256 scalar bits). {@code
+     * scalar} is a big-endian 256-bit unsigned integer; output must not alias either input.
      */
     public static void scalarMult(
             byte[] scalar,
@@ -500,9 +464,8 @@ public final class Edwards25519 {
     }
 
     /**
-     * Encodes the point at {@code (X, Y, Z, T)} into a 32-byte little-endian RFC 8032 §5.1.2
-     * compressed form. The encoded form is {@code y_LE} with the high bit of byte 31 set to bit 0
-     * of the affine {@code x = X · Z⁻¹}.
+     * Encodes {@code (X, Y, Z, T)} into the 32-byte RFC 8032 §5.1.2 compressed form: {@code y_LE}
+     * with bit 7 of byte 31 carrying the parity of the affine {@code x = X · Z⁻¹}.
      */
     public static void encodePoint(
             byte[] in, short inOff, byte[] out, short outOff, byte[] scratch, short scratchOff) {

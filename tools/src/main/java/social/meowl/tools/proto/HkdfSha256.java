@@ -13,12 +13,9 @@ import javax.crypto.spec.SecretKeySpec;
 /**
  * RFC 5869 HKDF-SHA-256, the key-derivation function used by MEAP-2's Secure Channel.
  *
- * <p>The implementation is intentionally tiny — just {@code Extract} and {@code Expand} on top of
- * the JDK's {@link Mac} — because the MEAP-2 spec only ever calls Extract once and Expand once
- * (with {@code L = 80} bytes). We do not depend on BouncyCastle's HKDF here so this class can be
- * reused inside the JCardSim test path without dragging the BC provider into every classpath.
- *
- * <p>For the security and correctness rationale see {@code docs/specs/meap-2.md} §"Key derivation".
+ * <p>Implemented directly on top of the JDK's {@link Mac} (rather than BouncyCastle's HKDF) so the
+ * JCardSim test path does not have to drag in the BC provider. See {@code docs/specs/meap-2.md}
+ * §"Key derivation" for the protocol rationale.
  */
 public final class HkdfSha256 {
 
@@ -83,9 +80,7 @@ public final class HkdfSha256 {
             mac.update(effectiveInfo);
             mac.update((byte) i);
             byte[] next = mac.doFinal();
-            // Audit L-1.07: scrub each intermediate T(i-1) before reassigning to T(i). The last
-            // buffer is scrubbed by the post-loop fill below; this loop covers the case where a
-            // garbage-collected page could carry old T(i) bytes past the function's return.
+            // Scrub each intermediate T(i-1); the last block is scrubbed by the post-loop fill.
             Arrays.fill(previous, (byte) 0);
             previous = next;
             int copyLen = Math.min(HASH_LEN, length - written);

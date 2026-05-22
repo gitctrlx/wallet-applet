@@ -26,9 +26,9 @@ import org.junit.jupiter.api.Test;
  *   <li>countdown sequence and final wipe status word;
  *   <li>{@link ResetToFactory#rearm} restores the counter to {@link
  *       Constants#RESET_REQUIRED_INVOCATIONS};
- *   <li><b>audit L-2.01</b>: the counter is rearmed <em>before</em> {@link WipeTrigger#wipe} is
- *       invoked so an exception out of {@code wipe()} cannot leave {@code remaining[0] = 0} and
- *       emit a spurious {@code 0x6FFF} on the next invocation.
+ *   <li>the counter is rearmed <em>before</em> {@link WipeTrigger#wipe} runs so an exception out of
+ *       {@code wipe()} cannot leave {@code remaining[0] = 0} and emit a spurious {@code 0x6FFF} on
+ *       the next invocation.
  * </ul>
  *
  * <p>A {@link CardSimulator} is span up only to provide the JC transient-memory environment that
@@ -109,21 +109,21 @@ class ResetToFactoryTest {
     }
 
     @Test
-    @DisplayName("L-2.01: wipe() exception leaves counter rearmed, NOT at zero")
+    @DisplayName("wipe() exception leaves counter rearmed, NOT at zero")
     void wipeExceptionDoesNotCorruptCounter() {
         wipe.shouldThrow = true;
         for (int i = 0; i < Constants.RESET_REQUIRED_INVOCATIONS - 1; i++) {
             assertThrows(ISOException.class, () -> trigger.recordInvocation(wipe));
         }
-        // The terminal invocation will rearm the counter, then call wipe() which throws.
-        // The propagating RuntimeException is by design — the audit invariant is purely about
+        // The terminal invocation rearms the counter, then calls wipe() which throws. The
+        // propagating RuntimeException is by design — the invariant under test is purely about
         // the counter state after the throw.
         assertThrows(RuntimeException.class, () -> trigger.recordInvocation(wipe));
         assertEquals(
                 Constants.RESET_REQUIRED_INVOCATIONS,
                 trigger.remaining(),
-                "audit L-2.01: counter must be rearmed BEFORE wipe() to prevent 0x6FFF on the"
-                        + " next invocation");
+                "counter must be rearmed BEFORE wipe() to prevent 0x6FFF on the next"
+                        + " invocation");
         assertEquals(1, wipe.callCount);
     }
 }

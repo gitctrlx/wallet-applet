@@ -15,15 +15,12 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
- * Audit F-27 / F-28 regression: pin the constant-time mask-based reimplementations of {@link
- * SecureChannel#stripPkcs5} and {@link SecureChannel#compare16}.
- *
- * <p>Both helpers are package-private so this test reaches them directly without reflection. The
- * previous revisions used early-return branches (PKCS#5 unpad raised on the first invalid byte; IV
- * compare returned on the first non-equal byte); the rewrite folds every check into a sticky-mask
- * accumulator so the time spent in each helper is independent of where in the buffer the verdict is
- * reached. This file enumerates every legal padding length and a representative spread of malformed
- * inputs so a regression that re-introduces an early-return branch trips the build.
+ * Coverage for the constant-time mask-based {@link SecureChannel#stripPkcs5} and {@link
+ * SecureChannel#compare16}. Both helpers are package-private so this test reaches them directly.
+ * They use sticky-mask accumulators (rather than early-return branches) so the time spent is
+ * independent of where in the buffer the verdict is reached; the cases below enumerate every legal
+ * padding length and a representative spread of malformed inputs so any regression to an
+ * early-return branch trips the build.
  */
 class SecureChannelStripPkcs5Test {
 

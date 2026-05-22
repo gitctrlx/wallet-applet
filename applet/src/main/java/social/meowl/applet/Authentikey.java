@@ -12,20 +12,16 @@ import javacard.security.KeyBuilder;
 import javacard.security.KeyPair;
 
 /**
- * Long-lived secp256k1 keypair that identifies this physical card. Generated exactly once during
- * applet install and preserved across factory resets per MEAP-4. The private half never leaves the
- * secure element; the public half is the card-identity anchor for the Secure Channel handshake
- * (MEAP-2) and the CSR subject during PKI personalisation (MEAP-4).
+ * Long-lived secp256k1 card-identity keypair. Generated once at install, preserved across factory
+ * resets (MEAP-4). The private half never leaves the secure element; the public half anchors the
+ * Secure Channel handshake (MEAP-2) and serves as the CSR subject during PKI personalisation.
  */
 public final class Authentikey {
 
     private final ECPrivateKey privateKey;
     private final ECPublicKey publicKey;
 
-    /**
-     * Generates a fresh authentikey keypair via {@link KeyPair#genKeyPair()}, which pulls entropy
-     * from the platform CSPRNG, and configures both halves with the secp256k1 curve parameters.
-     */
+    /** Generates a fresh secp256k1 keypair seeded from the platform CSPRNG. */
     public Authentikey() {
         this.privateKey =
                 (ECPrivateKey)
@@ -42,9 +38,11 @@ public final class Authentikey {
     }
 
     /**
-     * Writes the SEC 1 §2.3.3 compressed public key into {@code dst} at {@code offset}. Returns
-     * {@link Constants#EC_POINT_COMPRESSED_LEN}. The trailing y-coordinate bytes (past the 33-byte
-     * compressed point) are zeroised so no ephemeral residue leaks into outbound buffers.
+     * Writes the SEC 1 §2.3.3 compressed public key into {@code dst} at {@code offset}. The
+     * trailing y-coordinate bytes past the 33-byte compressed point are zeroised so no residue
+     * leaks into outbound buffers.
+     *
+     * @return {@link Constants#EC_POINT_COMPRESSED_LEN}
      */
     public short writeCompressedPubkeyTo(byte[] dst, short offset) {
         Bounds.requireCapacity(dst, offset, Constants.EC_POINT_UNCOMPRESSED_LEN);
@@ -54,9 +52,7 @@ public final class Authentikey {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
 
-        // After getW(): dst[offset .. offset+64] = 0x04 ‖ x(32) ‖ y(32).
-        // SEC 1 §2.3.3 compression keeps `x(32)` in place and replaces the 0x04 prefix with
-        // 0x02 (y even) or 0x03 (y odd).
+        // SEC 1 §2.3.3: keep x in place, replace the 0x04 prefix with 0x02 (y even) / 0x03 (y odd).
         byte yLsb = dst[(short) (offset + Constants.EC_POINT_UNCOMPRESSED_LEN - 1)];
         dst[offset] = ((yLsb & 0x01) == 0) ? (byte) 0x02 : (byte) 0x03;
         Util.arrayFillNonAtomic(

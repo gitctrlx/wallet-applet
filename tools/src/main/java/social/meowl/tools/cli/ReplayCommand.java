@@ -24,14 +24,9 @@ import social.meowl.tools.core.Hex;
 import social.meowl.tools.core.MeowlSw;
 
 /**
- * {@code meowl replay <dump-file> <hex-apdu>} — replays an APDU exchange from a previously captured
- * dump file, without touching a real card.
- *
- * <p>This is the offline counterpart to {@code meowl --dump} sessions: a developer captures a real
- * exchange against the card, then iterates against the dump to test host-side behaviour (parsers,
- * error-handling) at zero cost and without needing a card at hand. The dump format is apdu4j's
- * {@link MockBIBO#fromDump(java.io.InputStream) MockBIBO replay format}, which the dump file
- * produced by {@code DumpingBIBO} writes directly.
+ * {@code meowl replay <dump-file> <hex-apdu>} — replays an APDU exchange against a previously
+ * captured {@link MockBIBO#fromDump dump file}, with no card attached. Offline counterpart to
+ * {@code meowl --dump}.
  */
 @Command(
         name = "replay",

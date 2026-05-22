@@ -13,18 +13,12 @@ import java.util.Objects;
 import java.util.SequencedMap;
 
 /**
- * Minimal Tag-Length-Value parser sized for the meowl applet's APDU surface.
+ * Minimal TLV parser for the meowl applet's APDU surface. Each entry is {@code [tag(1) | len(1) |
+ * value(len)]} — no BER-TLV indefinite forms, multi-byte tags, or constructed types. Strict by
+ * design so the decoder is unambiguous.
  *
- * <p>The applet's TLV blobs (notably {@code GET_INFO}'s response) follow a deliberately constrained
- * shape: each entry is a single-byte tag, a single-byte unsigned length, and the value bytes. That
- * is sufficient for everything we encode today — no BER-TLV indefinite forms, no multi-byte tags,
- * no constructed types. Keeping the parser this strict means there is no decoder ambiguity for
- * auditors to reason about, and it can be implemented without {@link java.nio.ByteBuffer} or any
- * I/O dependency.
- *
- * <p>The parser preserves insertion order via {@link LinkedHashMap}, so duplicate-tag policy and
- * canonical TLV ordering can be enforced by simple equality on the result of {@link #parse(byte[])}
- * across two implementations.
+ * <p>Insertion order is preserved via {@link LinkedHashMap} so duplicate-tag policy and canonical
+ * ordering can be enforced by equality on the result of {@link #parse(byte[])}.
  */
 public final class Tlv {
 

@@ -27,21 +27,16 @@ import org.bouncycastle.crypto.ec.CustomNamedCurves;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
 /**
- * Host-side cryptographic primitives needed by the MEAP-2 Secure Channel client.
- *
- * <p>This class hosts the four concrete primitives MEAP-2 mandates:
+ * Host-side cryptographic primitives for the MEAP-2 Secure Channel client:
  *
  * <ul>
- *   <li>secp256k1 ephemeral key generation + ECDH x-coordinate computation
+ *   <li>secp256k1 ephemeral key generation + ECDH x-coordinate
  *   <li>AES-256-CBC encrypt / decrypt with PKCS#5 padding
  *   <li>HMAC-SHA-256 truncated to 16 bytes (the channel MAC)
- *   <li>SHA-256-with-ECDSA signature verification on secp256k1 (handshake authentication)
+ *   <li>SHA-256-with-ECDSA verification on secp256k1 (handshake authentication)
  * </ul>
  *
- * <p>The implementation deliberately uses the JDK's standard JCE for AES / HMAC / message-digest,
- * and BouncyCastle (as the {@code BC} provider) only for the curve arithmetic. This keeps the
- * surface area small and lets the same primitives be tested without registering BC for symmetric
- * paths.
+ * <p>JDK JCE handles AES / HMAC / message-digest; BouncyCastle is used only for curve arithmetic.
  */
 public final class HostCrypto {
 
@@ -96,11 +91,8 @@ public final class HostCrypto {
     }
 
     /**
-     * Generates a fresh secp256k1 ephemeral keypair using the platform CSPRNG.
-     *
-     * <p>The private scalar is drawn from {@code [1, n-1]} via rejection sampling so the result is
-     * uniformly distributed on the valid scalar space. The public key is encoded in SEC1
-     * uncompressed form.
+     * Generates a fresh secp256k1 ephemeral keypair. Private scalar is drawn from {@code [1, n-1]}
+     * via rejection sampling; public key is SEC1 uncompressed.
      */
     public static EphKeyPair generateEphKeyPair() {
         BigInteger n = SECP256K1.getN();
@@ -120,9 +112,9 @@ public final class HostCrypto {
 
     /**
      * Computes the secp256k1 ECDH shared {@code x}-coordinate between {@code clientPriv} and the
-     * SEC1-uncompressed encoded peer public key {@code peerPubEncoded}.
+     * SEC1-uncompressed peer {@code peerPubEncoded}.
      *
-     * @return the 32-byte big-endian shared {@code x}-coordinate
+     * @return the 32-byte big-endian shared {@code x}
      * @throws IllegalArgumentException if {@code peerPubEncoded} is not on the curve
      */
     public static byte[] ecdhSharedX(BigInteger clientPriv, byte[] peerPubEncoded) {
@@ -143,14 +135,7 @@ public final class HostCrypto {
         return bigIntToFixed(shared.getAffineXCoord().toBigInteger(), EC_SCALAR_LEN);
     }
 
-    /**
-     * Verifies a DER-encoded SHA-256-with-ECDSA signature on secp256k1.
-     *
-     * @param compressedPubkey the signer's 33-byte compressed public key
-     * @param message the message that was signed
-     * @param derSignature the DER-encoded signature
-     * @return {@code true} iff verification succeeds
-     */
+    /** Verifies a DER-encoded SHA-256-with-ECDSA signature on secp256k1. */
     public static boolean verifyEcdsaSecp256k1(
             byte[] compressedPubkey, byte[] message, byte[] derSignature) {
         Objects.requireNonNull(compressedPubkey, "compressedPubkey");
@@ -199,9 +184,8 @@ public final class HostCrypto {
     }
 
     /**
-     * Decrypts AES-256-CBC ciphertext and strips PKCS#5 padding. Throws {@link
-     * IllegalArgumentException} on a malformed pad — the caller treats this as a MAC-equivalent
-     * failure (per MEAP-2 §record-layer step 4).
+     * Decrypts AES-256-CBC ciphertext and strips PKCS#5 padding. Raises {@link
+     * SecureChannelException} on a malformed pad (treated as a MAC-equivalent failure per MEAP-2).
      */
     public static byte[] aesCbcDecrypt(byte[] key, byte[] iv, byte[] ciphertext) {
         byte[] padded = aesCbc(Cipher.DECRYPT_MODE, key, iv, ciphertext);
@@ -224,10 +208,7 @@ public final class HostCrypto {
         }
     }
 
-    /**
-     * Computes SHA-256 over a single message; useful for tests that want to verify the host-side
-     * digest matches what the applet computed.
-     */
+    /** SHA-256 over a single message; used by tests that compare against the applet's digest. */
     public static byte[] sha256(byte[] data) {
         try {
             return MessageDigest.getInstance("SHA-256").digest(data);
@@ -245,11 +226,9 @@ public final class HostCrypto {
         if (raw.length == length) return raw;
         byte[] out = new byte[length];
         if (raw.length > length) {
-            // BigInteger#toByteArray prepends a sign byte for positive values whose high bit is 1.
-            // Strip the leading zero(s) to fit, but reject genuine overflows. Audit L-1.09: do
-            // NOT include the value itself in the diagnostic — this helper might in the future be
-            // called on private scalar material; logging the value via stderr / log frameworks
-            // would be a leak.
+            // BigInteger#toByteArray prepends a sign byte for positive values whose high bit is
+            // 1; strip it but reject genuine overflows. The diagnostic deliberately omits the
+            // value itself because this helper may handle secret scalar material.
             int excess = raw.length - length;
             for (int i = 0; i < excess; i++) {
                 if (raw[i] != 0) {
@@ -310,13 +289,9 @@ public final class HostCrypto {
     }
 
     /**
-     * Strips PKCS#5 padding from a decrypted ciphertext block.
-     *
-     * <p>Per audit F-22 every padding-related failure raises {@link SecureChannelException} so the
-     * Secure Channel stack speaks one exception family on the host side, matching the {@link
-     * SecureChannelClient} call sites that already convert wire-level errors into the same type.
-     * The {@code sw} field is {@code 0} because the failure is detected entirely in host code after
-     * a successful AES decrypt.
+     * Strips PKCS#5 padding from a decrypted block. Every padding failure raises {@link
+     * SecureChannelException} so the Secure Channel stack speaks one exception family. {@code sw =
+     * 0} because the failure is detected entirely in host code after AES decrypt.
      */
     private static byte[] pkcs5Unpad(byte[] padded) {
         if (padded.length == 0 || padded.length % AES_BLOCK_LEN != 0) {

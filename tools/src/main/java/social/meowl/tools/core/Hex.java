@@ -9,21 +9,13 @@ import java.util.Objects;
 
 /**
  * Strict hexadecimal codec used wherever the CLI accepts user-supplied hex (APDU bytes, AIDs,
- * digests, …).
- *
- * <p>Why a dedicated wrapper around {@link HexFormat}?
+ * digests, …). A thin wrapper around {@link HexFormat} that
  *
  * <ul>
- *   <li>{@code HexFormat#parseHex} swallows odd-length input by throwing an unhelpful generic
- *       message; we surface the offending value instead so users see <em>what</em> failed.
- *   <li>We strip a leading {@code 0x} / {@code 0X} prefix so paste-from-debugger workflows just
- *       work.
- *   <li>We normalise to uppercase on encode so JSON outputs and dump files diff cleanly between
- *       runs and across operating systems.
+ *   <li>strips an optional {@code 0x} / {@code 0X} prefix so paste-from-debugger workflows work;
+ *   <li>surfaces the offending value in error messages instead of {@link HexFormat}'s generic one;
+ *   <li>normalises encode output to uppercase so JSON dumps diff cleanly across runs.
  * </ul>
- *
- * <p>Allocations are kept minimal: the hot path delegates straight to {@link HexFormat} with no
- * intermediate {@link String} objects beyond the trimmed input.
  */
 public final class Hex {
 

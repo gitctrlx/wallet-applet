@@ -13,13 +13,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit tests for {@link Bounds} — the overflow-safe range-check helper introduced by audit F-04 /
- * F-05.
- *
- * <p>Previously covered only indirectly via {@link ApduTlv} / {@link Authentikey}, but the F-04
- * fix's headline guarantee — overflow-safety for {@code offset + needed} sums larger than {@code
- * 0x7FFF} — is best pinned by a direct test that constructs the overflowing pair and observes the
- * rejection (audit F-45).
+ * Unit tests for {@link Bounds}, the overflow-safe range-check helper. The headline guarantee —
+ * overflow-safety for {@code offset + needed} sums larger than {@code 0x7FFF} — is pinned here by
+ * directly constructing the overflowing pair and observing the rejection.
  */
 class BoundsTest {
 

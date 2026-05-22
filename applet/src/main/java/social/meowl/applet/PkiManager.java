@@ -90,19 +90,17 @@ public final class PkiManager {
     }
 
     /**
-     * Signs a host-provided 32-byte digest with the authentikey private key, producing a DER-
-     * encoded ECDSA signature.
+     * Signs a host-provided 32-byte digest with the authentikey private key, producing a
+     * DER-encoded ECDSA signature.
      *
-     * @return the number of bytes written to {@code out[outOffset..]}
+     * @return number of bytes written to {@code out[outOffset..]}
      */
     public short signCsr(byte[] digest, short digestOffset, byte[] out, short outOffset) {
         if (digestOffset < 0
                 || (short) ((short) digest.length - digestOffset) < Constants.EC_SCALAR_LEN) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        // ALG_ECDSA_SHA_256 expects an arbitrary-length message it hashes internally. We want to
-        // sign an already-computed 32-byte digest. Use signPreComputedHash() which is the JC API
-        // for this exact use case (since JC 3.0.4).
+        // signPreComputedHash() lets us sign an already-computed digest without re-hashing.
         ecdsa.init(authentikey.privateKey(), Signature.MODE_SIGN);
         return ecdsa.signPreComputedHash(
                 digest, digestOffset, Constants.EC_SCALAR_LEN, out, outOffset);
@@ -110,14 +108,8 @@ public final class PkiManager {
 
     /**
      * Step 1 of chunked import: declares the total certificate size and resets the working area.
-     * Fails if {@code totalLen} is zero or exceeds {@link Constants#PKI_CERT_MAX_LEN}.
-     *
-     * <p>The certificate buffer is zeroed in full as part of this step. Without the wipe, an
-     * abandoned chunked import followed by a shorter re-import would leave trailing bytes of the
-     * previous attempt in {@link #cert}; while {@link #exportCert} clamps reads to {@link
-     * #importedLen} and would not currently expose them through the public API, the wipe makes the
-     * invariant "anything past {@code importedLen} is zero" hold at the buffer level so any future
-     * code reading the buffer directly cannot accidentally leak prior content.
+     * The cert buffer is zeroed in full so the invariant "anything past {@code importedLen} is
+     * zero" holds at the buffer level, irrespective of how the buffer is later read.
      */
     public void importInit(short totalLen) {
         if (totalLen <= 0 || totalLen > Constants.PKI_CERT_MAX_LEN) {
@@ -146,8 +138,7 @@ public final class PkiManager {
                 || chunkLen > Constants.PKI_CERT_CHUNK_MAX_LEN) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        // Util.arrayCopy is the transactional variant; the JC spec requires either an existing
-        // transaction or that the call is treated as a single atomic unit.
+        // Util.arrayCopy is the transactional variant.
         JCSystem.beginTransaction();
         Util.arrayCopy(chunk, chunkOffset, cert, offset, chunkLen);
         JCSystem.commitTransaction();
@@ -187,18 +178,14 @@ public final class PkiManager {
         return take;
     }
 
-    /**
-     * Reports the committed certificate size. Used by host pagination to know when to stop
-     * requesting windows.
-     */
+    /** Committed certificate size; used by host pagination to know when to stop. */
     public short certLen() {
         return importedLen;
     }
 
     /**
-     * Reset-to-factory hook. Per {@code docs/specs/meap-4.md} the authentikey itself is preserved;
-     * the manufacturer-issued certificate, by contrast, is user-visible factory data and is wiped
-     * here so a re-personalised card can install a fresh cert.
+     * Reset-to-factory hook. Per {@code docs/specs/meap-4.md} the authentikey is preserved; the
+     * manufacturer-issued certificate is wiped so a re-personalised card can install a fresh one.
      */
     public void wipe() {
         JCSystem.beginTransaction();
@@ -207,10 +194,9 @@ public final class PkiManager {
     }
 
     /**
-     * Transaction-less wipe variant. Caller MUST hold a {@link JCSystem#beginTransaction()} block
-     * around this call; used by {@link MeowlApplet#wipe()} to bundle the cert wipe into the single
-     * reset-to-factory transaction so a torn power-off cannot leave the card with cleared PIN/PUK
-     * but a stale certificate still committed (audit F-15).
+     * Transaction-less wipe variant. Caller MUST hold a {@link JCSystem#beginTransaction()} block;
+     * used by {@link MeowlApplet#wipe()} to bundle the cert wipe into the single atomic
+     * reset-to-factory commit.
      */
     public void wipeInTx() {
         Util.arrayFillNonAtomic(cert, (short) 0, Constants.PKI_CERT_MAX_LEN, (byte) 0);

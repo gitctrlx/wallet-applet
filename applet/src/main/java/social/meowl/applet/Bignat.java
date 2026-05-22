@@ -9,49 +9,28 @@ import javacard.framework.Util;
 /**
  * Multi-precision unsigned big-integer primitives over big-endian byte arrays.
  *
- * <p>JavaCard 3.0.5 ships no native {@code BigInteger} type and the only widely-supported
- * arithmetic primitive on numbers wider than 16 bits is the RSA modular exponentiation engine. The
- * Schnorr and Ed25519 signing paths need three primitive operations the JC platform does not
- * provide:
+ * <p>JavaCard 3.0.5 ships no native {@code BigInteger}; the Schnorr and Ed25519 paths need
+ * arbitrary-length add/sub with carry, 32-byte multiply, and variable-length modular reduction.
+ * This class implements them in pure software.
  *
- * <ul>
- *   <li>schoolbook addition / subtraction with carry on arbitrary-length operands;
- *   <li>32-byte × 32-byte → 64-byte multiplication for {@code e · d};
- *   <li>variable-length modular reduction for {@code (k + e · d) mod n}.
- * </ul>
+ * <p>{@link #mult} is a direct schoolbook multiplication. {@link #mod} and its helpers ({@link
+ * #shiftBits}, {@link #shiftLesser}, {@link #timesMinus}, {@link #highestBit}) are adapted from <a
+ * href="https://github.com/Toporin/SatochipApplet">Toporin's Satochip Biginteger</a>
+ * (GPL-2.0-or-later, derived from the <a
+ * href="https://www.cs.ru.nl/~erikpoll/papers/ovchip.pdf">Radboud OV-chip 2.0 Bignat</a>);
+ * re-licensed to AGPL-3.0-or-later via the GPLv2 upgrade clause. See {@code REUSE.toml} for SPDX.
  *
- * <p>This class implements those primitives in pure software. The schoolbook multiplication in
- * {@link #mult} is a direct meowl implementation. The schoolbook long-division algorithm in {@link
- * #mod}, plus the {@link #shiftBits}, {@link #shiftLesser}, {@link #timesMinus} and {@link
- * #highestBit} helpers it depends on, are adapted from <a
- * href="https://github.com/Toporin/SatochipApplet">Toporin's Satochip Biginteger</a> (copyright ©
- * 2015–2024 Toporin (Satochip), GPL-2.0-or-later), which is in turn derived from the <a
- * href="https://www.cs.ru.nl/~erikpoll/papers/ovchip.pdf">Radboud University OV-chip 2.0 Bignat</a>
- * (copyright © 2008–2009 Digital Security (DS) group, Radboud Universiteit Nijmegen,
- * GPL-2.0-or-later). Per the GPLv2-or-later upgrade clause this file inherits both upstream
- * copyrights and re-licenses to AGPL-3.0-or-later; the in-tree {@code REUSE.toml} records the
- * complete attribution chain in machine-readable form for SPDX tooling.
+ * <p>All operands are big-endian. All methods are static and operate on caller-supplied buffers.
  *
- * <p>All operands are big-endian (most-significant byte at the lowest offset). All methods are
- * static and operate on caller-supplied buffers; this class holds no state of its own.
+ * <p><b>Timing model.</b> The bulk kernels ({@link #add}, {@link #sub}, {@link #mult}, {@link
+ * #mod}, {@link #lessThan}, {@link #isZero}) are <strong>not</strong> constant-time. Call them only
+ * on (a) public material, (b) material mixed with sufficient randomness that the timing reveals no
+ * secret bits, or (c) inside {@link Edwards25519#scalarMult} whose ladder runs on a randomised
+ * projective coordinate ({@link Edwards25519#randomizeProjective}).
  *
- * <p><b>Timing model.</b> The bulk-arithmetic kernels here ({@link #add}, {@link #sub}, {@link
- * #mult}, {@link #mod}, {@link #lessThan}, {@link #isZero}) are not constant-time: {@code mod}
- * walks a schoolbook long-division ladder whose iteration count depends on the operand magnitude,
- * and the comparison helpers short-circuit on the first differing byte. They MUST therefore only be
- * invoked on either (a) public material, (b) material that has already been mixed with sufficient
- * randomness that the timing fan-out reveals no secret bits (e.g. the Schnorr blinded-nonce
- * kernel), or (c) inside the constant-time {@link Edwards25519#scalarMult} loop where every
- * iteration multiplies and reduces a randomised projective coordinate (audit F-01 / F-03
- * mitigation: {@link Edwards25519#randomizeProjective}).
- *
- * <p>For the modular-arithmetic wrappers that DO need constant-time semantics — the final
- * conditional-subtract that brings the result of {@code a + b mod n} back into {@code [0, n)}, and
- * the {@code a < n} / {@code a == 0} predicates exposed by {@link ModN} and {@link Field25519} —
- * this class also exposes a small set of mask-based helpers: {@link #condSubInPlace}, {@link
- * #condAddInPlace}, {@link #ctLessThan} and {@link #ctIsZero}. They follow the libsodium /
- * fiat-crypto pattern of "always do the work, mask the result", trading a small constant-factor for
- * the elimination of data-dependent branches on the reduction step.
+ * <p>The mask-based helpers ({@link #condSubInPlace}, {@link #condAddInPlace}, {@link #ctLessThan},
+ * {@link #ctIsZero}) are constant-time, following the libsodium / fiat-crypto "always do the work,
+ * mask the result" pattern. Use these for reduction steps that touch secrets.
  */
 public final class Bignat {
 
@@ -132,16 +111,12 @@ public final class Bignat {
     }
 
     /**
-     * Schoolbook unsigned multiplication: {@code z[zOff..zOff+2*size] = x[xOff..xOff+size] *
-     * y[yOff..yOff+size]}. The destination is fully overwritten; it must not alias either source.
-     *
-     * <p>For 32-byte operands this performs 1024 byte-by-byte multiplications and the same number
-     * of two-byte additions. On a 32 MHz JC silicon that is well under 10 ms, dominated by the
-     * subsequent EC scalar-multiplication anyway.
+     * Schoolbook unsigned multiplication: {@code z[zOff..zOff+2*size] = x · y}. The destination is
+     * fully overwritten and must not alias either source. For 32-byte operands this is 1024
+     * byte-multiplies on 32 MHz JC silicon — well under 10 ms.
      */
     public static void mult(
             byte[] x, short xOff, byte[] y, short yOff, short size, byte[] z, short zOff) {
-        // Zero the destination first; the schoolbook accumulator below assumes z starts clean.
         Util.arrayFillNonAtomic(z, zOff, (short) (size * 2), (byte) 0);
         for (short i = (short) (size - 1); i >= 0; i--) {
             short carry = 0;
@@ -159,31 +134,17 @@ public final class Bignat {
             }
             // Propagate any leftover carry into the next column above.
             short k = (short) (zOff + i);
-            short sum = (short) ((z[k] & DIGIT_MASK) + carry);
-            z[k] = (byte) sum;
-            // For schoolbook 32×32 the result fits in 64 bytes, so this carry is structurally 0
-            // for our use case — but assert nothing here, the next iteration's outer loop runs
-            // at index i-1, which writes to z[zOff + i - 1] anyway.
+            z[k] = (byte) ((z[k] & DIGIT_MASK) + carry);
         }
     }
 
     /**
-     * Schoolbook modular reduction in place: {@code dividend[dvOff..dvOff+dvSize] ←
-     * dividend[dvOff..dvOff+dvSize] mod divisor[drOff..drOff+drSize]}.
+     * In-place schoolbook modular reduction: {@code dividend ← dividend mod divisor} (classical
+     * long division over byte digits). On return, the {@code drSize}-byte remainder lives in the
+     * trailing slot of the dividend; leading bytes are zero.
      *
-     * <p>After the call, the {@code drSize}-byte remainder lives in the trailing slot of the
-     * dividend, namely {@code dividend[dvOff + dvSize - drSize .. dvOff + dvSize]}; the leading
-     * {@code dvSize - drSize} bytes are zero. The divisor is read-only.
-     *
-     * <p>Algorithm: classical schoolbook long division over byte digits, adapted from the Toporin
-     * Satochip Biginteger (itself a port of the Radboud University OV-chip 2.0 Bignat code). The
-     * outer loop walks the divisor over every aligned position of the dividend; the inner loop
-     * estimates the per-position quotient digit using the leading two bytes of the partial
-     * remainder and the leading byte of the divisor (with a small bit-shift to recover precision
-     * when those leading bytes are small).
-     *
-     * <p>Caller responsibility: {@code divisor} must be non-zero, {@code dvSize ≥ drSize}, and the
-     * dividend buffer must contain the full unreduced value (no leading-zero stripping).
+     * <p>Caller invariants: {@code divisor != 0}, {@code dvSize ≥ drSize}, dividend holds the full
+     * unreduced value.
      */
     public static void mod(
             byte[] dividend, short dvOff, short dvSize, byte[] divisor, short drOff, short drSize) {
@@ -279,11 +240,7 @@ public final class Bignat {
         }
     }
 
-    /**
-     * Index of the most significant 1 bit (0..15) of a 16-bit value, returning 16 for zero. Used by
-     * {@link #mod} to estimate the bit-width of the leading divident / divisor digits before the
-     * precision-recovering left-shift.
-     */
+    /** Index of the most significant 1 bit (0..15) of a 16-bit value; returns 16 for zero. */
     private static short highestBit(short x) {
         for (short i = 0; i < DOUBLE_DIGIT_LEN; i++) {
             if (x < 0) {
@@ -296,8 +253,7 @@ public final class Bignat {
 
     /**
      * Left-shifts the concatenation {@code high (16b) ‖ middle (8b) ‖ low (8b)} by {@code shift}
-     * bits and returns the most-significant 16 bits of the result. Helper for {@link #mod}; see the
-     * OV-chip 2.0 Bignat documentation for the full derivation.
+     * bits and returns the top 16 bits. {@link #mod} helper.
      */
     private static short shiftBits(short high, byte middle, byte low, short shift) {
         high <<= shift;
@@ -319,9 +275,8 @@ public final class Bignat {
     }
 
     /**
-     * Tests whether the divisor — shifted left by {@code shift} byte-positions — is strictly
-     * greater than the partial dividend at the current {@code start} round. Helper for {@link
-     * #mod}: returns {@code true} iff "we should advance to the next divisor position".
+     * {@link #mod} helper: tests whether the divisor shifted by {@code shift} byte-positions is
+     * strictly greater than the partial dividend, signalling "advance to next divisor position".
      */
     private static boolean shiftLesser(
             byte[] x,
@@ -353,9 +308,8 @@ public final class Bignat {
     }
 
     /**
-     * Subtracts {@code multiple × (divisor << 8*shift)} from {@code dividend} in place. The inner
-     * loop walks the divisor right-to-left over the partial dividend window, accumulating the
-     * {@code multiple * digit} products and propagating borrow upward. Helper for {@link #mod}.
+     * Subtracts {@code multiple × (divisor << 8*shift)} from {@code dividend} in place. {@link
+     * #mod} helper.
      */
     private static void timesMinus(
             byte[] dividend,
@@ -447,26 +401,17 @@ public final class Bignat {
     }
 
     /**
-     * Constant-time {@code x == 0} predicate. Reads every byte and returns {@code -1} iff the
-     * buffer is all zero, {@code 0} otherwise. The implementation deliberately avoids any local of
-     * type {@code int} because the J3R180 JavaCard converter rejects 32-bit locals (see {@link
-     * Bignat} class Javadoc and audit F-01 follow-up).
+     * Constant-time {@code x == 0} predicate. Returns {@code -1} iff the buffer is all zero, {@code
+     * 0} otherwise. Every intermediate stays in the short domain because the JC 3.0.5 CAP converter
+     * rejects int-typed locals.
      */
     public static short ctIsZero(byte[] x, short xOff, short size) {
-        // Accumulate the byte-wise OR in a short. Each contribution is an unsigned byte (range
-        // [0, 0xFF]) so the running OR stays in the same range; sign-extension is impossible.
+        // Byte-wise OR into a short; each contribution is an unsigned byte so no sign-extension.
         short acc = 0;
         for (short i = 0; i < size; i++) {
             acc |= (short) (x[(short) (xOff + i)] & DIGIT_MASK);
         }
-        // Map `acc` -> {-1, 0} mask without leaving the short domain: the JavaCard 3.0.5 converter
-        // rejects intermediate int-typed sub-expressions, so every step is explicitly narrowed.
-        // Recipe:
-        //   1. `(short) -acc` is the two's-complement negation in 16-bit. Bit 15 is set iff
-        //      `acc != 0` (the only short that equals its own negation modulo 2^16 is 0).
-        //   2. `(short) (acc | -acc)` keeps bit 15 set iff `acc != 0`.
-        //   3. `>>> 15 & 1` extracts that bit as 0 or 1.
-        //   4. Subtract 1 to land on the {-1, 0} mask convention used elsewhere in this class.
+        // Map acc -> {-1, 0}: (acc | -acc) has bit 15 set iff acc != 0; extract and subtract 1.
         short orNeg = (short) (acc | (short) -acc);
         short nonZero = (short) ((orNeg >>> 15) & 1);
         return (short) (nonZero - 1);

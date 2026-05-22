@@ -305,9 +305,9 @@ class Ed25519SigningTest {
                 "SLIP-10 non-hardened index in the path is rejected with"
                         + " SW_CONDITIONS_NOT_SATISFIED")
         void nonHardenedRejected() {
-            // Per audit F-14: 6985 (conditions not satisfied) is the semantically correct status
-            // word — 6A86 (incorrect P1/P2) is reserved for malformed APDU headers, not for
-            // policy violations carried inside the inner data field.
+            // 6985 (conditions not satisfied) is the semantically correct status word — 6A86
+            // (incorrect P1/P2) is reserved for malformed APDU headers, not for policy
+            // violations carried inside the inner data field.
             ResponseAPDU r = signEd25519Resp(new int[] {0}, SAMPLE_MESSAGE);
             assertEquals(Constants.SW_CONDITIONS_NOT_SATISFIED & 0xFFFF, r.getSW());
         }

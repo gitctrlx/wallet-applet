@@ -34,8 +34,6 @@ class ModNTest {
     private static final BigInteger N =
             new BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141", 16);
 
-    /* ── lessThanN ───────────────────────────────────────────────────────────────────────── */
-
     @Test
     @DisplayName("lessThanN: 0 < n is true")
     void lessThanZero() {
@@ -69,8 +67,6 @@ class ModNTest {
         assertFalse(ModN.lessThanN(repeat((byte) 0xFF), (short) 0));
     }
 
-    /* ── isZero ──────────────────────────────────────────────────────────────────────────── */
-
     @Test
     @DisplayName("isZero: all-zero buffer reports zero")
     void isZeroAllZero() {
@@ -92,8 +88,6 @@ class ModNTest {
         a[0] = (byte) 0x80;
         assertFalse(ModN.isZero(a, (short) 0));
     }
-
-    /* ── addMod ──────────────────────────────────────────────────────────────────────────── */
 
     @Test
     @DisplayName("addMod: 0 + 0 = 0 (returns isZero=true)")
@@ -218,8 +212,6 @@ class ModNTest {
         assertArrayEquals(bigIntToFixed(BigInteger.ONE, 32), outSlice);
     }
 
-    /* ── negateMod (audit F-34) ──────────────────────────────────────────────────────────── */
-
     @Test
     @DisplayName("negateMod: (n − 1) → 1 and back (involution on [1, n))")
     void negateInvertsBack() {
@@ -267,8 +259,6 @@ class ModNTest {
         assertArrayEquals(bigIntToFixed(N.subtract(x), 32), outSlice);
     }
 
-    /* ── lessThanHalfN (audit F-34) ──────────────────────────────────────────────────────── */
-
     @Test
     @DisplayName("lessThanHalfN: 0 ≤ ⌊n/2⌋ is true")
     void lessHalfZero() {
@@ -315,8 +305,6 @@ class ModNTest {
                     "trial " + trial + " x=" + x.toString(16));
         }
     }
-
-    /* ── helpers ──────────────────────────────────────────────────────────────────────────── */
 
     private static byte[] repeat(byte v) {
         byte[] out = new byte[32];

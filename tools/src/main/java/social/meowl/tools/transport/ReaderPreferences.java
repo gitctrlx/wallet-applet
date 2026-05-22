@@ -9,30 +9,15 @@ import java.util.Optional;
 
 /**
  * Immutable bundle of reader-selection and tracing preferences resolved from CLI options and the
- * environment.
+ * environment. Lives in {@code transport} (which cannot depend on the {@code cli} package) so the
+ * dependency graph stays {@code core ⇐ transport ⇐ cli}.
  *
- * <p>Each picocli subcommand binds a {@code @Mixin GlobalOptions} that produces one of these
- * records via {@link #fromEnvironment(String, String, Optional, Optional, Optional, Optional)}; the
- * {@link CardTransport} then consumes the record to open the underlying PC/SC channel and to
- * configure the {@link BiboStack} of decorators (logging, dumping, retry, GET-RESPONSE).
- *
- * <p>Why a dedicated record rather than passing the picocli {@code GlobalOptions} mixin directly?
- * Two reasons: (1) the {@code transport} package must not depend on the {@code cli} package — the
- * dependency graph is core ⇐ transport ⇐ cli — so a CLI-shaped type cannot leak across the
- * boundary; (2) tests construct {@link ReaderPreferences} directly without wiring up picocli, and
- * the record's {@code with*} convenience factories make that ergonomic.
- *
- * @param readerName optional substring match for the PC/SC reader name (e.g. {@code "ACR1252"});
- *     empty means "select the unique reader, fail if more than one is present"
- * @param readerIgnore optional substring match for readers to skip (e.g. virtual smartcards); empty
- *     disables filtering
- * @param protocol PC/SC protocol; defaults to {@code "T=1"} which is what every secure-element
- *     applet supports
- * @param dumpFile optional file to which every APDU exchange is written in {@code MockBIBO}'s
- *     replay format
+ * @param readerName substring match for the PC/SC reader name; empty means "the unique reader"
+ * @param readerIgnore substring match for readers to skip; empty disables filtering
+ * @param protocol PC/SC protocol; defaults to {@code "T=1"}
+ * @param dumpFile optional MockBIBO replay-format dump file
  * @param trace whether to log every APDU at TRACE level via SLF4J
- * @param requireExclusive whether to acquire the reader exclusively (fail if another process holds
- *     the card)
+ * @param requireExclusive whether to acquire the reader exclusively
  */
 public record ReaderPreferences(
         String readerName,

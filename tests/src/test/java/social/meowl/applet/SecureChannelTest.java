@@ -160,7 +160,7 @@ class SecureChannelTest {
     }
 
     @Test
-    @DisplayName("handshake with non-0x04 prefix byte is rejected with 6FB2 (audit H-2.01)")
+    @DisplayName("handshake with non-0x04 prefix byte is rejected with 6FB2")
     void handshakeNonZeroFourPrefixIsCryptoFailure() {
         // 65-byte body of the right length but with a corrupted prefix: MEAP-2 §57 says this
         // must be reported as a cryptographic check failure (6FB2), not as a length error
@@ -184,7 +184,7 @@ class SecureChannelTest {
     @Test
     @DisplayName(
             "envelope with stale IV and garbage MAC is rejected with 6FB2 without "
-                    + "MAC computation (audit H-1.03)")
+                    + "MAC computation")
     void replayBeforeMacCheck() throws Exception {
         Session session = openSession();
         byte[] innerApdu =
@@ -198,9 +198,8 @@ class SecureChannelTest {
         // First envelope must succeed.
         assertEquals(0x9000, transmit(INS_OPEN_SC, 0x00, 0x00, envelope).getSW());
 
-        // Reuse the IV (= replay), but corrupt the MAC entirely. Per audit H-1.03 the card
-        // must reject on the IV check before it ever touches HMAC, so the bogus MAC is
-        // irrelevant — the SW must still be 6FB2.
+        // Replay the IV but with a corrupted MAC. The card must reject on the IV check before
+        // it ever touches HMAC, so the bogus MAC is irrelevant — the SW must still be 6FB2.
         envelope[envelope.length - 1] ^= (byte) 0xAA;
         ResponseAPDU resp = transmit(INS_OPEN_SC, 0x00, 0x00, envelope);
         assertEquals(Constants.SW_SECURE_CHANNEL_FAILED & 0xFFFF, resp.getSW());

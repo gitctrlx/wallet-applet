@@ -27,11 +27,7 @@ import social.meowl.tools.core.MeowlAid;
 
 /**
  * End-to-end integration tests for {@link SecureChannelClient} against the real {@code MeowlApplet}
- * inside JCardSim.
- *
- * <p>This test class is the regression net for MEAP-2 wire compatibility: any change in the applet
- * that breaks the host client (or vice versa) shows up here as a failed handshake or a MAC
- * mismatch, long before a real card is involved.
+ * inside JCardSim — the regression net for MEAP-2 wire compatibility.
  */
 class SecureChannelClientIT {
 
@@ -110,7 +106,7 @@ class SecureChannelClientIT {
     }
 
     @Test
-    @DisplayName("oversize inner APDU is rejected before transmit (audit H-1.05)")
+    @DisplayName("oversize inner APDU is rejected before transmit")
     void oversizeInnerRejected() throws BIBOException {
         SecureChannelClient sc = new SecureChannelClient(bibo, fetchAuthentikey());
         sc.handshake();
@@ -130,9 +126,7 @@ class SecureChannelClientIT {
     }
 
     @Test
-    @DisplayName(
-            "session is invalidated after a card-side failure; further sendInner fails fast "
-                    + "(audit H-1.12)")
+    @DisplayName("session is invalidated after a card-side failure; further sendInner fails fast")
     void sessionInvalidatedOnCardFailure() throws BIBOException {
         SecureChannelClient sc = new SecureChannelClient(bibo, fetchAuthentikey());
         sc.handshake();

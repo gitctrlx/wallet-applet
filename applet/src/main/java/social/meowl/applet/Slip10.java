@@ -9,33 +9,20 @@ import javacard.framework.JCSystem;
 import javacard.framework.Util;
 
 /**
- * SLIP-10 Ed25519 hierarchical deterministic key derivation.
- *
- * <p>Per <a href="https://github.com/satoshilabs/slips/blob/master/slip-0010.md">SLIP-10</a>,
- * Ed25519 supports only <strong>hardened</strong> derivation:
+ * SLIP-10 Ed25519 hierarchical deterministic key derivation per <a
+ * href="https://github.com/satoshilabs/slips/blob/master/slip-0010.md">SLIP-10</a> (hardened only):
  *
  * <pre>
  *   I = HMAC-SHA-512(c_par, 0x00 ‖ k_par ‖ ser32(i))
  *   k_i = I[0..32]
  *   c_i = I[32..64]
- *   No mod-n reduction; no public-key arithmetic.
  * </pre>
  *
- * <p>If the caller passes a non-hardened index (top bit clear) the handler raises {@link
- * Constants#SW_CONDITIONS_NOT_SATISFIED}; this is the safe interpretation of the spec's
- * "non-hardened derivation is not defined" rule. Earlier revisions returned {@code
- * SW_INCORRECT_P1P2} but ISO 7816-4 reserves the {@code 6A86} class for malformed APDU headers, not
- * for inner-data policy violations — see audit F-14.
- *
- * <p>Two derivation entry points sit on top of the shared SLIP-10 walk:
- *
- * <ul>
- *   <li>{@link #deriveChainCode} returns just the leaf chain code, suitable for hosts that only
- *       need to prepare the next derivation level on their own.
- *   <li>{@link #deriveLeafKey} returns the leaf 32-byte private key (the RFC 8032 secret-key seed
- *       for the leaf node), used by {@code SIGN_ED25519} and by the Ed25519 branch of {@code
- *       EXPORT_XPUB} for on-card public-key derivation.
- * </ul>
+ * <p>A non-hardened index (top bit clear) raises {@link Constants#SW_CONDITIONS_NOT_SATISFIED} —
+ * the safe reading of SLIP-10's "non-hardened derivation is not defined". The two derivation entry
+ * points sitting on top of the shared walk are {@link #deriveChainCode} (chain code only) and
+ * {@link #deriveLeafKey} (32-byte secret-key seed, used by {@code SIGN_ED25519} and the Ed25519
+ * branch of {@code EXPORT_XPUB}).
  */
 public final class Slip10 {
 
@@ -45,11 +32,7 @@ public final class Slip10 {
     /** Constant prefix byte {@code 0x00} in the SLIP-10 HMAC data. */
     private static final byte[] ZERO_BYTE = {(byte) 0x00};
 
-    /**
-     * Length in bytes of the SLIP-10 leaf private key (≡ the RFC 8032 secret-key seed length).
-     * Pinned here so the byte literals in {@link #deriveLeafKey}, {@link #walkPath} and {@link
-     * #ckdPriv} all reference the same authoritative constant.
-     */
+    /** SLIP-10 leaf private key length (≡ RFC 8032 secret-key seed length). */
     public static final short SECRET_KEY_LEN = (short) 32;
 
     private static final short HASH_LEN = (short) 64;
@@ -66,10 +49,8 @@ public final class Slip10 {
     private static final short STATE_LEN = (short) 128;
 
     /**
-     * @param sharedHmac512 same shared HMAC-SHA-512 engine used by {@link MasterSeed} and {@link
-     *     Bip32}. APDU handling is single-threaded so sharing one engine across the three consumers
-     *     cuts the worst-case transient RAM cost on cards (e.g. J3R180) that route every HMAC
-     *     through the {@link HmacSha} software fallback.
+     * @param sharedHmac512 same engine used by {@link MasterSeed} and {@link Bip32}; safe to share
+     *     because APDU dispatch is single-threaded.
      */
     public Slip10(MasterSeed masterSeed, HmacSha sharedHmac512) {
         this.masterSeed = masterSeed;
@@ -78,8 +59,9 @@ public final class Slip10 {
     }
 
     /**
-     * Derives the SLIP-10 Ed25519 chain code at the given hardened-only path and writes it into
-     * {@code outBuf} at {@code outOff}. Returns the number of bytes written (always 32).
+     * Derives the SLIP-10 Ed25519 chain code at the given hardened-only path.
+     *
+     * @return 32
      */
     public short deriveChainCode(
             byte[] pathBuf, short pathOff, short depth, byte[] outBuf, short outOff) {
@@ -90,11 +72,11 @@ public final class Slip10 {
     }
 
     /**
-     * Derives the SLIP-10 Ed25519 leaf 32-byte private key at the given hardened-only path and
-     * writes it into {@code outBuf} at {@code outOff}. Returns the number of bytes written (always
-     * 32). The chain code at the leaf node is overwritten by the wipe in {@link #wipeWalkState}
-     * after the copy and is therefore unavailable to the caller via this entry point — invoke
-     * {@link #deriveChainCode} on the same path if both halves are needed.
+     * Derives the SLIP-10 Ed25519 leaf private key at the given hardened-only path. The chain code
+     * is wiped along with the rest of the walk state; invoke {@link #deriveChainCode} on the same
+     * path if both halves are needed.
+     *
+     * @return 32
      */
     public short deriveLeafKey(
             byte[] pathBuf, short pathOff, short depth, byte[] outBuf, short outOff) {
@@ -108,29 +90,22 @@ public final class Slip10 {
         if (depth < 0 || depth > Constants.HD_MAX_DEPTH) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        // Seed the working scalar+chain code from the master in one shot. STATE_K_OFF and
-        // STATE_C_OFF are contiguous (0, 32) so the 64-byte pull-based copy lands the
-        // k_master(32) || c_master(32) layout directly into state[0..64] (audit F-29).
+        // STATE_K_OFF and STATE_C_OFF are contiguous, so this 64-byte copy lands k(32) || c(32)
+        // directly into state[0..64] in one shot.
         masterSeed.copySlip10MasterTo(state, STATE_K_OFF);
         for (short level = 0; level < depth; level++) {
             short idxOff = (short) (pathOff + level * Bip32.INDEX_LEN);
             if ((pathBuf[idxOff] & HARDENED_MASK) == 0) {
-                // SLIP-10 Ed25519 forbids non-hardened derivation. Reject with
-                // SW_CONDITIONS_NOT_SATISFIED — ISO 7816-4 6A86 is reserved for malformed APDU
-                // headers, but the offending bit lives inside the data field, so 6985 is the
-                // semantically correct status word (audit F-14).
+                // SLIP-10 Ed25519 forbids non-hardened derivation. 6985 (CONDITIONS_NOT_SATISFIED)
+                // is the semantically correct SW since the offending bit lives in the data field,
+                // not the APDU header (which would otherwise warrant 6A86).
                 ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
             }
             ckdPriv(pathBuf, idxOff);
         }
     }
 
-    /**
-     * Wipes the entire walk-state scratch in one call. The three sub-regions {@code k_cur}, {@code
-     * c_cur} and {@code I} are contiguous and together span exactly {@link #STATE_LEN} bytes, so a
-     * single {@code arrayFillNonAtomic} suffices (audit F-39, style-aligned with {@link
-     * Bip32#wipeTransientSecrets}).
-     */
+    /** Wipes the entire walk-state scratch in one shot. */
     private void wipeWalkState() {
         Util.arrayFillNonAtomic(state, (short) 0, STATE_LEN, (byte) 0);
     }

@@ -7,41 +7,23 @@ package social.meowl.applet;
 /**
  * Constant-size, <b>constant-time</b> modular arithmetic over the secp256k1 group order {@code n}.
  *
- * <p>JavaCard 3.0.5 exposes no native big-integer API, so the handful of mod-{@code n} operations
- * the applet needs (BIP-32 reduction and ECDSA low-{@code s} normalisation) have to be implemented
- * in user code. The class exposes:
+ * <p>JavaCard 3.0.5 exposes no native big-integer API, so the mod-{@code n} primitives the applet
+ * needs (BIP-32 reduction, ECDSA low-{@code s} normalisation) live here:
  *
  * <ul>
- *   <li>{@link #addMod} — {@code (a + b) mod n}.
- *   <li>{@link #negateMod} — {@code n − a} (for ECDSA low-{@code s} flipping).
- *   <li>{@link #lessThanN} — {@code a < n} test.
- *   <li>{@link #lessThanHalfN} — {@code a ≤ n/2} test (low-{@code s} predicate).
- *   <li>{@link #isZero} — {@code a == 0} test.
+ *   <li>{@link #addMod} — {@code (a + b) mod n}
+ *   <li>{@link #negateMod} — {@code n − a} (ECDSA low-{@code s} flip)
+ *   <li>{@link #lessThanN} — {@code a < n}
+ *   <li>{@link #lessThanHalfN} — {@code a ≤ n/2} (low-{@code s} predicate)
+ *   <li>{@link #isZero} — {@code a == 0}
  * </ul>
  *
- * <p>BIP-32 requires the derivation to fail when {@code parse256(I_L) ≥ n} or {@code k_i = 0}; the
- * caller ({@link Bip32}) invokes {@link #lessThanN} on {@code I_L} and {@link #isZero} on the
- * reduced sum to enforce that rule. ECDSA signing ({@link EcdsaK1}) uses {@link #lessThanHalfN}
- * plus {@link #negateMod} to enforce the BIP-62 / EIP-2 low-{@code s} canonical form.
- *
- * <p><b>Constant-time guarantee (audit F-03 mitigation).</b> Every operation here completes in a
- * fixed number of byte-level steps independent of the operand values:
- *
- * <ul>
- *   <li>{@link #addMod} performs an unconditional 32-byte add, an unconditional 32-byte trial
- *       subtraction, computes the "needs reduction" predicate from the carry/borrow flags as a
- *       mask, and uses {@link Bignat#condSubInPlace} to apply the reduction. No branch depends on
- *       the operands.
- *   <li>{@link #negateMod} is already branch-free.
- *   <li>{@link #lessThanN}, {@link #lessThanHalfN} and {@link #isZero} call {@link
- *       Bignat#ctLessThan} / {@link Bignat#ctIsZero}, both of which walk every byte
- *       unconditionally.
- * </ul>
- *
- * <p>The earlier revision of {@link #addMod} contained a branch on a carry/compare bit derived from
- * the parent private key on the BIP-32 non-hardened path; audit F-03 flagged this as a residual
- * physical timing oracle in the {@code (I_L + k_par) mod n} step. The current implementation eats
- * that side channel by always running both the add and the subtract.
+ * <p>Every operation completes in a fixed number of byte-level steps independent of the operand
+ * values: {@link #addMod} always runs both an unconditional add and a mask-driven trial subtract;
+ * {@link #negateMod} is already branch-free; the predicates delegate to {@link Bignat#ctLessThan} /
+ * {@link Bignat#ctIsZero} which walk every byte. This rules out the residual physical timing oracle
+ * that an early branchful {@code (I_L + k_par) mod n} would have exposed on the BIP-32 non-hardened
+ * path.
  */
 public final class ModN {
 
@@ -79,16 +61,11 @@ public final class ModN {
     private ModN() {}
 
     /**
-     * Computes {@code out = (a + b) mod n}, where {@code a}, {@code b} and {@code out} are 32-byte
-     * big-endian unsigned integers. The destination may alias either source range.
+     * {@code out ← (a + b) mod n}, where every operand is 32-byte big-endian. The destination may
+     * alias either source. Fully constant-time: both the 32-byte add and the conditional subtract
+     * always run, with the reduction driven by a mask.
      *
-     * <p>The implementation is fully constant-time: both the 32-byte add and the conditional
-     * 32-byte subtract of {@code n} always run, and the decision to apply the subtract is encoded
-     * as a {@code -1}/{@code 0} mask consumed by {@link Bignat#condSubInPlace}. No branch depends
-     * on the operands.
-     *
-     * @return {@code true} iff the result is zero (caller uses this to enforce BIP-32's "skip
-     *     {@code k_i == 0}" rule)
+     * @return {@code true} iff the result is zero (BIP-32 uses this to reject {@code k_i == 0})
      */
     public static boolean addMod(
             byte[] a, short aOff, byte[] b, short bOff, byte[] out, short outOff) {
@@ -103,15 +80,8 @@ public final class ModN {
             out[(short) (outOff + i)] = (byte) sum;
             carry = (short) ((sum >>> 8) & 0x01);
         }
-
-        // Step 2: build the reduction mask in constant time.
-        //   We need to subtract n iff (carry == 1) OR (out >= n).
-        //     carry == 1                  -> carryMask = -1
-        //     out >= n  i.e. !(out < n)   -> notLessMask = -1
-        //   reduceMask = carryMask | notLessMask, then condSubInPlace.
-        //
-        // Both operands are < n on entry (BIP-32 guarantees this for I_L and k_par), so the
-        // unreduced sum is < 2n and a single subtraction of n is sufficient.
+        // Step 2: subtract n iff (carry == 1) OR (out >= n). Both inputs are < n on entry, so
+        // the unreduced sum is < 2n and a single subtraction is sufficient.
         short carryMask = (short) -carry;
         short lessMask = Bignat.ctLessThan(out, outOff, SECP256K1_N, (short) 0, LEN);
         short reduceMask = (short) (carryMask | ~lessMask);
@@ -121,17 +91,10 @@ public final class ModN {
     }
 
     /**
-     * Computes {@code a ← n − a} where {@code a} is a 32-byte big-endian unsigned integer in {@code
-     * [1, n)}. Used by {@link EcdsaK1} to flip {@code s} into the low half of {@code n} when the JC
-     * ECDSA implementation returned a high-{@code s} signature. The caller is responsible for
-     * ensuring {@code a < n} on entry (the subtraction would otherwise wrap into the negative
-     * range, which is meaningless mod {@code n}).
-     *
-     * <p>Branch-free: the borrow bit is extracted by {@code (diff >>> 15) & 1}, matching the
-     * mask-based style of {@link Bignat#condSubInPlace} and {@link Field25519#sub}. The
-     * intermediate {@code diff} lies in {@code [-256, 255]} (one subtrahend byte plus one borrow),
-     * so bit 15 of {@code diff} as a signed short is set iff {@code diff < 0} — exactly the
-     * condition we need (audit F-33).
+     * {@code a ← n − a} for {@code a ∈ [1, n)} (caller MUST enforce). Used by {@link EcdsaK1} to
+     * flip a high-{@code s} signature into the low half of {@code n}. Branch-free: the borrow bit
+     * is extracted as {@code (diff >>> 15) & 1} — {@code diff ∈ [-256, 255]} so its short sign bit
+     * is set iff {@code diff < 0}.
      */
     public static void negateMod(byte[] a, short aOff) {
         short borrow = 0;
@@ -144,24 +107,18 @@ public final class ModN {
     }
 
     /**
-     * Returns {@code true} iff the 32-byte big-endian operand at {@code a[off..off+32]} is strictly
-     * less than the secp256k1 group order {@code n}. Used by BIP-32 to reject the
-     * (negligible-probability) case {@code parse256(I_L) ≥ n}. Constant-time.
+     * {@code a < n} test, constant-time. Used by BIP-32 to reject the (negligible-probability)
+     * {@code parse256(I_L) ≥ n} case.
      */
     public static boolean lessThanN(byte[] a, short off) {
         return Bignat.ctLessThan(a, off, SECP256K1_N, (short) 0, LEN) != 0;
     }
 
     /**
-     * Returns {@code true} iff the 32-byte big-endian operand at {@code a[off..off+32]} is less
-     * than or equal to {@code ⌊n/2⌋}. Used by {@link EcdsaK1} to test whether an ECDSA {@code s}
-     * value is in canonical (low-{@code s}) form. Equality with {@code ⌊n/2⌋} counts as low-{@code
-     * s} (per BIP-62 / EIP-2): the predicate is the negation of the "high-{@code s}" condition
-     * {@code s > ⌊n/2⌋}, computed as {@code !ctLessThan(halfN, a)} so the entire walk is
-     * branch-free.
+     * {@code a ≤ ⌊n/2⌋} test (low-{@code s} predicate per BIP-62 / EIP-2). Branch-free via {@code
+     * !ctLessThan(halfN, a)}.
      */
     public static boolean lessThanHalfN(byte[] a, short off) {
-        // a ≤ halfN  ⟺  !(halfN < a)
         return Bignat.ctLessThan(SECP256K1_HALF_N, (short) 0, a, off, LEN) == 0;
     }
 

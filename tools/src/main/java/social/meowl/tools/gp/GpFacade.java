@@ -23,17 +23,12 @@ import social.meowl.tools.transport.CardTransport;
 import social.meowl.tools.transport.ReaderPreferences;
 
 /**
- * In-process wrapper around {@link GPSession} that exposes the three card-management operations the
+ * In-process wrapper around {@link GPSession} exposing the three card-management operations the
  * {@code meowl gp ...} subcommands need: list installed AIDs, install a CAP, uninstall an applet.
+ * Speaking to the library directly (rather than forking {@code GPTool}) lets the picocli execution
+ * exception handler distinguish card-I/O from protocol failures and avoids JVM-startup latency.
  *
- * <p>The previous tooling forked {@code GPTool} as a separate process and parsed its stdout. That
- * approach swallowed structured failures (a {@code GPException} would degrade to "exit code 1 with
- * a stack trace on stderr"). Speaking to the library directly lets the picocli execution exception
- * handler render exit codes that distinguish card-I/O from protocol failures, and it cuts the
- * install latency by the JVM-startup cost of the second process.
- *
- * <p>All operations open a fresh {@link GPSession} per call. There is no long-lived state, so the
- * facade is stateless and trivially safe to share between subcommands.
+ * <p>Every operation opens a fresh {@link GPSession}; the facade is stateless.
  */
 public final class GpFacade {
 
@@ -66,12 +61,9 @@ public final class GpFacade {
     }
 
     /**
-     * Installs a CAP file on the card. The applet AID inside the CAP is read from the CAP itself;
-     * the package and instance AIDs default to those declared in the CAP and the same instance AID
-     * respectively.
-     *
-     * <p>If an applet with the chosen instance AID is already installed, it is deleted first (with
-     * {@code deletedeps = true}) so the install replaces rather than fails.
+     * Installs a CAP file on the card. The package and applet AIDs come from the CAP; the instance
+     * AID is {@link MeowlAid#defaultBytes}. If the package or instance is already installed it is
+     * deleted (with dependencies) so the install replaces rather than fails.
      */
     public InstallResult install(Path capPath) {
         return CardTransport.run(

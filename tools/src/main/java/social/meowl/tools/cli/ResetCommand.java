@@ -100,10 +100,9 @@ public final class ResetCommand implements Callable<Integer> {
                                     0));
             int sw = resp.getSW();
             sequence[i] = sw;
-            // Validate the response is one of the countdown SWs (0x6FA0..0x6FAF). Without this
-            // check a non-meowl applet would silently return e.g. 6D00 four times and the only
-            // way to notice would be the final-SW assertion below — but that catches the
-            // *value*, not the *kind*. (Audit H-3.01.)
+            // Each step must report a countdown SW (0x6FA0..0x6FAF); otherwise a non-meowl
+            // applet could silently return e.g. 6D00 four times and the final-SW assertion would
+            // miss it (catches the value, not the kind).
             if ((sw & 0xFFF0) != MeowlSw.RESET_COUNTDOWN_BASE) {
                 throw new ProtocolException(
                         sw,

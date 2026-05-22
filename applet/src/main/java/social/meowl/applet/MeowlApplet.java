@@ -45,19 +45,17 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     /**
      * Size of the per-applet shared transient scratch buffer, sized to the largest of the four
      * mutually-exclusive consumers (single-threaded APDU dispatch keeps them from overlapping):
-     * Ed25519 1056, Schnorr 386, SecureChannel handshake 259, EcdsaK1 168. Sharing one buffer
-     * versus four cuts ~813 bytes of transient RAM — the difference between fitting and not fitting
-     * on cards with a ~3 KB user-RAM budget (notably J3R180). Ed25519's 1056-byte budget includes a
-     * 32-byte projective-blinding scratch slot added in audit F-01.
+     * Ed25519 1056, Schnorr 386, SecureChannel handshake 259, EcdsaK1 168. Sharing one buffer cuts
+     * ~813 bytes of transient RAM — the difference between fitting or not on cards with a ~3 KB
+     * user-RAM budget (notably J3R180).
      */
     private static final short SHARED_SCRATCH_LEN = (short) 1056;
 
     private MeowlApplet() {
         HmacSha sharedHmac256 = new HmacSha(HmacSha.ALG_SHA_256);
         HmacSha sharedHmac512 = new HmacSha(HmacSha.ALG_SHA_512);
-        // Both transient scratches live in CLEAR_ON_DESELECT memory: nothing they hold outlives a
-        // session, and the install-time CLEAR_ON_RESET pool on resource-constrained NFC SECID
-        // configurations (J3R180) is too small for a 1 KB allocation.
+        // CLEAR_ON_DESELECT scratch: nothing outlives a session, and the install-time
+        // CLEAR_ON_RESET pool on NFC SECID cards (J3R180) is too small for a 1 KB allocation.
         byte[] sharedScratch =
                 JCSystem.makeTransientByteArray(SHARED_SCRATCH_LEN, JCSystem.CLEAR_ON_DESELECT);
         this.state = new LifecycleState();
@@ -356,11 +354,8 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         if (dataLen != Constants.EC_SCALAR_LEN) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        // Stage the digest in innerScratch: the signature output overlaps the input region.
-        // Audit F-38: wrap in try-finally so an ISOException out of signCsr cannot leave the
-        // staged digest in innerScratch until the next deselect. The digest itself is public
-        // (host already knows it), but the unified wipe style matches F-02's handleSignEd25519
-        // fix and removes a defense-in-depth gap.
+        // Stage the digest in innerScratch: the signature output overlaps the input region. The
+        // try-finally wipe clears the staged digest even on ISOException out of signCsr.
         Util.arrayCopyNonAtomic(buffer, dataOff, innerScratch, (short) 0, Constants.EC_SCALAR_LEN);
         try {
             return pkiManager.signCsr(innerScratch, (short) 0, buffer, ISO7816.OFFSET_CDATA);
@@ -531,10 +526,8 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         }
         short pathOff = (short) (dataOff + 1);
         short digestOff = (short) (pathOff + depth * Bip32.INDEX_LEN);
-        // Stage the digest in innerScratch so the response (which may exceed the digest length
-        // and is anchored at OFFSET_CDATA) cannot trample the input bytes mid-signature. Audit
-        // F-38: wipe inside try-finally so the staged digest is cleared even on ISOException out
-        // of ecdsaK1.signDigest (e.g. k_i == 0 in BIP-32 derivation). Style-aligned with F-02.
+        // Stage the digest in innerScratch so the response (anchored at OFFSET_CDATA) cannot
+        // trample the input bytes mid-signature; try-finally wipe clears it even on exception.
         Util.arrayCopyNonAtomic(buffer, digestOff, innerScratch, (short) 0, Constants.DIGEST_LEN);
         try {
             return ecdsaK1.signDigest(
@@ -546,9 +539,8 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
 
     /**
      * {@code SIGN_SCHNORR_K1} inner data layout: {@code [depth(1), path(4*depth), digest(32)]}.
-     * Returns the 64-byte BIP-340 signature {@code bytes(R) ‖ s}. The signature is software-
-     * implemented on top of {@link Schnorr}; aux randomness is drawn from the on-card RNG so the
-     * resulting signature is non-deterministic.
+     * Returns the 64-byte BIP-340 signature {@code bytes(R) ‖ s}. Software-implemented on top of
+     * {@link Schnorr}; aux randomness from the on-card RNG makes the signature non-deterministic.
      */
     private short handleSignSchnorrK1(byte[] buffer, short dataOff, short dataLen) {
         state.require(LifecycleState.SEEDED);
@@ -563,9 +555,8 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         }
         short pathOff = (short) (dataOff + 1);
         short digestOff = (short) (pathOff + depth * Bip32.INDEX_LEN);
-        // Stage the digest in innerScratch so the response (anchored at OFFSET_CDATA — the same
-        // location as the inner data) cannot trample the input bytes mid-signature. Audit F-38:
-        // try-finally wipe matches F-02's handleSignEd25519 pattern.
+        // Stage the digest in innerScratch so the response (anchored at OFFSET_CDATA) cannot
+        // trample the input bytes mid-signature; try-finally wipe clears it even on exception.
         Util.arrayCopyNonAtomic(buffer, digestOff, innerScratch, (short) 0, Constants.DIGEST_LEN);
         try {
             return schnorr.signDigest(
@@ -600,20 +591,16 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         short pathOff = (short) (dataOff + 1);
         short msgOff = (short) (pathOff + pathLen);
         short msgLen = (short) (dataLen - 1 - pathLen);
-        // Stage the path inside innerScratch so subsequent buffer writes (the 64-byte signature
-        // anchored at OFFSET_CDATA) cannot trample the SLIP-10 inputs mid-derivation. The leaf
-        // private key is materialised into innerScratch[0..32]; the staged path occupies the
-        // next pathLen bytes.
-        //
-        // Audit F-02: wrap the secret-touching block in try-finally so an ISOException out of
-        // slip10.deriveLeafKey or ed25519.sign cannot leave the leaf scalar parked in
-        // innerScratch[0..32] until the next deselect.
+        // Stage the path inside innerScratch[32..32+pathLen] so subsequent buffer writes (the
+        // 64-byte signature anchored at OFFSET_CDATA) cannot trample the SLIP-10 inputs. The leaf
+        // private key is materialised into innerScratch[0..32]. The try-finally wipe covers any
+        // exception out of slip10.deriveLeafKey or ed25519.sign.
         Util.arrayCopyNonAtomic(buffer, pathOff, innerScratch, (short) 32, pathLen);
         try {
             slip10.deriveLeafKey(innerScratch, (short) 32, depth, innerScratch, (short) 0);
             // Ed25519.sign reads `msg` twice (r-hash and k-hash); both reads complete before the
-            // signature is materialised into the output, so the in-buffer message slice survives
-            // until the final write to OFFSET_CDATA overwrites it.
+            // output is written, so the in-buffer message slice survives until OFFSET_CDATA
+            // overwrites it.
             return ed25519.sign(
                     innerScratch, (short) 0, buffer, msgOff, msgLen, buffer, ISO7816.OFFSET_CDATA);
         } finally {
@@ -648,15 +635,13 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     }
 
     /**
-     * Reset-to-factory wipe. Per {@code docs/specs/meap-4.md} the authentikey itself is preserved;
+     * Reset-to-factory wipe. Per {@code docs/specs/meap-4.md} the authentikey is preserved;
      * everything else — Secure Channel session, PIN/PUK, PKI cert, master seed, lifecycle state —
      * is destroyed.
      *
-     * <p>Per audit F-15 the four persistent wipes execute inside a single {@link
-     * JCSystem#beginTransaction()} block so a torn power-off cannot land on a half-wiped card with
-     * cleared PIN/PUK/cert but lifecycle still set to {@code SEEDED}. The Secure Channel reset is
-     * intentionally outside the transaction because {@link SecureChannel#reset()} only touches
-     * transient (CLEAR_ON_DESELECT) state.
+     * <p>The four persistent wipes commit inside a single {@link JCSystem#beginTransaction()} block
+     * so a torn power-off cannot land on a half-wiped card. The Secure Channel reset is outside the
+     * transaction because it only touches transient (CLEAR_ON_DESELECT) state.
      */
     @Override
     public void wipe() {

@@ -12,38 +12,19 @@ import javacard.framework.Util;
 /**
  * User PIN + PUK manager per {@code docs/specs/meap-3.md}.
  *
- * <p>The card holds exactly one user PIN and one unblock PUK, each backed by {@link OwnerPIN} which
- * provides JC-native bounded retry counters and built-in storage protection.
- *
- * <p>API guidelines:
+ * <p>Holds one user PIN and one unblock PUK, each backed by {@link OwnerPIN} for JC-native
+ * bounded-retry counters and storage protection. Status-word semantics:
  *
  * <ul>
- *   <li>{@link #setupInTx(byte[], short, short, byte[], short, short)} is invoked exactly once
- *       during the SETUP APDU; subsequent invocations on a non-{@code UNINITIALIZED} instance fail.
- *       The name carries the {@code InTx} suffix because the caller is required to open a {@link
- *       JCSystem#beginTransaction()} block around it; see the method-level javadoc for the
- *       rationale.
- *   <li>{@link #verifyPin(byte[], short, short)} returns the post-attempt try counter via the
- *       status word — success raises {@code 9000}, failure raises {@code 0x63Cn} per ISO 7816-4
- *       (with the 4-bit retry count in the low nibble). A length-policy violation returns {@link
- *       Constants#SW_WRONG_LENGTH} and does <em>not</em> consume a retry; it is a protocol error on
- *       the host side, not a guess.
- *   <li>{@link #changePin(byte[], short, short, byte[], short, short)} requires the caller to first
- *       {@code verifyPin} successfully; we additionally verify the old PIN inside the call to avoid
- *       relying on a stale validated flag in case of concurrent commands.
- *   <li>{@link #unblockPin(byte[], short, short, byte[], short, short)} consumes a PUK attempt even
- *       on PIN-policy failure of the new PIN.
+ *   <li>Correct PIN/PUK → {@code 9000}; wrong value → {@code 0x63Cn} with the 4-bit retry count in
+ *       the low nibble (ISO 7816-4); exhausted counter → {@link Constants#SW_AUTH_BLOCKED}.
+ *   <li>Length-policy violations return {@link Constants#SW_WRONG_LENGTH} and do <em>not</em>
+ *       consume a retry — they are host-side protocol errors, not guesses.
+ *   <li>{@link #unblockPin} consumes a PUK attempt even when the new PIN fails policy.
  * </ul>
  *
- * <p>Length validation: every entry point validates against {@link Constants#PIN_MIN_LEN}, {@link
- * Constants#PIN_MAX_LEN}, {@link Constants#PUK_MIN_LEN} and {@link Constants#PUK_MAX_LEN}
- * <em>before</em> handing the buffer to {@link OwnerPIN#check}, because {@code check} would raise
- * {@link ArrayIndexOutOfBoundsException} on an over-long input.
- *
- * <p>Wipe semantics: {@link #wipe()} re-installs both {@link OwnerPIN} instances with their default
- * try limits and an arbitrary single-zero PIN as a transient placeholder. After a wipe the manager
- * reports {@link #isProvisioned()} = {@code false} and a subsequent {@code setupInTx} is required
- * before any verification will succeed.
+ * <p>Every entry point validates length bounds before invoking {@link OwnerPIN#check}, which would
+ * otherwise raise {@link ArrayIndexOutOfBoundsException} on an over-long input.
  */
 public final class PinManager {
 
@@ -52,11 +33,9 @@ public final class PinManager {
     private final byte[] provisioned; // [0] != 0 → setup() has been called
 
     /**
-     * Pre-allocated scratch used by {@link #wipe()} to drive a known-pattern write through both
-     * {@link OwnerPIN} cells before discarding their references (audit H-1.16). Sized at {@link
-     * Constants#PUK_MAX_LEN} so the same buffer covers both PIN and PUK updates without an
-     * out-of-bounds read on the PUK call. Lives in {@link JCSystem#CLEAR_ON_DESELECT} memory
-     * because its lifetime is bounded by a single APDU.
+     * Scratch used by {@link #wipe()} to drive a known-pattern write through both {@link OwnerPIN}
+     * cells before discarding their references. Sized at {@link Constants#PUK_MAX_LEN} so the same
+     * buffer covers PIN and PUK updates.
      */
     private final byte[] scrub;
 
@@ -81,21 +60,15 @@ public final class PinManager {
 
     /** Clears the in-session PIN-verified flag. Called from {@code select} and on session end. */
     public void clearSession() {
-        // OwnerPIN.reset() only clears the flag when previously validated, which is exactly what
-        // we want — calling it on a non-validated PIN is a no-op.
+        // OwnerPIN.reset() is a no-op when not validated; that's the behaviour we want here.
         pin.reset();
     }
 
     /**
-     * Initial provisioning: installs the user PIN and the unblock PUK.
-     *
-     * <p>Must be invoked inside a {@link JCSystem#beginTransaction()} / {@code commitTransaction()}
-     * block opened by the caller so that the pin install, the puk install and any companion
-     * mutation (e.g. lifecycle transition) commit atomically. {@link OwnerPIN#update} is
-     * transaction-aware per the JC spec and will join the open transaction.
-     *
-     * <p>May only be called when {@link #isProvisioned()} is {@code false}; the calling handler has
-     * already enforced the {@code PERSONALIZED} lifecycle gate.
+     * Initial provisioning: installs the user PIN and unblock PUK. <strong>Caller MUST hold a
+     * {@link JCSystem#beginTransaction()} block</strong> so the two installs and the companion
+     * lifecycle transition commit atomically. May only run when {@link #isProvisioned()} is {@code
+     * false}.
      */
     public void setupInTx(
             byte[] pinBuf,
@@ -123,18 +96,15 @@ public final class PinManager {
      */
     public void verifyPin(byte[] buf, short offset, short length) {
         requireProvisioned();
-        // Probe getTriesRemaining first so a blocked PIN reports as blocked regardless of the
-        // candidate length.
+        // Probe getTriesRemaining first so a blocked PIN reports as blocked regardless of length.
         byte triesRemaining = pin.getTriesRemaining();
         if (triesRemaining == 0) {
             ISOException.throwIt(Constants.SW_AUTH_BLOCKED);
         }
-        // OwnerPIN.check raises ArrayIndexOutOfBoundsException if length > maxPINSize; guard the
-        // policy bounds before invoking it. A length-policy violation is reported as
-        // SW_WRONG_LENGTH and does NOT consume a retry: it is a client-side protocol mistake,
-        // not a guess at the secret. An attacker cannot use this path to brute-force the PIN
-        // because every length-policy violation returns the same status word regardless of the
-        // candidate bytes.
+        // Bounds-check before OwnerPIN.check (which raises AIOOBE on length > maxPINSize). Policy
+        // violations return SW_WRONG_LENGTH without consuming a retry — the same SW is returned
+        // for every length-violating input regardless of candidate bytes, so this path leaks no
+        // information to a brute-force attacker.
         if (length < Constants.PIN_MIN_LEN || length > Constants.PIN_MAX_LEN) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
@@ -207,20 +177,9 @@ public final class PinManager {
     }
 
     /**
-     * Destroys all PIN/PUK state. Called by the reset-to-factory flow.
-     *
-     * <p>The JC platform exposes no {@code clearKey()}-equivalent on {@link OwnerPIN}, so the
-     * EEPROM cells that held the previous PIN/PUK might retain recoverable signal until they are
-     * written over by a future {@code update()} call. Audit H-1.16 asks for a best-effort
-     * overwrite: before discarding the references, we drive one {@code update()} cycle through each
-     * {@code OwnerPIN} with a 16-byte all-{@code 0xFF} buffer. This forces a write through whatever
-     * internal storage the JC implementation uses, defeating the simplest residue-recovery attacks
-     * against a clear EEPROM cell. We then re-instantiate fresh {@code OwnerPIN} objects so the
-     * provisioned flag flips back to "fresh card" semantics.
-     *
-     * <p>The overwrite-buffer length matches the max PIN/PUK size declared at construction ({@code
-     * PIN_MAX_LEN} / {@code PUK_MAX_LEN}); writing under the platform's per-PIN length bound is
-     * exactly what {@code OwnerPIN.update()} accepts.
+     * Destroys all PIN/PUK state. Drives a best-effort EEPROM scrub (an {@code update()} cycle with
+     * an all-{@code 0xFF} buffer) through each {@link OwnerPIN} before re-instantiating fresh
+     * instances, since the JC spec offers no {@code clearKey()}-equivalent on {@link OwnerPIN}.
      */
     public void wipe() {
         JCSystem.beginTransaction();
@@ -229,31 +188,26 @@ public final class PinManager {
     }
 
     /**
-     * Transaction-less wipe variant. Caller MUST hold a {@link JCSystem#beginTransaction()} block
-     * around this call; used by {@link MeowlApplet#wipe()} to bundle the PIN/PUK invalidation with
-     * the PKI, master-seed and lifecycle wipes into one atomic commit so a torn power-off during
-     * the reset-to-factory flow cannot leave the card in a partially-wiped state (audit F-15).
+     * Transaction-less wipe variant. Caller MUST hold a {@link JCSystem#beginTransaction()} block;
+     * used by {@link MeowlApplet#wipe()} to bundle the PIN/PUK invalidation with the PKI, master-
+     * seed and lifecycle wipes into one atomic reset-to-factory commit.
      */
     public void wipeInTx() {
-        // Best-effort EEPROM scrub: overwrite the existing PIN/PUK with a known-garbage value
-        // before discarding the OwnerPIN references. The new bytes are not a credential the user
-        // can verify against (we set provisioned[0] = 0 below, so any verify call short-circuits
-        // out before reaching the PIN material), but they do drive at least one write through
-        // whatever internal cells the JC implementation uses. Audit H-1.16.
+        // Best-effort EEPROM scrub: drive one update() through each OwnerPIN with a garbage
+        // buffer before discarding the reference. provisioned[0] = 0 below gates any later
+        // verify(), but this still forces a write through whatever cells the platform uses.
         Util.arrayFillNonAtomic(scrub, (short) 0, Constants.PUK_MAX_LEN, (byte) 0xFF);
         try {
             pin.update(scrub, (short) 0, Constants.PIN_MAX_LEN);
         } catch (Exception ignored) {
-            // If the platform rejects the scrub update for any reason, proceed with the
-            // re-instantiation below — that still provides the JC-level invalidation.
+            // Scrub is best-effort; re-instantiation below still provides JC-level invalidation.
         }
         try {
             puk.update(scrub, (short) 0, Constants.PUK_MAX_LEN);
         } catch (Exception ignored) {
             // Same fallback rationale as the PIN scrub.
         }
-        // Rebuild fresh OwnerPIN instances rather than try to scrub the old ones in-place; the
-        // JC spec does not document a clearKey-style method for OwnerPIN.
+        // Rebuild fresh OwnerPIN instances; JC spec offers no clearKey-equivalent.
         this.pin = new OwnerPIN(Constants.PIN_RETRY_LIMIT, Constants.PIN_MAX_LEN);
         this.puk = new OwnerPIN(Constants.PUK_RETRY_LIMIT, Constants.PUK_MAX_LEN);
         this.provisioned[0] = 0;
