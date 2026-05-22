@@ -357,10 +357,16 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         // Stage the digest in innerScratch: the signature output overlaps the input region.
+        // Audit F-38: wrap in try-finally so an ISOException out of signCsr cannot leave the
+        // staged digest in innerScratch until the next deselect. The digest itself is public
+        // (host already knows it), but the unified wipe style matches F-02's handleSignEd25519
+        // fix and removes a defense-in-depth gap.
         Util.arrayCopyNonAtomic(buffer, dataOff, innerScratch, (short) 0, Constants.EC_SCALAR_LEN);
-        short sigLen = pkiManager.signCsr(innerScratch, (short) 0, buffer, ISO7816.OFFSET_CDATA);
-        Util.arrayFillNonAtomic(innerScratch, (short) 0, Constants.EC_SCALAR_LEN, (byte) 0);
-        return sigLen;
+        try {
+            return pkiManager.signCsr(innerScratch, (short) 0, buffer, ISO7816.OFFSET_CDATA);
+        } finally {
+            Util.arrayFillNonAtomic(innerScratch, (short) 0, Constants.EC_SCALAR_LEN, (byte) 0);
+        }
     }
 
     /**
@@ -526,19 +532,16 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         short pathOff = (short) (dataOff + 1);
         short digestOff = (short) (pathOff + depth * Bip32.INDEX_LEN);
         // Stage the digest in innerScratch so the response (which may exceed the digest length
-        // and is anchored at OFFSET_CDATA) cannot trample the input bytes mid-signature.
+        // and is anchored at OFFSET_CDATA) cannot trample the input bytes mid-signature. Audit
+        // F-38: wipe inside try-finally so the staged digest is cleared even on ISOException out
+        // of ecdsaK1.signDigest (e.g. k_i == 0 in BIP-32 derivation). Style-aligned with F-02.
         Util.arrayCopyNonAtomic(buffer, digestOff, innerScratch, (short) 0, Constants.DIGEST_LEN);
-        short sigLen =
-                ecdsaK1.signDigest(
-                        buffer,
-                        pathOff,
-                        depth,
-                        innerScratch,
-                        (short) 0,
-                        buffer,
-                        ISO7816.OFFSET_CDATA);
-        Util.arrayFillNonAtomic(innerScratch, (short) 0, Constants.DIGEST_LEN, (byte) 0);
-        return sigLen;
+        try {
+            return ecdsaK1.signDigest(
+                    buffer, pathOff, depth, innerScratch, (short) 0, buffer, ISO7816.OFFSET_CDATA);
+        } finally {
+            Util.arrayFillNonAtomic(innerScratch, (short) 0, Constants.DIGEST_LEN, (byte) 0);
+        }
     }
 
     /**
@@ -561,19 +564,15 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         short pathOff = (short) (dataOff + 1);
         short digestOff = (short) (pathOff + depth * Bip32.INDEX_LEN);
         // Stage the digest in innerScratch so the response (anchored at OFFSET_CDATA — the same
-        // location as the inner data) cannot trample the input bytes mid-signature.
+        // location as the inner data) cannot trample the input bytes mid-signature. Audit F-38:
+        // try-finally wipe matches F-02's handleSignEd25519 pattern.
         Util.arrayCopyNonAtomic(buffer, digestOff, innerScratch, (short) 0, Constants.DIGEST_LEN);
-        short sigLen =
-                schnorr.signDigest(
-                        buffer,
-                        pathOff,
-                        depth,
-                        innerScratch,
-                        (short) 0,
-                        buffer,
-                        ISO7816.OFFSET_CDATA);
-        Util.arrayFillNonAtomic(innerScratch, (short) 0, Constants.DIGEST_LEN, (byte) 0);
-        return sigLen;
+        try {
+            return schnorr.signDigest(
+                    buffer, pathOff, depth, innerScratch, (short) 0, buffer, ISO7816.OFFSET_CDATA);
+        } finally {
+            Util.arrayFillNonAtomic(innerScratch, (short) 0, Constants.DIGEST_LEN, (byte) 0);
+        }
     }
 
     /**
