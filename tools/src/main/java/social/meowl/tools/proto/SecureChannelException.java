@@ -10,7 +10,7 @@ package social.meowl.tools.proto;
  * status word when the failure originated in a card response, or {@code 0} when the failure
  * happened in pure host code (signature mismatch, padding error, malformed body, …).
  *
- * <p>Promoted to a top-level class in audit S4-01 so {@link HostCrypto} can raise it directly on
+ * <p>Promoted to a top-level class in audit F-22 so {@link HostCrypto} can raise it directly on
  * PKCS#5 padding errors without creating a cyclic compile-time dependency on {@link
  * SecureChannelClient}.
  */

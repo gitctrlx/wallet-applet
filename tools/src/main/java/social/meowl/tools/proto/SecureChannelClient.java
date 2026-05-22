@@ -109,7 +109,7 @@ public final class SecureChannelClient {
         }
 
         cardEphPub = Arrays.copyOfRange(body, 0, HostCrypto.EC_POINT_UNCOMPRESSED_LEN);
-        // Audit S3-15: validate the SEC1 0x04 prefix immediately after parsing the handshake
+        // Audit F-24: validate the SEC1 0x04 prefix immediately after parsing the handshake
         // body. ECDH (HostCrypto.ecdhSharedX) would also catch this, but failing here lets the
         // host log the precise wire-format mismatch instead of an ECDH-side
         // IllegalArgumentException

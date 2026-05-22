@@ -312,7 +312,7 @@ public final class HostCrypto {
     /**
      * Strips PKCS#5 padding from a decrypted ciphertext block.
      *
-     * <p>Per audit S4-01 every padding-related failure raises {@link SecureChannelException} so the
+     * <p>Per audit F-22 every padding-related failure raises {@link SecureChannelException} so the
      * Secure Channel stack speaks one exception family on the host side, matching the {@link
      * SecureChannelClient} call sites that already convert wire-level errors into the same type.
      * The {@code sw} field is {@code 0} because the failure is detected entirely in host code after

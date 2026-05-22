@@ -24,7 +24,7 @@ package social.meowl.applet;
  * reduced sum to enforce that rule. ECDSA signing ({@link EcdsaK1}) uses {@link #lessThanHalfN}
  * plus {@link #negateMod} to enforce the BIP-62 / EIP-2 low-{@code s} canonical form.
  *
- * <p><b>Constant-time guarantee (audit S2-03 mitigation).</b> Every operation here completes in a
+ * <p><b>Constant-time guarantee (audit F-03 mitigation).</b> Every operation here completes in a
  * fixed number of byte-level steps independent of the operand values:
  *
  * <ul>
@@ -39,7 +39,7 @@ package social.meowl.applet;
  * </ul>
  *
  * <p>The earlier revision of {@link #addMod} contained a branch on a carry/compare bit derived from
- * the parent private key on the BIP-32 non-hardened path; audit S2-03 flagged this as a residual
+ * the parent private key on the BIP-32 non-hardened path; audit F-03 flagged this as a residual
  * physical timing oracle in the {@code (I_L + k_par) mod n} step. The current implementation eats
  * that side channel by always running both the add and the subtract.
  */

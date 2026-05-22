@@ -48,7 +48,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
      * Ed25519 1056, Schnorr 386, SecureChannel handshake 259, EcdsaK1 168. Sharing one buffer
      * versus four cuts ~813 bytes of transient RAM — the difference between fitting and not fitting
      * on cards with a ~3 KB user-RAM budget (notably J3R180). Ed25519's 1056-byte budget includes a
-     * 32-byte projective-blinding scratch slot added in audit S2-01.
+     * 32-byte projective-blinding scratch slot added in audit F-01.
      */
     private static final short SHARED_SCRATCH_LEN = (short) 1056;
 
@@ -606,7 +606,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         // private key is materialised into innerScratch[0..32]; the staged path occupies the
         // next pathLen bytes.
         //
-        // Audit S2-02: wrap the secret-touching block in try-finally so an ISOException out of
+        // Audit F-02: wrap the secret-touching block in try-finally so an ISOException out of
         // slip10.deriveLeafKey or ed25519.sign cannot leave the leaf scalar parked in
         // innerScratch[0..32] until the next deselect.
         Util.arrayCopyNonAtomic(buffer, pathOff, innerScratch, (short) 32, pathLen);
@@ -653,7 +653,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
      * everything else — Secure Channel session, PIN/PUK, PKI cert, master seed, lifecycle state —
      * is destroyed.
      *
-     * <p>Per audit S3-11 the four persistent wipes execute inside a single {@link
+     * <p>Per audit F-15 the four persistent wipes execute inside a single {@link
      * JCSystem#beginTransaction()} block so a torn power-off cannot land on a half-wiped card with
      * cleared PIN/PUK/cert but lifecycle still set to {@code SEEDED}. The Secure Channel reset is
      * intentionally outside the transaction because {@link SecureChannel#reset()} only touches

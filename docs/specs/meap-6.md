@@ -311,7 +311,7 @@ The Schnorr and Ed25519 paths are software-implemented. A conforming implementat
 - **`s = (r + k · s) mod ℓ`** in Ed25519 is computed via `Bignat.mult` (which is not constant-time but operates on values both of which are already public after the signature emerges) followed by `Bignat.mod` (likewise post-emergence).
 - **`s = (k + e · d) mod n`** in Schnorr is similarly computed on values that are public after the signature emerges, with one subtlety: the conditional `n − s` flip during scalar canonicalisation is **not** performed, so no timing channel exists at that step.
 - **MAC comparisons** in the Secure Channel use `ConstantTime.equals` per [MEAP-2](./meap-2.md).
-- **Mod-n / Mod-p comparisons** (`ModN.lessThanN`, `Field25519.add/sub/neg/equals/isZero`, `Bignat.ctIsZero`, …) use mask-based constant-time helpers (`Bignat.condAddInPlace`, `Bignat.condSubInPlace`, `Bignat.ctLessThan`, `Bignat.ctIsZero`); audit S2-01 and S2-03 introduced these primitives in v1.1.
+- **Mod-n / Mod-p comparisons** (`ModN.lessThanN`, `Field25519.add/sub/neg/equals/isZero`, `Bignat.ctIsZero`, …) use mask-based constant-time helpers (`Bignat.condAddInPlace`, `Bignat.condSubInPlace`, `Bignat.ctLessThan`, `Bignat.ctIsZero`); audit F-01 and F-03 introduced these primitives in v1.1.
 - **Edwards25519 scalar multiplication** randomises its projective `(X, Y, Z, T)` coordinates on every call by sampling a non-zero blinding scalar `r ∈ [1, p)` and replacing `(X, Y, Z, T)` with `(X·r, Y·r, Z·r, T·r)` before the schedule starts (see `Edwards25519.randomizeProjective` and `Ed25519.blindBasePoint`). The blind is uniform on a set of size `p − ε`, drawn from `RandomData.ALG_KEYGENERATION` (or `ALG_TRNG` fallback). Per <https://eprint.iacr.org/2009/444>, projective randomisation breaks the link between the still-variable-time inner `Bignat.mod` reduction and any single secret bit.
 
 The reference implementation does not claim full SCA resistance; deployments where SCA is in scope (lab attackers with side-channel equipment) MUST use a card whose silicon-level countermeasures (clock jitter, dummy operations, masked private keys) defend the underlying JC primitives.
@@ -333,8 +333,8 @@ The numbers below are wall-clock budgets observed on a J3R180 SECID card running
 | INS | Operation | Typical | Notes |
 | --- | --------- | ------- | ----- |
 | `SIGN_ECDSA_K1` (0x50) | secp256k1 ECDSA | **150 – 300 ms** | Native `Signature.ALG_ECDSA_SHA_256`, dominated by EC scalar mul on the secure-element coprocessor |
-| `SIGN_SCHNORR_K1` (0x51) | BIP-340 Schnorr | **400 – 900 ms** | Two software scalar mults on secp256k1 + three SHA-256 ingests; tag pre-hashing (audit S3-08) saves ~15–30 ms vs the previous draft |
-| `SIGN_ED25519` (0x52) | RFC 8032 Ed25519 | **3 – 6 s** | Two software scalar mults on Edwards25519 plus projective blinding (audit S2-01); message capped at ~222 bytes by the inner short-form LC |
+| `SIGN_SCHNORR_K1` (0x51) | BIP-340 Schnorr | **400 – 900 ms** | Two software scalar mults on secp256k1 + three SHA-256 ingests; tag pre-hashing (audit F-12) saves ~15–30 ms vs the previous draft |
+| `SIGN_ED25519` (0x52) | RFC 8032 Ed25519 | **3 – 6 s** | Two software scalar mults on Edwards25519 plus projective blinding (audit F-01); message capped at ~222 bytes by the inner short-form LC |
 | `EXPORT_XPUB` (0x42) | One BIP-32 / SLIP-10 step | **80 – 200 ms** | Hardened: one HMAC-SHA-512. Non-hardened: one HMAC-SHA-512 + one EC point add via JC `KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY`. |
 
 Limb-radix-`2^26` rewrites of `Field25519` and `Bignat` would likely cut Ed25519 below 1 s and Schnorr below 250 ms; both are tracked as v2.0 line items.

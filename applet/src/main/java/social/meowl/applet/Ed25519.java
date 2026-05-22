@@ -167,7 +167,7 @@ public final class Ed25519 {
 
             //  3. R = r · B; R_enc = encode(R). Reset the base point to its canonical projective
             //     form and re-randomise it with a fresh blind so the second scalar ladder uses a
-            //     coordinate trajectory uncorrelated with the first one (audit S2-01).
+            //     coordinate trajectory uncorrelated with the first one (audit F-01).
             Edwards25519.setBase(scratch, BASE_PT_OFF);
             blindBasePoint();
             Edwards25519.scalarMult(
@@ -194,7 +194,7 @@ public final class Ed25519 {
                     Bignat.add(scratch, S_OUT_BE_OFF, scratch, (short) (HASH_OFF + 32), (short) 32);
             //     Result is in [0, 2ℓ). Reduce: subtract ℓ iff (carry == 1) OR (out >= ℓ).
             //     Implemented branch-free so the timing of the final reduce does not depend on
-            //     the secret-derived intermediate value (audit S2-01 mitigation).
+            //     the secret-derived intermediate value (audit F-01 mitigation).
             short carryMask = (short) (carry ? -1 : 0);
             short lessMask =
                     Bignat.ctLessThan(scratch, S_OUT_BE_OFF, GROUP_L, (short) 0, (short) 32);
@@ -239,7 +239,7 @@ public final class Ed25519 {
         // in projective coordinates before every scalarMult call so the variable-time Bignat.mod
         // kernel sees a different bit pattern on every iteration of the 256-bit ladder, which is
         // the Coron CHES 1999 §3.1 projective coordinate randomisation countermeasure against the
-        // residual SPA leak in Field25519.mul/sqr (audit S2-01 mitigation).
+        // residual SPA leak in Field25519.mul/sqr (audit F-01 mitigation).
         Edwards25519.setBase(scratch, BASE_PT_OFF);
         blindBasePoint();
         Edwards25519.scalarMult(

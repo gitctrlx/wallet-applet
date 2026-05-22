@@ -28,7 +28,7 @@ import javacard.framework.Util;
  * big-endian for consistency with the rest of the applet ({@link Bignat}, {@link Bip32}, {@link
  * Schnorr}). The endianness flip happens once, at the {@link Ed25519} wire boundary.
  *
- * <p><b>Timing model (audit S2-01 mitigation).</b> The additive helpers — {@link #add}, {@link
+ * <p><b>Timing model (audit F-01 mitigation).</b> The additive helpers — {@link #add}, {@link
  * #sub}, {@link #neg} — are fully constant-time: they always run both the unconditional 32-byte
  * addition / subtraction <em>and</em> the conditional reduction (subtract {@code p}) or correction
  * (add {@code p}), with the reduction step driven by a {@code -1}/{@code 0} mask derived from the

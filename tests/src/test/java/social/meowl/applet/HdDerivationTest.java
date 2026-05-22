@@ -256,7 +256,7 @@ class HdDerivationTest {
                 "SLIP-10 non-hardened index is rejected for Ed25519 with"
                         + " SW_CONDITIONS_NOT_SATISFIED")
         void nonHardenedRejected() {
-            // Index 0 (top bit clear) is illegal for ed25519 under SLIP-10. Per audit S3-10 the
+            // Index 0 (top bit clear) is illegal for ed25519 under SLIP-10. Per audit F-14 the
             // applet returns 6985 (not 6A86): the offending bit lives in the inner data field, not
             // in the APDU header where ISO 7816-4's 6A86 is meaningful.
             ResponseAPDU r = exportXpubResp(Constants.CURVE_ED25519, new int[] {0});

@@ -9,11 +9,11 @@ import javacard.framework.ISOException;
 /**
  * Centralised, overflow-safe boundary checks for byte-buffer offsets and lengths.
  *
- * <p>Audit S3-01 found that {@code ApduTlv.ensureCapacity} and {@code Authentikey.ensureCapacity}
+ * <p>Audit F-05 found that {@code ApduTlv.ensureCapacity} and {@code Authentikey.ensureCapacity}
  * were near-identical private implementations of the same predicate, with the additional caveat
  * that an arithmetic check of the form {@code (short)(offset + needed) > dst.length} silently wraps
  * under JC's 16-bit signed {@code short} when {@code offset + needed} exceeds {@code 0x7FFF}. Audit
- * S2-04 demonstrated that the wrap was theoretically reachable on attacker-controlled inputs.
+ * F-04 demonstrated that the wrap was theoretically reachable on attacker-controlled inputs.
  *
  * <p>This class exposes a single, overflow-safe primitive whose check rearranges the inequality to
  * {@code needed > (dst.length - offset)} so the subtraction is always done on an already-validated

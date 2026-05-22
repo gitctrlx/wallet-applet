@@ -42,7 +42,7 @@ import javacard.framework.Util;
  * invoked on either (a) public material, (b) material that has already been mixed with sufficient
  * randomness that the timing fan-out reveals no secret bits (e.g. the Schnorr blinded-nonce
  * kernel), or (c) inside the constant-time {@link Edwards25519#scalarMult} loop where every
- * iteration multiplies and reduces a randomised projective coordinate (audit S2-01 / S2-03
+ * iteration multiplies and reduces a randomised projective coordinate (audit F-01 / F-03
  * mitigation: {@link Edwards25519#randomizeProjective}).
  *
  * <p>For the modular-arithmetic wrappers that DO need constant-time semantics — the final
@@ -450,7 +450,7 @@ public final class Bignat {
      * Constant-time {@code x == 0} predicate. Reads every byte and returns {@code -1} iff the
      * buffer is all zero, {@code 0} otherwise. The implementation deliberately avoids any local of
      * type {@code int} because the J3R180 JavaCard converter rejects 32-bit locals (see {@link
-     * Bignat} class Javadoc and audit S2-01 follow-up).
+     * Bignat} class Javadoc and audit F-01 follow-up).
      */
     public static short ctIsZero(byte[] x, short xOff, short size) {
         // Accumulate the byte-wise OR in a short. Each contribution is an unsigned byte (range

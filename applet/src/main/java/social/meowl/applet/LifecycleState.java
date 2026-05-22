@@ -96,7 +96,7 @@ public final class LifecycleState {
     /**
      * Transaction-less reset variant. Caller MUST hold a {@link JCSystem#beginTransaction()} block;
      * used by {@link MeowlApplet#wipe()} to bundle the lifecycle reset into the single
-     * reset-to-factory transaction (audit S3-11).
+     * reset-to-factory transaction (audit F-15).
      */
     public void resetInTx() {
         current = UNINITIALIZED;

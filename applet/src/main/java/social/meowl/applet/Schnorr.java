@@ -37,7 +37,7 @@ import javacard.security.RandomData;
  * Tagged hashing follows BIP-340 §3.2: {@code SHA256(SHA256(tag) ‖ SHA256(tag) ‖ msg)}; the three
  * {@code SHA256(tag)} values are precomputed as {@link #HASH_OF_TAG_AUX}, {@link
  * #HASH_OF_TAG_NONCE} and {@link #HASH_OF_TAG_CHALLENGE}, saving three SHA-256 invocations per
- * signature compared to evaluating them at runtime (audit S3-08).
+ * signature compared to evaluating them at runtime (audit F-12).
  *
  * <p>Every secret intermediate lives in a 354-byte {@code CLEAR_ON_DESELECT} scratch and is wiped
  * by a {@code finally} on every code path so no residue survives the call.
@@ -46,7 +46,7 @@ public final class Schnorr {
 
     /**
      * Pre-computed {@code SHA256("BIP0340/aux")}, big-endian. Pinned here so every Schnorr
-     * signature avoids three redundant SHA-256 invocations over the tag strings (audit S3-08). The
+     * signature avoids three redundant SHA-256 invocations over the tag strings (audit F-12). The
      * {@code SchnorrTagHashTest} sanity-check verifies these constants against a runtime SHA-256 of
      * the literal tag bytes so any typo trips on the first build.
      */
@@ -103,7 +103,7 @@ public final class Schnorr {
      * SHA-256(tag) digest; that slot is gone since {@link #HASH_OF_TAG_AUX} / {@link
      * #HASH_OF_TAG_NONCE} / {@link #HASH_OF_TAG_CHALLENGE} are now precomputed constants fed
      * directly into {@link MessageDigest#update}, saving 32 bytes of transient RAM and three
-     * SHA-256 invocations per signature (audit S3-08).
+     * SHA-256 invocations per signature (audit F-12).
      */
     private static final short D_OFF = 0;
     private static final short T_OFF = 32;
@@ -202,7 +202,7 @@ public final class Schnorr {
             // === Step 5: k' = int(rand) mod n; reject k' == 0 ===
             // rand < 2^256 and n > 2^255 so a single conditional subtract of n suffices. We run
             // the subtract through a mask-derived predicate so the cost is constant regardless
-            // of whether the unreduced value was below or above n (audit S2-03 mitigation).
+            // of whether the unreduced value was below or above n (audit F-03 mitigation).
             short kLessN =
                     Bignat.ctLessThan(scratch, K_OFF, ModN.SECP256K1_N, (short) 0, COORD_LEN);
             Bignat.condSubInPlace(
@@ -281,7 +281,7 @@ public final class Schnorr {
      * row, leaving the caller free to {@link MessageDigest#update update} message segments and
      * finalise with {@link MessageDigest#doFinal doFinal}. The earlier revision called {@code
      * SHA256(tag)} live; the precomputed constants eliminate three SHA-256 invocations per
-     * signature (audit S3-08).
+     * signature (audit F-12).
      */
     private void taggedHashStart(byte[] tagHash) {
         sha256.reset();

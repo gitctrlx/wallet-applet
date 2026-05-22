@@ -232,7 +232,7 @@ public final class PinManager {
      * Transaction-less wipe variant. Caller MUST hold a {@link JCSystem#beginTransaction()} block
      * around this call; used by {@link MeowlApplet#wipe()} to bundle the PIN/PUK invalidation with
      * the PKI, master-seed and lifecycle wipes into one atomic commit so a torn power-off during
-     * the reset-to-factory flow cannot leave the card in a partially-wiped state (audit S3-11).
+     * the reset-to-factory flow cannot leave the card in a partially-wiped state (audit F-15).
      */
     public void wipeInTx() {
         // Best-effort EEPROM scrub: overwrite the existing PIN/PUK with a known-garbage value

@@ -210,7 +210,7 @@ public final class PkiManager {
      * Transaction-less wipe variant. Caller MUST hold a {@link JCSystem#beginTransaction()} block
      * around this call; used by {@link MeowlApplet#wipe()} to bundle the cert wipe into the single
      * reset-to-factory transaction so a torn power-off cannot leave the card with cleared PIN/PUK
-     * but a stale certificate still committed (audit S3-11).
+     * but a stale certificate still committed (audit F-15).
      */
     public void wipeInTx() {
         Util.arrayFillNonAtomic(cert, (short) 0, Constants.PKI_CERT_MAX_LEN, (byte) 0);

@@ -83,7 +83,7 @@ class MeowlAppletTest {
             // SETUP / IMPORT_SEED / SIGN_xxx must only be reachable through OPEN_SECURE_CHANNEL.
             // The outer-frame switch must reject them with 6D00 even though the underlying handler
             // exists, since the handler is gated on a live SC session and the dispatcher does not
-            // route there. Audit S3-16: regression coverage for that gating.
+            // route there. Audit F-25: regression coverage for that gating.
             int[] innerOnlyIns = {
                 INS_SETUP, INS_IMPORT_SEED, INS_SIGN_ECDSA_K1, INS_SIGN_SCHNORR_K1, INS_SIGN_ED25519
             };
@@ -104,7 +104,7 @@ class MeowlAppletTest {
         void openSecureChannelWithoutInitFails() {
             // Sending OPEN_SC immediately after select() must not crash and must not dispatch any
             // inner handler. The applet's secure-channel layer rejects with a non-9000 SW. Audit
-            // S3-16: the test is defensive against silent fall-through to dispatchInner with stale
+            // F-25: the test is defensive against silent fall-through to dispatchInner with stale
             // session keys.
             byte[] bogusEnvelope = new byte[16 + 16 + 16]; // IV || one-block CT || MAC
             ResponseAPDU resp = send(CLA, INS_OPEN_SC, 0x00, 0x00, bogusEnvelope);
@@ -263,10 +263,10 @@ class MeowlAppletTest {
 
         @Test
         @DisplayName(
-                "lifecycle reverts to UNINITIALIZED after a complete reset (audit S3-11 atomic"
+                "lifecycle reverts to UNINITIALIZED after a complete reset (audit F-15 atomic"
                         + " wipe regression)")
         void lifecycleRevertsToUninitialized() {
-            // Audit S3-11: every persistent wipe runs inside a single beginTransaction so a torn
+            // Audit F-15: every persistent wipe runs inside a single beginTransaction so a torn
             // power-off cannot leave the card with a half-wiped lifecycle. The post-condition that
             // observably verifies the success path is "after the fourth invocation, GET_INFO
             // reports UNINITIALIZED" — the same state a fresh install would expose. A regression
@@ -286,7 +286,7 @@ class MeowlAppletTest {
         @Test
         @DisplayName("RESET_TO_FACTORY interleaved with multiple distinct INS rearms cleanly")
         void interleavedReset() {
-            // Audit S3-16: drive the rearm path with a variety of INS values, including the inner-
+            // Audit F-25: drive the rearm path with a variety of INS values, including the inner-
             // only ones (which return 6D00 but still rearm) and one that returns 9000. The counter
             // must restart at RESET_REQUIRED_INVOCATIONS each time a non-RESET INS comes through.
             int[] interleaveIns = {INS_GET_INFO, INS_GET_AUTHENTIKEY, INS_SETUP, INS_SIGN_ECDSA_K1};

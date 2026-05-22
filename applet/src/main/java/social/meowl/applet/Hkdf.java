@@ -80,7 +80,7 @@ public final class Hkdf {
      * @param saltOffset offset of the salt within {@code salt}
      * @param saltLen length of the salt in bytes ({@code >= 0}); RFC 5869 places no upper bound on
      *     the salt — the underlying HMAC absorbs arbitrary lengths and either pre-hashes the salt
-     *     when {@code |salt| > B} or pads it to {@code B} when {@code |salt| <= B}. Audit S3-05
+     *     when {@code |salt| > B} or pads it to {@code B} when {@code |salt| <= B}. Audit F-09
      *     removed the previous arbitrary 256-byte cap.
      * @param ikm buffer holding the input keying material
      * @param ikmOffset offset of the IKM
