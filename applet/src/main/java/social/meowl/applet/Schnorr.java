@@ -153,10 +153,10 @@ public final class Schnorr {
             // OFFSET_CDATA) would otherwise overwrite the digest mid-flow.
             Util.arrayCopyNonAtomic(digestBuf, digestOff, scratch, M_OFF, COORD_LEN);
 
-            // === Step 1: derive d' (BIP-32 enforces 0 < d' < n) ===
+            // 1. Derive d' (BIP-32 enforces 0 < d' < n).
             bip32.deriveLeafScalar(pathBuf, pathOff, depth, scratch, D_OFF);
 
-            // === Step 2: P = d'·G; d = (y(P) odd ? n - d' : d') ===
+            // 2. P = d'·G; d = (y(P) odd ? n - d' : d').
             bip32.scalarMultG(scratch, D_OFF, scratch, P_OFF);
             // y(P) parity: last byte of the uncompressed encoding (0x04 ‖ x ‖ y).
             byte pyLastByte = scratch[(short) (P_OFF + Constants.EC_POINT_UNCOMPRESSED_LEN - 1)];
@@ -164,8 +164,8 @@ public final class Schnorr {
                 ModN.negateMod(scratch, D_OFF);
             }
 
-            // === Step 3: t = bytes(d) ⊕ tagged_hash("BIP0340/aux", aux) ===
-            // aux is staged at WORK_OFF; the slot is reused for the multiply-add later.
+            // 3. t = bytes(d) ⊕ tagged_hash("BIP0340/aux", aux).
+            //    aux is staged at WORK_OFF; the slot is reused for the multiply-add later.
             rng.nextBytes(scratch, WORK_OFF, COORD_LEN);
             taggedHashStart(HASH_OF_TAG_AUX);
             sha256.doFinal(scratch, WORK_OFF, COORD_LEN, scratch, T_OFF);
@@ -173,15 +173,16 @@ public final class Schnorr {
                 scratch[(short) (T_OFF + i)] ^= scratch[(short) (D_OFF + i)];
             }
 
-            // === Step 4: rand = tagged_hash("BIP0340/nonce", t ‖ bytes(P) ‖ m) ===
+            // 4. rand = tagged_hash("BIP0340/nonce", t ‖ bytes(P) ‖ m).
             taggedHashStart(HASH_OF_TAG_NONCE);
             sha256.update(scratch, T_OFF, COORD_LEN);
             sha256.update(scratch, (short) (P_OFF + 1), COORD_LEN); // P.x (skip 0x04 prefix)
             sha256.doFinal(scratch, M_OFF, COORD_LEN, scratch, K_OFF);
 
-            // === Step 5: k' = int(rand) mod n; reject k' == 0 ===
-            // rand < 2^256 and n > 2^255 so one conditional subtract suffices. The mask-driven
-            // subtract takes the same time whether the unreduced value was below or above n.
+            // 5. k' = int(rand) mod n; reject k' == 0.
+            //    rand < 2^256 and n > 2^255 so one conditional subtract suffices. The mask-
+            //    driven subtract takes the same time whether the unreduced value was below or
+            //    above n.
             short kLessN =
                     Bignat.ctLessThan(scratch, K_OFF, ModN.SECP256K1_N, (short) 0, COORD_LEN);
             Bignat.condSubInPlace(
@@ -190,14 +191,14 @@ public final class Schnorr {
                 ISOException.throwIt(Constants.SW_INTERNAL_ERROR);
             }
 
-            // === Step 6: R = k'·G; k = (y(R) odd ? n - k' : k') ===
+            // 6. R = k'·G; k = (y(R) odd ? n - k' : k').
             bip32.scalarMultG(scratch, K_OFF, scratch, R_OFF);
             byte ryLastByte = scratch[(short) (R_OFF + Constants.EC_POINT_UNCOMPRESSED_LEN - 1)];
             if ((ryLastByte & 0x01) != 0) {
                 ModN.negateMod(scratch, K_OFF);
             }
 
-            // === Step 7: e = int(tagged_hash("BIP0340/challenge", R.x ‖ P.x ‖ m)) mod n ===
+            // 7. e = int(tagged_hash("BIP0340/challenge", R.x ‖ P.x ‖ m)) mod n.
             taggedHashStart(HASH_OF_TAG_CHALLENGE);
             sha256.update(scratch, (short) (R_OFF + 1), COORD_LEN); // R.x
             sha256.update(scratch, (short) (P_OFF + 1), COORD_LEN); // P.x
@@ -207,11 +208,11 @@ public final class Schnorr {
             Bignat.condSubInPlace(
                     scratch, E_OFF, ModN.SECP256K1_N, (short) 0, COORD_LEN, (short) ~eLessN);
 
-            // === Step 8: s = (k + e·d) mod n ===
-            // 8a) e·d (32×32 → 64) into WORK_OFF.
+            // 8. s = (k + e·d) mod n.
+            // 8a. e·d (32×32 → 64) into WORK_OFF.
             Bignat.mult(scratch, E_OFF, scratch, D_OFF, COORD_LEN, scratch, WORK_OFF);
-            // 8b) Add k into the lower 32 bytes of WORK; propagate any carry upward. The bound
-            //     k + e·d < n + (n-1)² < 2^512 guarantees no overflow past the 64-byte buffer.
+            // 8b. Add k into the lower 32 bytes of WORK; propagate any carry upward. The bound
+            //    k + e·d < n + (n-1)² < 2^512 guarantees no overflow past the 64-byte buffer.
             boolean carry =
                     Bignat.add(scratch, (short) (WORK_OFF + COORD_LEN), scratch, K_OFF, COORD_LEN);
             if (carry) {
@@ -225,7 +226,7 @@ public final class Schnorr {
                     i--;
                 }
             }
-            // 8c) Reduce WORK[0..64] mod n; result lands in the trailing 32 bytes.
+            // 8c. Reduce WORK[0..64] mod n; result lands in the trailing 32 bytes.
             Bignat.mod(
                     scratch,
                     WORK_OFF,
@@ -234,7 +235,7 @@ public final class Schnorr {
                     (short) 0,
                     COORD_LEN);
 
-            // === Step 9: emit bytes(R) ‖ s ===
+            // 9. Emit bytes(R) ‖ s.
             Util.arrayCopyNonAtomic(scratch, (short) (R_OFF + 1), outBuf, outOff, COORD_LEN);
             Util.arrayCopyNonAtomic(
                     scratch,

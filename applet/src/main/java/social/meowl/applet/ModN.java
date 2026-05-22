@@ -69,7 +69,7 @@ public final class ModN {
      */
     public static boolean addMod(
             byte[] a, short aOff, byte[] b, short bOff, byte[] out, short outOff) {
-        // Step 1: out = a + b, recording the byte-level carry.
+        // 1. out = a + b, recording the byte-level carry.
         short carry = 0;
         for (short i = (short) (LEN - 1); i >= 0; i--) {
             short sum =
@@ -80,8 +80,8 @@ public final class ModN {
             out[(short) (outOff + i)] = (byte) sum;
             carry = (short) ((sum >>> 8) & 0x01);
         }
-        // Step 2: subtract n iff (carry == 1) OR (out >= n). Both inputs are < n on entry, so
-        // the unreduced sum is < 2n and a single subtraction is sufficient.
+        // 2. Subtract n iff (carry == 1) OR (out >= n). Both inputs are < n on entry, so the
+        //    unreduced sum is < 2n and a single subtraction is sufficient.
         short carryMask = (short) -carry;
         short lessMask = Bignat.ctLessThan(out, outOff, SECP256K1_N, (short) 0, LEN);
         short reduceMask = (short) (carryMask | ~lessMask);

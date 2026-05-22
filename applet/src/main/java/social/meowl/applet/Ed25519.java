@@ -144,30 +144,30 @@ public final class Ed25519 {
             byte[] outBuf,
             short outOff) {
         try {
-            //  1. h = SHA-512(sk); s ← clamp(h[0..32]) reversed to BE; A = s · B; A_enc =
-            // encode(A).
+            // 1. h = SHA-512(sk); s ← clamp(h[0..32]) reversed to BE; A = s · B; A_enc =
+            //    encode(A).
             computePublicKey(skBuf, skOff);
 
-            //  2. r = SHA-512(h[32..64] ‖ M)  (h[32..64] = prefix is still in
-            // scratch[HASH_OFF+32]).
+            // 2. r = SHA-512(h[32..64] ‖ M)  (h[32..64] = prefix is still in
+            //    scratch[HASH_OFF+32]).
             sha512.reset();
             sha512.update(scratch, (short) (HASH_OFF + 32), (short) 32);
             sha512.doFinal(msgBuf, msgOff, msgLen, scratch, HASH_OFF);
-            //     Reverse the 64-byte LE digest into BE then reduce mod ℓ.
+            //    Reverse the 64-byte LE digest into BE then reduce mod ℓ.
             reverseBytes(scratch, HASH_OFF, SHA512_LEN);
             Bignat.mod(scratch, HASH_OFF, SHA512_LEN, GROUP_L, (short) 0, (short) 32);
             Util.arrayCopyNonAtomic(
                     scratch, (short) (HASH_OFF + 32), scratch, R_BE_OFF, (short) 32);
 
-            //  3. R = r · B; R_enc = encode(R). Reset the base point and re-blind it so the second
-            //     scalar ladder runs on a coordinate trajectory uncorrelated with the first.
+            // 3. R = r · B; R_enc = encode(R). Reset the base point and re-blind it so the second
+            //    scalar ladder runs on a coordinate trajectory uncorrelated with the first.
             Edwards25519.setBase(scratch, BASE_PT_OFF);
             blindBasePoint();
             Edwards25519.scalarMult(
                     scratch, R_BE_OFF, scratch, BASE_PT_OFF, scratch, POINT_OFF, scratch, WORK_OFF);
             Edwards25519.encodePoint(scratch, POINT_OFF, scratch, R_ENC_OFF, scratch, WORK_OFF);
 
-            //  4. k = SHA-512(R_enc ‖ A_enc ‖ M) mod ℓ.
+            // 4. k = SHA-512(R_enc ‖ A_enc ‖ M) mod ℓ.
             sha512.reset();
             sha512.update(scratch, R_ENC_OFF, (short) 32);
             sha512.update(scratch, A_ENC_OFF, (short) 32);
@@ -177,16 +177,16 @@ public final class Ed25519 {
             Util.arrayCopyNonAtomic(
                     scratch, (short) (HASH_OFF + 32), scratch, K_BE_OFF, (short) 32);
 
-            //  5. S = (r + k · s) mod ℓ.
-            //     k_times_s_64 ← k · s (full 64-byte product) in scratch[HASH_OFF..HASH_OFF+64].
+            // 5. S = (r + k · s) mod ℓ.
+            //    k_times_s_64 ← k · s (full 64-byte product) in scratch[HASH_OFF..HASH_OFF+64].
             Bignat.mult(scratch, K_BE_OFF, scratch, S_BE_OFF, (short) 32, scratch, HASH_OFF);
             Bignat.mod(scratch, HASH_OFF, SHA512_LEN, GROUP_L, (short) 0, (short) 32);
-            //     k·s mod ℓ now lives at scratch[HASH_OFF+32..HASH_OFF+64]. Add r and reduce.
+            //    k·s mod ℓ now lives at scratch[HASH_OFF+32..HASH_OFF+64]. Add r and reduce.
             Util.arrayCopyNonAtomic(scratch, R_BE_OFF, scratch, S_OUT_BE_OFF, (short) 32);
             boolean carry =
                     Bignat.add(scratch, S_OUT_BE_OFF, scratch, (short) (HASH_OFF + 32), (short) 32);
-            //     Result is in [0, 2ℓ). Reduce: subtract ℓ iff (carry == 1) OR (out >= ℓ). Branch-
-            //     free so the timing does not depend on the secret-derived intermediate.
+            //    Result is in [0, 2ℓ). Reduce: subtract ℓ iff (carry == 1) OR (out >= ℓ). Branch-
+            //    free so the timing does not depend on the secret-derived intermediate.
             short carryMask = (short) (carry ? -1 : 0);
             short lessMask =
                     Bignat.ctLessThan(scratch, S_OUT_BE_OFF, GROUP_L, (short) 0, (short) 32);
@@ -194,7 +194,7 @@ public final class Ed25519 {
             Bignat.condSubInPlace(
                     scratch, S_OUT_BE_OFF, GROUP_L, (short) 0, (short) 32, reduceMask);
 
-            //  6. Output R_enc ‖ S_LE. R_enc is already LE; reverse S_OUT_BE to LE in the output.
+            // 6. Output R_enc ‖ S_LE. R_enc is already LE; reverse S_OUT_BE to LE in the output.
             Util.arrayCopyNonAtomic(scratch, R_ENC_OFF, outBuf, outOff, (short) 32);
             for (short i = 0; i < (short) 32; i++) {
                 outBuf[(short) (outOff + 32 + i)] = scratch[(short) (S_OUT_BE_OFF + 31 - i)];
