@@ -429,16 +429,22 @@ public final class SecureChannel {
         // gtMask / ltMask each track "have we already proven a > b / a < b at some earlier
         // (more significant) byte?". Once one of them is set, the per-byte comparison must not
         // overwrite the earlier verdict — masks are sticky.
+        //
+        // Per-byte mask extraction stays inside the short domain so the JC 3.0.5 CAP converter
+        // accepts the code without an int-support directive: a short's bit 15 is the sign bit,
+        // {@code (s >>> 15) & 1} returns 1 iff {@code s < 0}, and negating broadcasts that bit
+        // into the {@code 0x0000} / {@code 0xFFFF} mask we want. The previous {@code (s >> 31) &
+        // 0xFFFF} formulation relied on a 32-bit shift and a {@code 0xFFFF} int literal — both
+        // are int-only operations on default-profile JC cards (audit F-46, follow-up to F-28).
         short gtMask = 0;
         short ltMask = 0;
         for (short i = 0; i < Constants.SC_BLOCK_LEN; i++) {
             short av = (short) (a[(short) (aOff + i)] & 0xFF);
             short bv = (short) (b[(short) (bOff + i)] & 0xFF);
-            // (av - bv) ∈ [-255, 255]. Sign-shift to get a 0xFFFF mask iff av < bv.
-            short diff = (short) (av - bv);
-            short ltHere = (short) ((diff >> 31) & 0xFFFF);
-            // bv < av iff (bv - av) is negative.
-            short gtHere = (short) (((bv - av) >> 31) & 0xFFFF);
+            short diffAB = (short) (av - bv);
+            short diffBA = (short) (bv - av);
+            short ltHere = (short) -((diffAB >>> 15) & 1);
+            short gtHere = (short) -((diffBA >>> 15) & 1);
             // Promote ltHere/gtHere only if neither verdict was reached at a more significant
             // byte. ~(gtMask | ltMask) is 0xFFFF iff "still tied so far".
             short stillTied = (short) ~(gtMask | ltMask);
@@ -473,12 +479,19 @@ public final class SecureChannel {
         // failMask: 0 = OK, non-zero = at least one pad invariant failed. Bits are OR-accumulated
         // from per-check sub-masks so the time spent here is independent of which (or how many)
         // invariants were violated.
+        //
+        // All sign-bit extractions stay inside the short domain — see compare16 (F-46) for the
+        // rationale — so the JC 3.0.5 CAP converter accepts the code without an int-support
+        // directive. For any short {@code s}, {@code (s >>> 15) & 1} is 1 iff {@code s < 0}, and
+        // negating broadcasts that into a {@code 0xFFFF} mask.
         short failMask = 0;
-        // padVal == 0 → reject. ((padVal | -padVal) >>> 31) is the classic "is non-zero" mask:
-        // 0 when padVal == 0, 1 otherwise. Subtracting from 1 inverts it into the failure bit.
-        failMask |= (short) (1 - ((padVal | -padVal) >>> 31));
+        // padVal == 0 → reject. (padVal | -padVal) is non-zero iff padVal != 0; its sign bit is
+        // set iff padVal != 0 (because -padVal is negative for padVal ∈ [1, 255]). Subtracting
+        // that bit from 1 yields the failure bit.
+        short padNonZeroBit = (short) (((short) (padVal | -padVal) >>> 15) & 1);
+        failMask |= (short) (1 - padNonZeroBit);
         // padVal > BLOCK_LEN → reject. (BLOCK_LEN - padVal) is negative iff padVal > BLOCK_LEN.
-        failMask |= (short) (((Constants.SC_BLOCK_LEN - padVal) >> 31) & 1);
+        failMask |= (short) (((short) (Constants.SC_BLOCK_LEN - padVal) >>> 15) & 1);
         // For every byte in the trailing block (the only positions that could legitimately hold
         // pad bytes), check that it equals padVal whenever its distance from the end is ≤ padVal.
         // Iterating over the full SC_BLOCK_LEN tail keeps the loop count constant; per-byte
@@ -486,13 +499,14 @@ public final class SecureChannel {
         for (short i = 0; i < Constants.SC_BLOCK_LEN; i++) {
             short distFromEnd = (short) (i + 1); // 1..BLOCK_LEN
             // mustMatch = -1 iff distFromEnd ≤ padVal, else 0. (padVal - distFromEnd) is
-            // non-negative iff the byte is inside the pad region.
-            short mustMatch = (short) ~(((padVal - distFromEnd) >> 31) & 0xFFFF);
+            // non-negative iff the byte is inside the pad region; sign bit detects it.
+            short outsidePad = (short) (((short) (padVal - distFromEnd) >>> 15) & 1);
+            short mustMatch = (short) (outsidePad - 1);
             short bv = (short) (buf[(short) (offset + paddedLen - distFromEnd)] & 0xFF);
             // mismatch: bv ⊕ padVal ∈ [0, 255]; gated by mustMatch, then collapsed to a single
             // bit via the same is-non-zero pattern used for padVal == 0 above.
             short mismatchHere = (short) ((bv ^ padVal) & mustMatch);
-            failMask |= (short) ((mismatchHere | -mismatchHere) >>> 31);
+            failMask |= (short) (((short) (mismatchHere | -mismatchHere) >>> 15) & 1);
         }
         if (failMask != 0) {
             ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
