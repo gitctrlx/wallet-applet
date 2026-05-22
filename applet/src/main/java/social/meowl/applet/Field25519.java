@@ -13,20 +13,24 @@ import javacard.framework.Util;
  * methods are static and operate on caller-supplied buffers; output buffers may alias input buffers
  * (every method reads inputs before writing the output).
  *
- * <p>Multiplication is schoolbook 32×32 → 64 followed by long-division reduction against {@link
- * #FIELD_P}. Squaring is implemented as {@code mul(a, a)}. Inversion uses Fermat: {@code a⁻¹ =
- * a^(p−2) mod p} via 254 left-to-right square-and-multiplies. RFC 8032 wire format is little-
- * endian; this class works in big-endian and the flip happens at the {@link Ed25519} boundary.
+ * <p>Multiplication is schoolbook 32×32 → 64 followed by a constant-time pseudo-Mersenne
+ * reduction ({@link #reducePseudoMersenne}) exploiting {@code 2²⁵⁶ ≡ 38 (mod p)}. Squaring is
+ * implemented as {@code mul(a, a)}. Inversion uses Fermat: {@code a⁻¹ = a^(p−2) mod p} via 254
+ * left-to-right square-and-multiplies. RFC 8032 wire format is little-endian; this class works
+ * in big-endian and the flip happens at the {@link Ed25519} boundary.
  *
- * <p><b>Timing model.</b> Additive helpers ({@link #add}, {@link #sub}, {@link #neg}) are fully
- * constant-time: the add/sub and the conditional p-reduction (driven by a {@code -1}/{@code 0}
- * mask) always run. The exponent in {@link #inv} is the public constant {@code p − 2}, so the
- * schedule is data-independent.
+ * <p><b>Timing model.</b> Every public method is fully constant-time. Additive helpers ({@link
+ * #add}, {@link #sub}, {@link #neg}) walk every byte unconditionally and the conditional
+ * p-reduction is mask-driven. {@link #mul} and {@link #sqr} use the constant-time pseudo-
+ * Mersenne reducer instead of the variable-time {@link Bignat#mod} kernel — the latter's
+ * iteration count was a function of the secret intermediate's bit length (audit A-17). The
+ * exponent in {@link #inv} is the public constant {@code p − 2}, so the schedule is data-
+ * independent.
  *
- * <p>The multiplicative kernels {@link #mul} / {@link #sqr} still pass through the variable-time
- * {@link Bignat#mod}. The SPA defence lives one level up in {@link Edwards25519#scalarMult}, which
- * blinds the input via {@link Edwards25519#randomizeProjective} (Coron CHES 1999) so every
- * intermediate fed into {@link Bignat#mod} is statistically decorrelated from the secret scalar.
+ * <p>The {@link Edwards25519#randomizeProjective} input blinding (Coron CHES 1999) is retained as
+ * a defence-in-depth measure: even though every individual field operation is now constant-time,
+ * the projective randomisation decorrelates the bit pattern of intermediate field elements from
+ * the secret scalar bits, hardening against second-order side channels (power, EM).
  */
 public final class Field25519 {
 
@@ -168,19 +172,90 @@ public final class Field25519 {
             byte[] scratch,
             short scratchOff) {
         Bignat.mult(a, aOff, b, bOff, LEN, scratch, (short) (scratchOff + SCR_PROD_OFF));
-        Bignat.mod(
-                scratch,
-                (short) (scratchOff + SCR_PROD_OFF),
-                (short) (LEN * 2),
-                FIELD_P,
-                (short) 0,
-                LEN);
-        // Bignat.mod leaves the reduced value in the trailing 32 bytes of the dividend buffer.
-        Util.arrayCopyNonAtomic(
-                scratch, (short) (scratchOff + SCR_PROD_OFF + LEN), out, outOff, LEN);
+        reducePseudoMersenne(scratch, (short) (scratchOff + SCR_PROD_OFF), out, outOff);
         // Wipe only the product slot; {@link #inv} parks the staged operand in the tmp slot.
         Util.arrayFillNonAtomic(
                 scratch, (short) (scratchOff + SCR_PROD_OFF), (short) (LEN * 2), (byte) 0);
+    }
+
+    /**
+     * Constant-time reduction of a 64-byte big-endian product modulo {@code p = 2²⁵⁵ − 19},
+     * writing the canonical 32-byte residue to {@code dst}.
+     *
+     * <p><b>Algorithm.</b> Pseudo-Mersenne fold using {@code 2²⁵⁶ ≡ 38 (mod p)}. The 512-bit
+     * input splits as {@code x = x_hi · 2²⁵⁶ + x_lo} with {@code 0 ≤ x_hi, x_lo < 2²⁵⁶}, so
+     * {@code x ≡ 38·x_hi + x_lo (mod p)}. The reduction proceeds in four steps, each constant-
+     * time in every byte of the input:
+     *
+     * <ol>
+     *   <li>Compute {@code r = (38·x_hi + x_lo) mod 2²⁵⁶} byte-wise, tracking a 6-bit carry
+     *       {@code c₁ ∈ [0, 39]} (the {@code 38·x_hi + x_lo} fits in 38 + 32 + small bits).
+     *   <li>Fold the carry: {@code r ← r + 38·c₁}. Since {@code 38·c₁ ≤ 1482 ≤ 2¹¹}, the result
+     *       is at most {@code 2²⁵⁶ + 1481 < 2²⁵⁷}; the new top-carry {@code c₂ ∈ {0, 1}}.
+     *   <li>Fold again: {@code r ← r + 38·c₂}. If {@code c₂ = 1} the body was {@code ≤ 1481}
+     *       before this step, so after adding {@code 38} the body is {@code ≤ 1519 < 2¹¹} and
+     *       no further carry escapes; if {@code c₂ = 0} the body is unchanged. In both cases
+     *       {@code r < 2²⁵⁶} after this step.
+     *   <li>Run two unconditional mask-driven {@code condSub(r, p)} passes. After the first
+     *       pass {@code r ∈ [0, 2p)}, after the second {@code r ∈ [0, p)}, regardless of which
+     *       sub-range the post-fold value originally landed in.
+     * </ol>
+     *
+     * <p><b>Constant-time argument.</b> Every iteration of every loop runs unconditionally. The
+     * carry/borrow chains carry data-dependent values but their schedule (number of operations,
+     * sequence of reads and writes) is fixed. {@link Bignat#condSubInPlace} is itself mask-
+     * driven. There are no early exits.
+     *
+     * <p><b>Performance.</b> ~96 byte-ops for step 1, ~33 for step 2, ~33 for step 3, ~64 for
+     * the two condSubs. Total ~226 byte-ops vs ~2 000 for the prior {@link Bignat#mod} kernel
+     * (~8× speed-up on the typical curve operation, ~10× on the worst case the long-division
+     * loop walked).
+     *
+     * @param x       64-byte big-endian product; UNMODIFIED on return.
+     * @param xOff    start offset within {@code x}.
+     * @param dst     32-byte big-endian output; receives {@code x mod p}.
+     * @param dstOff  start offset within {@code dst}.
+     */
+    static void reducePseudoMersenne(byte[] x, short xOff, byte[] dst, short dstOff) {
+        // Step 1: r = (38 · x_hi + x_lo) mod 2^256, c1 = (38 · x_hi + x_lo) >> 256.
+        short carry = 0;
+        for (short i = (short) (LEN - 1); i >= 0; i--) {
+            short prod = (short) (38 * (x[(short) (xOff + i)] & 0xFF));
+            short sum = (short) ((x[(short) (xOff + LEN + i)] & 0xFF) + (prod & 0xFF) + carry);
+            dst[(short) (dstOff + i)] = (byte) sum;
+            carry = (short) (((prod >>> 8) & 0xFF) + ((sum >>> 8) & 0xFF));
+        }
+        // Step 2: r += 38 · c1. carry ∈ [0, 39], 38·c1 ∈ [0, 1482] fits in two bytes.
+        short carry38 = (short) (38 * carry);
+        short low = (short) (carry38 & 0xFF);
+        short high = (short) ((carry38 >>> 8) & 0xFF);
+        short sum = (short) ((dst[(short) (dstOff + LEN - 1)] & 0xFF) + low);
+        dst[(short) (dstOff + LEN - 1)] = (byte) sum;
+        short c2 = (short) ((sum >>> 8) & 1);
+        sum = (short) ((dst[(short) (dstOff + LEN - 2)] & 0xFF) + high + c2);
+        dst[(short) (dstOff + LEN - 2)] = (byte) sum;
+        c2 = (short) ((sum >>> 8) & 1);
+        for (short i = (short) (LEN - 3); i >= 0; i--) {
+            sum = (short) ((dst[(short) (dstOff + i)] & 0xFF) + c2);
+            dst[(short) (dstOff + i)] = (byte) sum;
+            c2 = (short) ((sum >>> 8) & 1);
+        }
+        // Step 3: r += 38 · c2. c2 ∈ {0, 1}; 38·c2 ∈ {0, 38} (one byte).
+        short prod = (short) (38 * c2);
+        sum = (short) ((dst[(short) (dstOff + LEN - 1)] & 0xFF) + prod);
+        dst[(short) (dstOff + LEN - 1)] = (byte) sum;
+        short c3 = (short) ((sum >>> 8) & 1);
+        for (short i = (short) (LEN - 2); i >= 0; i--) {
+            sum = (short) ((dst[(short) (dstOff + i)] & 0xFF) + c3);
+            dst[(short) (dstOff + i)] = (byte) sum;
+            c3 = (short) ((sum >>> 8) & 1);
+        }
+        // Step 4: two unconditional condSubs of p. After step 3 r ∈ [0, 2²⁵⁶), and since
+        // 3p > 2²⁵⁶ but 2p = 2²⁵⁶ − 38, r could need up to 2 subs to land in [0, p).
+        short ge1 = (short) ~Bignat.ctLessThan(dst, dstOff, FIELD_P, (short) 0, LEN);
+        Bignat.condSubInPlace(dst, dstOff, FIELD_P, (short) 0, LEN, ge1);
+        short ge2 = (short) ~Bignat.ctLessThan(dst, dstOff, FIELD_P, (short) 0, LEN);
+        Bignat.condSubInPlace(dst, dstOff, FIELD_P, (short) 0, LEN, ge2);
     }
 
     /** {@code out ← (a · a) mod p}. Implemented as {@code mul(a, a)} for code-size minimality. */
