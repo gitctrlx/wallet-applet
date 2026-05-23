@@ -16,7 +16,7 @@ endif
 GRADLE_FLAGS ?= --no-daemon
 
 .DEFAULT_GOAL := all
-.PHONY: all help check test fmt lint build cap run shell clean tasks ci
+.PHONY: all help check test bench fmt lint build cap run shell clean tasks ci
 
 # Default target — the verification gate the user asked for: enforces the
 # Spotless format contract, then runs the full applet test suite.
@@ -29,6 +29,7 @@ help:
 	@echo   make all         spotlessCheck + :tests:test (CI-equivalent gate)
 	@echo   make check       ./gradlew spotlessCheck
 	@echo   make test        ./gradlew :tests:test
+	@echo   make bench ARGS=.. ./gradlew :tools:run --args="bench ARGS"
 	@echo   make fmt         ./gradlew spotlessApply (auto-format in place)
 	@echo   make lint        alias for 'make check'
 	@echo   make build       ./gradlew :applet:buildCap
@@ -46,6 +47,10 @@ check:
 # Run the full applet test suite (jcardsim integration + protocol tests).
 test:
 	$(GRADLE) $(GRADLE_FLAGS) :tests:test
+
+# Run the host-side card benchmark CLI. Pass ARGS, e.g. ARGS="-p 123456 --samples 30".
+bench:
+	$(GRADLE) $(GRADLE_FLAGS) :tools:run --args="bench $(ARGS)"
 
 # Auto-format in place (Java + Kotlin Gradle DSL via Spotless).
 fmt:
