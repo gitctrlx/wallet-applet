@@ -96,6 +96,14 @@ class Wei25519Test {
     }
 
     @Test
+    @DisplayName("G8 pins the precomputed Wei25519 eightfold base point")
+    void precomputedG8() {
+        ECPoint expected =
+                WEI25519.decodePoint(Wei25519.G).multiply(BigInteger.valueOf(8)).normalize();
+        assertArrayEquals(expected.getEncoded(false), Wei25519.G8);
+    }
+
+    @Test
     @DisplayName("RFC 8032 §7.1 vectors round-trip through Wei25519.encodeEdwards")
     void rfc8032Vectors() throws Exception {
         Fp25519Inv inverter = new Fp25519Inv();

@@ -57,7 +57,6 @@ public final class MeowlCli implements Callable<Integer> {
     /** Constructs a {@link CommandLine} configured with the meowl exit-code policy. */
     public static CommandLine commandLine() {
         return new CommandLine(new MeowlCli())
-                .setCaseInsensitiveEnumValuesAllowed(true)
                 .setExecutionExceptionHandler(MeowlExecutionExceptionHandler.INSTANCE);
     }
 }

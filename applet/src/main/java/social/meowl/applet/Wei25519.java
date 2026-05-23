@@ -146,12 +146,80 @@ public final class Wei25519 {
         (byte) 0xd9,
     };
 
+    public static final byte[] G8 = {
+        (byte) 0x04,
+        (byte) 0x52,
+        (byte) 0x0a,
+        (byte) 0x51,
+        (byte) 0x82,
+        (byte) 0x55,
+        (byte) 0x81,
+        (byte) 0x06,
+        (byte) 0xd8,
+        (byte) 0x82,
+        (byte) 0xe6,
+        (byte) 0x32,
+        (byte) 0xf8,
+        (byte) 0x73,
+        (byte) 0x61,
+        (byte) 0x07,
+        (byte) 0x4c,
+        (byte) 0x25,
+        (byte) 0x23,
+        (byte) 0x98,
+        (byte) 0x75,
+        (byte) 0x58,
+        (byte) 0x1f,
+        (byte) 0x53,
+        (byte) 0xc9,
+        (byte) 0x9c,
+        (byte) 0x1c,
+        (byte) 0x1a,
+        (byte) 0x97,
+        (byte) 0xf3,
+        (byte) 0x76,
+        (byte) 0xbd,
+        (byte) 0xb9,
+        (byte) 0x1f,
+        (byte) 0x7a,
+        (byte) 0x44,
+        (byte) 0x45,
+        (byte) 0x70,
+        (byte) 0x46,
+        (byte) 0xc6,
+        (byte) 0x1b,
+        (byte) 0x72,
+        (byte) 0x30,
+        (byte) 0xbb,
+        (byte) 0x96,
+        (byte) 0xbf,
+        (byte) 0x99,
+        (byte) 0x4f,
+        (byte) 0x73,
+        (byte) 0xb0,
+        (byte) 0xb8,
+        (byte) 0x63,
+        (byte) 0x98,
+        (byte) 0x8f,
+        (byte) 0x3a,
+        (byte) 0x6e,
+        (byte) 0x06,
+        (byte) 0x3a,
+        (byte) 0xd6,
+        (byte) 0x92,
+        (byte) 0x91,
+        (byte) 0x60,
+        (byte) 0x8d,
+        (byte) 0x78,
+        (byte) 0xd5,
+    };
+
     /**
      * Ed25519 prime subgroup order {@code ℓ = 2²⁵² + 27742317777372353535851937790883648493}.
      *
      * <p>This is the order {@link javacard.security.ECPrivateKey#setR} is fed for both Wei25519
      * scalar mult and Ed25519 signing. The native key cofactor is forced to {@code 1}; Ed25519
-     * cofactor handling is performed explicitly by {@link Ed25519}'s {@code s/8} and {@code *8}
+     * cofactor handling is performed explicitly by {@link Ed25519}'s {@code (s/8)·(8G)}
      * scalar-multiplication sequence.
      */
     public static final byte[] L = {

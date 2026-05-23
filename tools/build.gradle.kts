@@ -78,6 +78,10 @@ application {
     applicationName = "meowl"
 }
 
+tasks.named<JavaExec>("run") {
+    workingDir = rootProject.projectDir
+}
+
 // Picocli annotation processor: namespace the generated GraalVM resources by
 // `<group>/<name>` so multiple picocli apps can coexist on a single classpath.
 tasks.withType<JavaCompile>().configureEach {
@@ -94,15 +98,6 @@ tasks.test {
     }
 }
 
-// ============================================================================
-// `installCap` task — wires `:applet:buildCap` to `meowl gp install`
-// ============================================================================
-//
-// The previous JavaExec-based implementation called `pro.javacard.gp.GPTool`
-// through a forked process, which swallowed structured errors. The replacement
-// shells out to the launcher script produced by `installDist`, which in turn
-// calls the in-process GpFacade — the same code path the `meowl gp install`
-// subcommand uses interactively.
 tasks.register<Exec>("installCap") {
     group = "javacard"
     description = "Builds the meowl CAP and installs it via `meowl gp install` (default GP keys)."
@@ -140,32 +135,3 @@ tasks.register<Exec>("installCap") {
         )
     }
 }
-
-// ============================================================================
-// GraalVM native image — opt-in
-// ============================================================================
-//
-// The `picocli-codegen` annotation processor already emits reflection and
-// resource descriptors under `META-INF/native-image/social.meowl/meowl/`, so
-// adopting GraalVM is a one-time, additive change rather than a refactor.
-//
-// To enable on a developer machine that has GraalVM installed:
-//
-//   1. Add the Gradle plugin to settings.gradle.kts pluginManagement (or to the
-//      `plugins {}` block above) at version 0.10.6+:
-//          id("org.graalvm.buildtools.native") version "0.10.6"
-//   2. Append the following block at the end of this file:
-//          graalvmNative {
-//              binaries {
-//                  named("main") {
-//                      imageName = "meowl"
-//                      mainClass.set("social.meowl.tools.Main")
-//                      buildArgs.addAll("--no-fallback", "-H:+UnlockExperimentalVMOptions")
-//                  }
-//              }
-//          }
-//   3. Build with `./gradlew :tools:nativeCompile`.
-//
-// The block is omitted by default so the JVM build does not depend on
-// GraalVM Buildtools — most contributors will never need it, and the launcher
-// produced by `installDist` already works on any JDK 25 install.

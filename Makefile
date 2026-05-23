@@ -14,9 +14,17 @@ else
 endif
 
 GRADLE_FLAGS ?= --no-daemon
+CAP ?= $(abspath applet/build/cap/meowl-applet.cap)
+PIN ?= 123456
+PUK ?= 12345678
+SEED ?=
+CDKenc ?= 5A9E63D03BADBC2A240FE8F534709EDF
+CDKmac ?= 7CCC1E79D64FC5FA263B8F2955282998
+CDKkek ?= B040703EC3DE23EE8AE4CFB6D632AA80
+GP_KEYS ?= --key-enc $(CDKenc) --key-mac $(CDKmac) --key-kek $(CDKkek)
 
 .DEFAULT_GOAL := all
-.PHONY: all help check test bench fmt lint build cap run shell clean tasks ci
+.PHONY: all help check test bench fmt lint build cap install uninstall init reset-card run shell clean tasks ci
 
 # Default target — the verification gate the user asked for: enforces the
 # Spotless format contract, then runs the full applet test suite.
@@ -34,6 +42,10 @@ help:
 	@echo   make lint        alias for 'make check'
 	@echo   make build       ./gradlew :applet:buildCap
 	@echo   make cap         alias for 'make build'
+	@echo   make install     build CAP and install it with default CDK ENC/MAC/KEK
+	@echo   make uninstall   uninstall applet/package with default CDK ENC/MAC/KEK
+	@echo   make init        initialize fresh applet: PKI + PIN/PUK + seed
+	@echo   make reset-card  factory reset installed applet state
 	@echo   make run ARGS=.. ./gradlew :tools:run --args=ARGS
 	@echo   make shell       ./gradlew :tools:run --args=shell
 	@echo   make ci          full CI pipeline: spotlessCheck + buildCap + :tests:test
@@ -63,6 +75,18 @@ build:
 	$(GRADLE) $(GRADLE_FLAGS) :applet:buildCap
 
 cap: build
+
+install: build
+	$(GRADLE) $(GRADLE_FLAGS) :tools:run --args="gp install $(GP_KEYS) $(CAP)"
+
+uninstall:
+	$(GRADLE) $(GRADLE_FLAGS) :tools:run --args="gp uninstall $(GP_KEYS)"
+
+init:
+	$(GRADLE) $(GRADLE_FLAGS) :tools:run --args="bootstrap -p $(PIN) --puk $(PUK)$(if $(SEED), --seed $(SEED))"
+
+reset-card:
+	$(GRADLE) $(GRADLE_FLAGS) :tools:run --args="reset --confirm"
 
 # Run the host-side CLI. Pass ARGS to forward arguments, e.g.
 #   make run ARGS="info --json"

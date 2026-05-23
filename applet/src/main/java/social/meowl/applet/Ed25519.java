@@ -18,7 +18,7 @@ import javacard.security.MessageDigest;
  * javacard.security.KeyAgreement#ALG_EC_SVDP_DH_PLAIN_XY}, then maps each affine Wei25519 result
  * back to RFC 8032 §5.1.2 little-endian compressed form via {@link Wei25519#encodeEdwards}.
  *
- * <h2>Cofactor handling — the {@code s/8 · G + 8 · result} trick</h2>
+ * <h2>Cofactor handling — the {@code (s/8) · (8G)} trick</h2>
  *
  * <p>The clamped Ed25519 private scalar {@code s} occupies bits 254..3 of a 256-bit integer, so
  * {@code 2²⁵⁴ ≤ s < 2²⁵⁵}. {@link Wei25519}'s prime subgroup order {@code ℓ = 2²⁵² + …} is
@@ -29,11 +29,8 @@ import javacard.security.MessageDigest;
  *   s · G = (s / 8) · (8 · G)
  * </pre>
  *
- * <p>lets the pipeline compute the EC product in two coprocessor calls: first {@code (s/8) · G},
- * then multiply that intermediate by the constant {@link #EIGHT}. Both scalars are below {@code ℓ},
- * so the hardware accepts every step. This is the same workaround dufkan's JCEd25519 uses on every
- * JC card with a 256-bit short Weierstrass engine — see {@code JCEd25519.generateKeypair}'s {@code
- * shiftRight(3)} / {@code multiplication(eight)} dance.
+ * <p>lets the pipeline compute the EC product as one coprocessor call against {@link Wei25519#G8}.
+ * The scalar {@code s/8} is below {@code ℓ}, so the hardware accepts every step.
  *
  * <h2>Wire contract</h2>
  *
@@ -44,7 +41,7 @@ import javacard.security.MessageDigest;
  *
  * <h2>Scratch layout</h2>
  *
- * <p>All state lives in a 577-byte slice of the shared {@code CLEAR_ON_DESELECT} pool owned by
+ * <p>All state lives in a 609-byte slice of the shared {@code CLEAR_ON_DESELECT} pool owned by
  * {@link MeowlApplet}.
  *
  * <pre>
@@ -56,7 +53,7 @@ import javacard.security.MessageDigest;
  *   [192..224) K_BE    — challenge scalar k mod ℓ (big-endian)
  *   [224..256) S_OUT   — final S = (r + k·s) mod ℓ; transiently holds s/8 during EC mult
  *   [256..321) WEI_PT  — 65-byte Wei25519 uncompressed point staging
- *   [321..577) WORK    — 256-byte workspace (Wei25519 encode / Barrett scratch)
+ *   [321..609) WORK    — workspace (Wei25519 encode / Barrett scratch)
  * </pre>
  */
 public final class Ed25519 {
@@ -90,20 +87,6 @@ public final class Ed25519 {
     private static final short S_OUT_OFF = (short) 224;
     private static final short WEI_PT_OFF = (short) 256;
     private static final short WORK_OFF = (short) 321;
-
-    /**
-     * 32-byte big-endian constant {@code 8}; used to lift {@code (s/8) · G} back to {@code s · G}.
-     */
-    private static final byte[] EIGHT = {
-        (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00,
-        (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00,
-        (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00,
-        (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00,
-        (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00,
-        (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00,
-        (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00,
-        (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x08,
-    };
 
     private final MessageDigest sha512;
     private final EcPoint ec;
@@ -152,7 +135,7 @@ public final class Ed25519 {
     public short publicKey(byte[] skBuf, short skOff, byte[] outBuf, short outOff) {
         try {
             expandPrivateKey(skBuf, skOff);
-            scalarMultByPrivateScalar(S_OUT_OFF);
+            scalarMultByPrivateScalar();
             Wei25519.encodeEdwards(scratch, WEI_PT_OFF, outBuf, outOff, inv, scratch, WORK_OFF);
             return PUBLIC_KEY_LEN;
         } finally {
@@ -180,8 +163,8 @@ public final class Ed25519 {
             //    HASH[32..64].
             expandPrivateKey(skBuf, skOff);
 
-            // 2-3. A_wei = s · G_wei (via the s/8 + 8 trick); A_ed = encodeEdwards(A_wei).
-            scalarMultByPrivateScalar(S_OUT_OFF);
+            // 2-3. A_wei = s · G_wei (via the (s/8)·(8G) trick); A_ed = encodeEdwards(A_wei).
+            scalarMultByPrivateScalar();
             Wei25519.encodeEdwards(scratch, WEI_PT_OFF, scratch, A_ED_OFF, inv, scratch, WORK_OFF);
 
             // 4. r = SHA-512(prefix || msg) mod ℓ. The SHA-512 input contains the secret RFC 8032
@@ -238,17 +221,10 @@ public final class Ed25519 {
         }
     }
 
-    /**
-     * Computes {@code s · G_wei} into {@code scratch[WEI_PT_OFF..+65]} using the {@code (s/8) · G +
-     * 8 · result} cofactor trick.
-     *
-     * @param tmpScalarOff a 32-byte scratch slot the routine borrows for {@code s/8}; the caller
-     *     MUST treat it as clobbered until the next overwrite.
-     */
-    private void scalarMultByPrivateScalar(short tmpScalarOff) {
-        copyShiftRight3(scratch, S_BE_OFF, scratch, tmpScalarOff);
-        ec.multiplyG(scratch, tmpScalarOff, SCALAR_LEN, scratch, WEI_PT_OFF);
-        ec.multiplyPoint(EIGHT, (short) 0, SCALAR_LEN, scratch, WEI_PT_OFF, scratch, WEI_PT_OFF);
+    private void scalarMultByPrivateScalar() {
+        copyShiftRight3(scratch, S_BE_OFF, scratch, S_OUT_OFF);
+        ec.multiplyPoint(
+                scratch, S_OUT_OFF, SCALAR_LEN, Wei25519.G8, (short) 0, scratch, WEI_PT_OFF);
     }
 
     /**
