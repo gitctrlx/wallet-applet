@@ -2,7 +2,7 @@
 meap: 7
 title: Status-word reference
 description: Single-source enumeration of every two-byte status word a conforming applet may emit, with triggering conditions and owning MEAP per code.
-status: Final
+status: Draft
 type: Standards Track
 category: Wire
 created: 2026-05-19

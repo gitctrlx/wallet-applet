@@ -2,7 +2,7 @@
 meap: 4
 title: Card identity — authentikey and manufacturer PKI
 description: Long-lived authentikey keypair generated at applet install, preserved across reset, and the optional manufacturer PKI signing ceremony.
-status: Final
+status: Draft
 type: Standards Track
 category: Wire
 created: 2026-05-19

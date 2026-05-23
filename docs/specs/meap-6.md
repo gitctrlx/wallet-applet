@@ -2,7 +2,7 @@
 meap: 6
 title: Signing primitives — ECDSA, Schnorr, EdDSA
 description: secp256k1 ECDSA, BIP-340 Schnorr and RFC 8032 Ed25519 signing primitives sharing a hash-only invariant and a uniform 64-byte signature output.
-status: Final
+status: Draft
 type: Standards Track
 category: Crypto
 created: 2026-05-19

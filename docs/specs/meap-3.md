@@ -2,7 +2,7 @@
 meap: 3
 title: Lifecycle, PIN/PUK and reset-to-factory
 description: Four-state lifecycle FSM, single PIN/PUK authentication policy, three authorisation rules and the multi-step reset-to-factory primitive.
-status: Final
+status: Draft
 type: Standards Track
 category: Wire
 created: 2026-05-19
@@ -28,21 +28,28 @@ The reset primitive presents a separate concern. A single APDU that wipes the se
 
 A conforming applet MUST implement a 4-state lifecycle FSM with a strictly linear forward path and a single retrograde edge that collapses to the initial state:
 
-```text
-                                                                           reset-to-factory
-                  ┌────────────────────────────────────────────────────────────────────────┐
-                  │                                                                       │
-                  ▼                                                                       │
-        ┌─────────────────┐  PKI  ┌───────────────┐  SETUP  ┌────────────┐  IMPORT_SEED   │
-        │ UNINITIALIZED   ├──lock─▶ PERSONALIZED  ├────────▶ SETUP_DONE  ├──────or────────┘
-        │     0x00        │       │     0x01      │         │    0x02    │  GENERATE_SEED
-        └─────────────────┘       └───────────────┘         └────────────┘
-                                                                  │
-                                                                  ▼
-                                                           ┌────────────┐
-                                                           │   SEEDED   │
-                                                           │    0x03    │
-                                                           └────────────┘
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> UNINITIALIZED
+    UNINITIALIZED --> PERSONALIZED : LOCK_PKI
+    PERSONALIZED --> SETUP_DONE : SETUP
+    SETUP_DONE --> SEEDED : IMPORT_SEED ∨ GENERATE_SEED
+    PERSONALIZED --> UNINITIALIZED : RESET_TO_FACTORY
+    SETUP_DONE --> UNINITIALIZED : RESET_TO_FACTORY
+    SEEDED --> UNINITIALIZED : RESET_TO_FACTORY
+    note right of UNINITIALIZED
+        0x00
+    end note
+    note right of PERSONALIZED
+        0x01
+    end note
+    note right of SETUP_DONE
+        0x02
+    end note
+    note right of SEEDED
+        0x03
+    end note
 ```
 
 State byte encoding (TLV value of `TAG_LIFECYCLE_STATE` per [MEAP-1](./meap-1.md)):

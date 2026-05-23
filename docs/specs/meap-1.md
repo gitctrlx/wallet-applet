@@ -2,7 +2,7 @@
 meap: 1
 title: Protocol framing — CLA, INS layout, ISO 7816-4 conformance
 description: CLA byte, INS bands, outer-vs-inner frame partition, TLV layout and the GET_INFO record that frames every other MEAP's payload.
-status: Final
+status: Draft
 type: Standards Track
 category: Wire
 created: 2026-05-19

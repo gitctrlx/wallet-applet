@@ -2,7 +2,7 @@
 meap: 2
 title: Secure Channel — ECDH + AES-256-CBC + HMAC-SHA-256
 description: Ephemeral-ECDH handshake on secp256k1, HKDF-SHA-256 key schedule and an authenticated record layer that wraps every inner-band command.
-status: Final
+status: Draft
 type: Standards Track
 category: Wire
 created: 2026-05-19

@@ -2,7 +2,7 @@
 meap: 0
 title: MEAP process and template
 description: Format, numbering, lifecycle and contribution workflow of the MEAP set itself.
-status: Final
+status: Draft
 type: Process
 created: 2026-05-19
 author: meowl.social contributors
@@ -54,7 +54,7 @@ Every Standards Track MEAP MUST contain the following sections in this order. Se
 2. **Motivation** (REQUIRED) — why the change is needed; what problem it solves.
 3. **Specification** (REQUIRED) — the normative content. RFC 2119 keywords (MUST, SHOULD, MAY, etc.) carry their [BCP 14](https://datatracker.ietf.org/doc/html/bcp14) meaning. Outside this section those keywords have no normative force.
 4. **Rationale** (REQUIRED) — design choices, alternatives considered, references to related work.
-5. **Backwards Compatibility** (REQUIRED) — explicit statement, even if it is just *N/A — v1.0 greenfield*.
+5. **Backwards Compatibility** (REQUIRED) — explicit statement, even if it is just *N/A — no prior revision*.
 6. **Test Vectors** (CONDITIONAL) — REQUIRED for any MEAP that defines wire bytes or cryptographic outputs whose value can be deterministically pinned. OPTIONAL for purely behavioural specs.
 7. **Reference Implementation** (REQUIRED) — pointer to the in-tree implementation, plus the reference test class.
 8. **Security Considerations** (REQUIRED) — explicit statement, even if it is just *N/A — purely cosmetic*.
@@ -70,23 +70,33 @@ Informational and Process MEAPs MAY omit Test Vectors and Reference Implementati
 
 ### Status lifecycle
 
-```text
-       (open issue)              (PR opened)            (PR merged)
-Idea ──────────────►  Draft ──────────────► Last Call ──────────────► Final
-                       │                       │                        │
-                       │                       │                        ├──► Superseded (by a later Final MEAP)
-                       │                       │                        │
-                       └─► Withdrawn           └─► Stagnant ◄────── (no activity for 6 months)
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> Idea
+    Idea --> Draft : number allocated, PR opened
+    Idea --> [*] : abandoned (no number kept)
+    Draft --> LastCall : author requests review
+    Draft --> Withdrawn : author withdraws
+    Draft --> Stagnant : inactive ≥ 6 months
+    LastCall --> Draft : substantive change resets window
+    LastCall --> Final : 14-day window elapses unbroken
+    LastCall --> Stagnant : inactive ≥ 6 months
+    Final --> Superseded : later MEAP lists this in replaces:
+    Stagnant --> Draft : re-opened with a fresh number
+    Withdrawn --> [*]
+    Superseded --> [*]
+    Final --> [*]
 ```
 
-Transitions:
-
-- **Idea → Draft**: an issue describing the change is opened; an editor allocates a MEAP number and the author opens a pull request creating `meap-<n>.md` with `status: Draft`.
-- **Draft → Last Call**: the author or an editor moves the document to `status: Last Call`. A 14-day comment window opens. Substantive changes during Last Call reset the window.
-- **Last Call → Final**: at the end of the unbroken Last Call window, an editor merges the change to `status: Final` and stamps `updated: <date>`. From this point the body is immutable except for editorial errata.
-- **Draft → Withdrawn**: the author may withdraw their own draft at any time before Last Call ends.
-- **Draft / Last Call → Stagnant**: an editor MAY mark a long-inactive draft as Stagnant after 6 months of no commits or comments. Stagnant MEAPs MAY be re-opened by re-submitting them as a fresh Draft (which gets a new number).
-- **Final → Superseded**: when a later MEAP listing this one in `replaces:` reaches Final, the editors update this MEAP's preamble to `status: Superseded` and add a Status block in the body's first H2 section linking to the superseder.
+| Transition | Trigger | Side effects |
+| ---------- | ------- | ------------ |
+| `Idea → Draft` | An editor allocates a MEAP number; author opens a PR creating `meap-<n>.md`. | `status: Draft` set. |
+| `Draft → Last Call` | Author or editor moves the document to `status: Last Call`. | A 14-day public comment window opens. Substantive changes during Last Call reset the window. |
+| `Last Call → Final` | The 14-day window elapses without substantive change. | `status: Final` set; `updated: <date>` stamped. The body becomes immutable except for editorial errata. |
+| `Draft → Withdrawn` | Author withdraws before Last Call ends. | Number is retired and not recycled. |
+| `Draft ∨ Last Call → Stagnant` | No commit or comment for 6 months. | An editor marks the document `Stagnant`. May be re-opened by re-submitting as a fresh Draft with a new number. |
+| `Final → Superseded` | A later MEAP listing this one in `replaces:` reaches Final. | This MEAP's preamble gains `superseded-by: <n>`; a Status block linking to the successor is added under the H1. |
 
 ### Editorial errata
 
@@ -100,21 +110,22 @@ Any change that affects what a conforming implementation must do MUST be made vi
 
 ## Rationale
 
-The MEAP format is a deliberate borrow from BIP-2, EIP-1, SIP-1 and SLIP-0044 conventions:
+The MEAP format inherits the parts of BIP-2, EIP-1 and SLIP-0044 that have proven durable, with deliberate simplifications appropriate to a single-protocol applet ecosystem rather than a multi-protocol public registry.
 
-- **YAML preamble** matches BIP-2 / EIP-1 so existing tooling that scrapes those ecosystems can read MEAPs with one regex change.
-- **RFC 2119 normative language** matches every IETF and W3C protocol document that has stood the test of time. Implementers do not need to learn a new vocabulary to read a MEAP.
-- **Status lifecycle** matches EIP-1's Idea → Draft → Last Call → Final flow with the same time-bounded comment window.
-- **Test Vectors as a first-class section** matches SLIP-10 and BIP-39: the most reliable way to debug a host SDK against a card is to step the spec's vectors through your implementation, and the spec MUST make that possible.
+**Inherited from BIP / EIP / SLIP:**
 
-The departures from those models are deliberate:
+- **YAML preamble** — BIP-2 / EIP-1 shape, so any tooling that already scrapes those ecosystems parses MEAPs unchanged.
+- **RFC 2119 normative vocabulary** — every IETF and W3C protocol document that has stood the test of time uses BCP 14; readers do not need a new vocabulary.
+- **Lifecycle `Idea → Draft → Last Call → Final`** — EIP-1 shape; a time-boxed comment window gives downstream SDK authors a predictable freeze.
+- **First-class Test Vectors section** — SLIP-10 / BIP-39 convention; bit-for-bit reproducible vectors are the most reliable host-SDK debugging surface.
 
-- **Numbering is dense**. EIP allows huge gaps; we expect ≤ 50 MEAPs in the v1.0 horizon and dense numbering is faster to read.
-- **Process MEAPs and Informational MEAPs use the same template** as Standards Track ones, with two sections optional. EIP splits the template per type; we don't, because the simplification is worth the redundancy.
-- **No `discussions-to:` header**. We prefer GitHub issues threaded under the PR; a separate URL field invites link rot.
-- **No `Review` status between Draft and Last Call**. EIP-1 inserts a Review phase that, in practice, has been used to gate editor sign-off before the public comment window opens. With a small editor team and a single-repository review surface (the GitHub PR itself), the Review phase collapses into ordinary PR review without ceremony, so the lifecycle stays at four active states.
-- **No `last-call-deadline:` header**. The 14-day Last Call window is documented in prose (see *Status lifecycle* above) rather than encoded as a per-MEAP date field. A dated field is only useful when multiple MEAPs are simultaneously in Last Call against a fixed editorial calendar; we do not anticipate that throughput within the v1.0 horizon.
-- **No multi-editor formal roster**. EIP-1 maintains a list of editors and a transfer-of-ownership procedure. The meowl project is small enough that any committer with write access to the repository acts as an editor de facto; if the project ever grows enough to need a roster, a successor MEAP-0 will introduce one and supersede this one.
+**Deliberate departures:**
+
+- **Dense numbering.** EIP tolerates large gaps because thousands of proposals coexist; the MEAP set is bounded in size and dense numbering keeps the index scannable.
+- **One template across types.** Standards Track, Informational and Process MEAPs share the same nine-section template, with Test Vectors and Reference Implementation optional for non-normative types. EIP-1 maintains type-specific templates; the redundancy here is small enough to favour a single shape.
+- **No `discussions-to:` header.** GitHub issues threaded under the PR carry the discussion; a dedicated URL field invites link rot.
+- **No `Review` substate.** EIP-1's Review phase, in practice, gates editor sign-off before the public comment window. A single-repository review surface (the PR itself) makes that ceremony unnecessary; the lifecycle stays at four active states.
+- **No `last-call-deadline:` field.** The 14-day window is documented in prose rather than encoded per-MEAP. A dated field is only useful when many MEAPs are simultaneously in Last Call against a fixed editorial calendar.
 
 ## Backwards Compatibility
 
@@ -130,11 +141,11 @@ N/A — Process MEAP, no reference implementation.
 
 ## Security Considerations
 
-The MEAP set IS itself part of the trust surface of the wallet. A misleading specification can lead a host SDK to send the wrong bytes to the card, so editors MUST treat MEAP merges with the same care as code merges:
+The MEAP set is part of the wallet's trust surface: a misleading specification can lead a host SDK to send the wrong bytes to the card. The following invariants therefore apply to every MEAP merge:
 
-- A MEAP MUST be reviewed by at least two editors before reaching Last Call.
-- A MEAP that contradicts the reference implementation in `applet/` MUST be flagged: either the spec or the implementation is wrong, and the discrepancy MUST be resolved before Final.
-- Test vectors in the MEAP MUST round-trip against the reference test suite as a CI gate; an editor merging a MEAP without that gate is in violation of this MEAP.
+- **Spec/implementation parity.** A MEAP that contradicts the reference implementation in `applet/` MUST be flagged. Either the prose or the code is wrong; the discrepancy MUST be resolved before the MEAP advances to Final.
+- **Test vectors are binding.** Every Test Vectors entry MUST round-trip against the reference test suite as a CI gate. A merge that ships divergent vectors is non-conforming.
+- **Verifiable cross-references.** Every reference to a Java class, method, file path or test name in a MEAP MUST resolve to a symbol that exists in the same commit. Reviewers SHOULD `grep`-verify each citation before approval.
 
 ## Copyright
 
