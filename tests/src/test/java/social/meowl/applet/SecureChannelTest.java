@@ -216,6 +216,35 @@ class SecureChannelTest {
     }
 
     @Test
+    @DisplayName("failed handshake clears the session and allows a fresh handshake")
+    void failedHandshakeClearsSessionAndAllowsFreshHandshake() throws Exception {
+        Session session = openSession();
+        byte[] innerApdu =
+                bytes(
+                        Constants.CLA_MEOWL & 0xFF,
+                        Constants.INS_EXPORT_PKI_PUBKEY & 0xFF,
+                        0x00,
+                        0x00,
+                        0x00);
+        assertEquals(
+                0x9000,
+                transmit(INS_OPEN_SC, 0x00, 0x00, session.encryptForCard(innerApdu)).getSW());
+
+        byte[] invalidPoint = new byte[Constants.EC_POINT_UNCOMPRESSED_LEN];
+        invalidPoint[0] = (byte) 0x04;
+        ResponseAPDU failed = transmit(INS_INIT_SC, 0x00, 0x00, invalidPoint);
+        assertEquals(Constants.SW_SECURE_CHANNEL_FAILED & 0xFFFF, failed.getSW());
+
+        ResponseAPDU oldSession =
+                transmit(INS_OPEN_SC, 0x00, 0x00, session.encryptForCard(innerApdu));
+        assertEquals(Constants.SW_SECURE_CHANNEL_REQUIRED & 0xFFFF, oldSession.getSW());
+
+        Session fresh = openSession();
+        ResponseAPDU resp = transmit(INS_OPEN_SC, 0x00, 0x00, fresh.encryptForCard(innerApdu));
+        assertEquals(0x9000, resp.getSW());
+    }
+
+    @Test
     @DisplayName(
             "envelope with stale IV and garbage MAC is rejected with 6FB2 without "
                     + "MAC computation")

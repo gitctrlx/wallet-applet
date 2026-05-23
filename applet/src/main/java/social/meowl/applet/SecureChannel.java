@@ -207,6 +207,7 @@ public final class SecureChannel {
      * @return the number of bytes written into {@code apduBuffer} starting at offset 0
      */
     public short initHandshake(byte[] apduBuffer, short inDataOffset, short inDataLen) {
+        reset();
         if (inDataLen != CLIENT_EPH_PUB_LEN) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
@@ -215,80 +216,88 @@ public final class SecureChannel {
             ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
         }
 
-        // Stage every handshake field in hsScratch; the APDU buffer is reserved for the response.
-        Util.arrayCopyNonAtomic(
-                apduBuffer, inDataOffset, hsScratch, HS_CLIENT_PUB, CLIENT_EPH_PUB_LEN);
-
-        ephKeypair.genKeyPair();
-        ECPublicKey cardEphPub = (ECPublicKey) ephKeypair.getPublic();
-        short cardPubLen = cardEphPub.getW(hsScratch, HS_CARD_PUB);
-        if (cardPubLen != CLIENT_EPH_PUB_LEN || hsScratch[HS_CARD_PUB] != (byte) 0x04) {
-            ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
-        }
-
-        ecdh.init((ECPrivateKey) ephKeypair.getPrivate());
-        short sharedLen;
         try {
-            sharedLen =
+            // Stage every handshake field in hsScratch; the APDU buffer is reserved for the
+            // response.
+            Util.arrayCopyNonAtomic(
+                    apduBuffer, inDataOffset, hsScratch, HS_CLIENT_PUB, CLIENT_EPH_PUB_LEN);
+
+            ephKeypair.genKeyPair();
+            ECPublicKey cardEphPub = (ECPublicKey) ephKeypair.getPublic();
+            short cardPubLen = cardEphPub.getW(hsScratch, HS_CARD_PUB);
+            if (cardPubLen != CLIENT_EPH_PUB_LEN || hsScratch[HS_CARD_PUB] != (byte) 0x04) {
+                ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
+            }
+
+            ecdh.init((ECPrivateKey) ephKeypair.getPrivate());
+            short sharedLen =
                     ecdh.generateSecret(
                             hsScratch, HS_CLIENT_PUB, CLIENT_EPH_PUB_LEN, hsScratch, HS_SHARED);
+            if (sharedLen != Constants.EC_POINT_UNCOMPRESSED_LEN
+                    || hsScratch[HS_SHARED] != (byte) 0x04) {
+                ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
+            }
+
+            // Compose HKDF salt = client_x ‖ card_x.
+            Util.arrayCopyNonAtomic(
+                    hsScratch,
+                    (short) (HS_CLIENT_PUB + 1),
+                    hsScratch,
+                    HS_SALT,
+                    Constants.EC_SCALAR_LEN);
+            Util.arrayCopyNonAtomic(
+                    hsScratch,
+                    (short) (HS_CARD_PUB + 1),
+                    hsScratch,
+                    (short) (HS_SALT + Constants.EC_SCALAR_LEN),
+                    Constants.EC_SCALAR_LEN);
+
+            hkdf.extract(
+                    hsScratch,
+                    HS_SALT,
+                    (short) (Constants.EC_SCALAR_LEN * 2),
+                    hsScratch,
+                    (short) (HS_SHARED + 1),
+                    Constants.EC_SCALAR_LEN);
+            hkdf.expand(HKDF_INFO, (short) 0, (short) HKDF_INFO.length, okm, (short) 0, OKM_LEN);
+            encKey.setKey(okm, (short) 0);
+            // K_mac in transient byte storage: the same code path works on cards without TYPE_HMAC*
+            // in their key builder catalogue (J3R180).
+            Util.arrayCopyNonAtomic(
+                    okm, Constants.SC_KEY_LEN, macKey, (short) 0, Constants.SC_KEY_LEN);
+
+            Util.arrayFillNonAtomic(lastInboundIv, (short) 0, Constants.SC_BLOCK_LEN, (byte) 0);
+            Util.arrayFillNonAtomic(outboundCounter, (short) 0, Constants.SC_BLOCK_LEN, (byte) 0);
+            openFlag[0] = (byte) 1;
+
+            // Sign (card_eph_pub ‖ client_eph_pub) with the authentikey via update + sign so the
+            // two
+            // non-adjacent regions of hsScratch are concatenated without an intermediate copy.
+            ecdsa.init(authentikey.privateKey(), Signature.MODE_SIGN);
+            ecdsa.update(hsScratch, HS_CARD_PUB, CLIENT_EPH_PUB_LEN);
+            // sign() output goes directly into the APDU buffer at the final response offset.
+            short sigOffset = (short) (CLIENT_EPH_PUB_LEN + 2);
+            short sigLen =
+                    ecdsa.sign(hsScratch, HS_CLIENT_PUB, CLIENT_EPH_PUB_LEN, apduBuffer, sigOffset);
+
+            // Final outbound layout: card_pub(65) ‖ sigLen(2) ‖ sig(DER).
+            Util.arrayCopyNonAtomic(
+                    hsScratch, HS_CARD_PUB, apduBuffer, (short) 0, CLIENT_EPH_PUB_LEN);
+            Util.setShort(apduBuffer, CLIENT_EPH_PUB_LEN, sigLen);
+
+            // Wipe the scratch material we no longer need.
+            Util.arrayFillNonAtomic(hsScratch, (short) 0, HS_SCRATCH_LEN, (byte) 0);
+
+            return (short) (sigOffset + sigLen);
+        } catch (ISOException e) {
+            reset();
+            ISOException.throwIt(e.getReason());
+            return 0;
         } catch (Exception e) {
+            reset();
             ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
             return 0;
         }
-        if (sharedLen != Constants.EC_POINT_UNCOMPRESSED_LEN
-                || hsScratch[HS_SHARED] != (byte) 0x04) {
-            ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
-        }
-
-        // Compose HKDF salt = client_x ‖ card_x.
-        Util.arrayCopyNonAtomic(
-                hsScratch,
-                (short) (HS_CLIENT_PUB + 1),
-                hsScratch,
-                HS_SALT,
-                Constants.EC_SCALAR_LEN);
-        Util.arrayCopyNonAtomic(
-                hsScratch,
-                (short) (HS_CARD_PUB + 1),
-                hsScratch,
-                (short) (HS_SALT + Constants.EC_SCALAR_LEN),
-                Constants.EC_SCALAR_LEN);
-
-        hkdf.extract(
-                hsScratch,
-                HS_SALT,
-                (short) (Constants.EC_SCALAR_LEN * 2),
-                hsScratch,
-                (short) (HS_SHARED + 1),
-                Constants.EC_SCALAR_LEN);
-        hkdf.expand(HKDF_INFO, (short) 0, (short) HKDF_INFO.length, okm, (short) 0, OKM_LEN);
-        encKey.setKey(okm, (short) 0);
-        // K_mac in transient byte storage: the same code path works on cards without TYPE_HMAC*
-        // in their key builder catalogue (J3R180).
-        Util.arrayCopyNonAtomic(okm, Constants.SC_KEY_LEN, macKey, (short) 0, Constants.SC_KEY_LEN);
-
-        Util.arrayFillNonAtomic(lastInboundIv, (short) 0, Constants.SC_BLOCK_LEN, (byte) 0);
-        Util.arrayFillNonAtomic(outboundCounter, (short) 0, Constants.SC_BLOCK_LEN, (byte) 0);
-        openFlag[0] = (byte) 1;
-
-        // Sign (card_eph_pub ‖ client_eph_pub) with the authentikey via update + sign so the two
-        // non-adjacent regions of hsScratch are concatenated without an intermediate copy.
-        ecdsa.init(authentikey.privateKey(), Signature.MODE_SIGN);
-        ecdsa.update(hsScratch, HS_CARD_PUB, CLIENT_EPH_PUB_LEN);
-        // sign() output goes directly into the APDU buffer at the final response offset.
-        short sigOffset = (short) (CLIENT_EPH_PUB_LEN + 2);
-        short sigLen =
-                ecdsa.sign(hsScratch, HS_CLIENT_PUB, CLIENT_EPH_PUB_LEN, apduBuffer, sigOffset);
-
-        // Final outbound layout: card_pub(65) ‖ sigLen(2) ‖ sig(DER).
-        Util.arrayCopyNonAtomic(hsScratch, HS_CARD_PUB, apduBuffer, (short) 0, CLIENT_EPH_PUB_LEN);
-        Util.setShort(apduBuffer, CLIENT_EPH_PUB_LEN, sigLen);
-
-        // Wipe the scratch material we no longer need.
-        Util.arrayFillNonAtomic(hsScratch, (short) 0, HS_SCRATCH_LEN, (byte) 0);
-
-        return (short) (sigOffset + sigLen);
     }
 
     /**

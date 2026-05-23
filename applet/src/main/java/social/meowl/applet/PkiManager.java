@@ -133,11 +133,13 @@ public final class PkiManager {
             ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
         }
         if (offset < 0
+                || offset > stagedTotalLen
                 || chunkLen <= 0
-                || (short) (offset + chunkLen) > stagedTotalLen
+                || chunkLen > (short) (stagedTotalLen - offset)
                 || chunkLen > Constants.PKI_CERT_CHUNK_MAX_LEN) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
+        Bounds.requireRange(chunk, chunkOffset, chunkLen);
         // Util.arrayCopy is the transactional variant.
         JCSystem.beginTransaction();
         Util.arrayCopy(chunk, chunkOffset, cert, offset, chunkLen);

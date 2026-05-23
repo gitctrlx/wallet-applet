@@ -226,6 +226,25 @@ class PersonalisationTest {
                             shortBE((short) 100));
             assertEquals(Constants.SW_LIFECYCLE_INVALID & 0xFFFF, resp.getSW());
         }
+
+        @Test
+        @DisplayName("IMPORT_PKI_CERT rejects offset arithmetic overflow with SW_WRONG_LENGTH")
+        void importWriteRejectsOffsetOverflow() {
+            sendInnerExpectOk(
+                    Constants.INS_IMPORT_PKI_CERT,
+                    Constants.PKI_IMPORT_P1_INIT,
+                    (byte) 0,
+                    shortBE(Constants.PKI_CERT_MAX_LEN));
+
+            byte[] payload = new byte[] {0x7F, (byte) 0xFF, 0x01};
+            ResponseAPDU resp =
+                    sendInner(
+                            Constants.INS_IMPORT_PKI_CERT,
+                            Constants.PKI_IMPORT_P1_WRITE,
+                            (byte) 0,
+                            payload);
+            assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, resp.getSW());
+        }
     }
 
     @Nested
