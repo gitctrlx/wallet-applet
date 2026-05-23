@@ -19,7 +19,7 @@ This MEAP defines the format, numbering, lifecycle and contribution workflow of 
 Hardware-wallet protocols deserve the same editorial discipline that BIP, EIP and SLIP brought to their respective ecosystems. ADRs are a good vehicle for *internal* engineering decisions but a poor vehicle for *external* normative contracts because they read as historical narrative rather than prescriptive specification. MEAPs separate the two concerns:
 
 - An MEAP says **"the wire shall do X"** in normative language with explicit status, test vectors and a reference implementation pointer.
-- A repository commit log and code review record (the equivalent of a former ADR) says **"we considered X and Y, picked X for these reasons"**.
+- A repository commit log and code-review record (the equivalent of a former ADR) captures **how a given design was chosen — the alternatives considered, the trade-offs weighed, the decision made**.
 
 This separation lets implementers consume the wire contract without wading through design history, and lets contributors record design history without polluting the wire contract.
 

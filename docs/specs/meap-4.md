@@ -149,7 +149,7 @@ The cost of preservation is that an attacker who learns the `authentikey` public
 
 Some deployments will never need a manufacturer-issued certificate (development cards, self-distributed cards, cards used purely with a single host that owns its own pinning). Forcing the PKI flow would needlessly burden those deployments. The capability bit `CAP_PKI` lets hosts discover whether the flow is implemented; the lifecycle FSM lets a card skip personalisation by going directly from `UNINITIALIZED` (where `SETUP` is illegal) to `PERSONALIZED` only via `LOCK_PKI`, which itself requires a committed certificate.
 
-A future MEAP MAY add a "no-cert personalisation" path that skips the certificate step but still advances the FSM; this MEAP deliberately does not, to keep the v1.0 specification minimal.
+A future MEAP MAY add a "no-cert personalisation" path that skips the certificate step but still advances the FSM; this MEAP deliberately does not, to keep the specification minimal.
 
 ### Three-step `IMPORT_PKI_CERT`
 
@@ -159,7 +159,7 @@ A 1024-byte certificate cannot fit in a single short APDU after Secure Channel f
 
 ## Backwards Compatibility
 
-N/A — v1.0 greenfield.
+N/A — no prior revision.
 
 ## Test Vectors
 
@@ -192,9 +192,9 @@ The manufacturer-issued certificate is **public** by design — it is meant to b
 
 `SIGN_PKI_CSR` produces a signature that binds to a specific 32-byte digest. The manufacturer MUST construct the digest over a `CertificationRequestInfo` whose `SubjectPublicKeyInfo` is the `authentikey` of *this specific card*; otherwise an attacker who intercepts a digest from card A could route it to card B and obtain a signature from B's `authentikey` over A's CSR. The reference manufacturer flow folds the card's `authentikey` into the digest preimage by construction, so this attack is prevented at the host (manufacturer) side; the card itself does not validate the digest's preimage.
 
-### Certificate-write torn power-off
+### Certificate-write power-loss recovery
 
-`IMPORT_PKI_CERT(WRITE)` uses a JavaCard transaction so a torn power-off cannot leave the staged certificate partially overwritten. `IMPORT_PKI_CERT(FINALIZE)` likewise commits atomically. A power loss between two `WRITE` chunks leaves the staging area in whatever state the prior `WRITE` committed; the host MUST track its progress and re-issue the missed chunks rather than re-uploading from offset zero, to avoid wasting EEPROM write cycles.
+Each `IMPORT_PKI_CERT(WRITE)` is wrapped in its own JavaCard transaction (Specification rule), so the staging area can only ever hold a complete prefix of the chunks the host successfully committed. A host that resumes after a power loss MUST track its byte-offset progress and re-issue only the missed chunks rather than re-uploading from offset zero, to avoid wasting EEPROM write cycles. `FINALIZE` is itself atomic, so a power loss during commit leaves the on-card committed certificate unchanged from the previous successful `FINALIZE` (if any).
 
 ## Copyright
 

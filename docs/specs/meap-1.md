@@ -118,16 +118,12 @@ A conforming applet on this revision MUST set at minimum `CAP_SC_CBC_HMAC | CAP_
 
 ### Status words
 
-Every response — encrypted or plaintext — terminates in a 2-byte ISO 7816-4 status word. The complete set of values a conforming applet may emit is enumerated in [MEAP-7](./meap-7.md). Highlights:
+Every response — encrypted or plaintext — terminates in a 2-byte ISO 7816-4 status word `SW1 SW2`, big-endian. Two ranges are in use:
 
-- `9000` — success.
-- `6700` — wrong length (data field shorter or longer than this MEAP requires).
-- `6982` — security status not satisfied (PIN not verified or Secure Channel not open).
-- `6985` — conditions of use not satisfied (lifecycle FSM forbids the command in the current state).
-- `6A86` — incorrect P1/P2.
-- `6D00` — INS not supported (including out-of-band INS, including inner INS sent at the outer frame).
-- `6E00` — CLA not supported.
-- `6Fxx` — applet-private range. Subordinate MEAPs allocate specific values within this range.
+- **ISO 7816-4 standard codes** for generic outcomes (success, length, security state, lifecycle, P1/P2, INS / CLA).
+- **Applet-private `6Fxx` codes** for meowl-specific signals — reset countdown (`6FAn`), Secure Channel state (`6FBn`), implementation / silicon sentinels (`6FEn`).
+
+The complete dictionary — every code, every triggering condition, every owning MEAP — is normative in [MEAP-7](./meap-7.md). A conforming host MUST handle every code listed there; unknown `6Fxx` values from a future MEAP MAY be treated as fatal protocol errors.
 
 ### Standalone-authority invariant
 
@@ -145,15 +141,15 @@ The host SDK is responsible for transaction construction, public-key-to-address 
 
 `0x80` is the lowest ISO 7816-4 private-class CLA byte. Lower values are reserved for ISO commands. Higher private-class values (`0x90`, `0xA0`, etc.) are also legal but bring no benefit and overlap with various GlobalPlatform extensions; `0x80` is the conventional default for new applet-private command sets.
 
-The Satochip wallet uses `CLA = 0xB0`, inherited from MUSCLE which chose `0xB0` to dodge ISO commands in an era when applet isolation was less robust. Today the JavaCard runtime fully isolates applets and the historical reason no longer applies; we therefore choose `0x80` rather than inherit Satochip's value, on the principle that nothing about the meowl wire is downstream of the MUSCLE lineage.
+The Satochip wallet uses `CLA = 0xB0`, inherited from MUSCLE which chose `0xB0` to dodge ISO commands in an era when applet isolation was less robust. Today the JavaCard runtime fully isolates applets and the historical reason no longer applies; `0x80` is therefore chosen over Satochip's value, on the principle that nothing about the meowl wire is downstream of the MUSCLE lineage.
 
 ### Greenfield wire vs Satochip-compatible wire
 
-Inheriting Satochip's wire would buy compatibility with `pysatochip`, Electrum-Satochip and similar host clients. It would also lock us into Satochip's HMAC-SHA-1 Secure Channel MAC, AES-128 session keys, multi-PIN slot semantics, ACL bitmasks and on-card transaction parsing. Each of those is cryptographically sub-modern (HMAC-SHA-1, AES-128) or operationally sub-modern (multi-PIN, transaction parser without a screen). We took the once-only opportunity that v1.0 affords to greenfield the wire instead.
+Inheriting Satochip's wire would buy compatibility with `pysatochip`, Electrum-Satochip and similar host clients. It would also lock the design into Satochip's HMAC-SHA-1 Secure Channel MAC, AES-128 session keys, multi-PIN slot semantics, ACL bitmasks and on-card transaction parsing. Each of those is cryptographically sub-modern (HMAC-SHA-1, AES-128) or operationally sub-modern (multi-PIN, transaction parser without a screen). The protocol is therefore greenfield rather than backwards-compatible with Satochip.
 
 ### TLV with single-byte tags
 
-Multi-byte BER-TLV tags would future-proof the protocol but cost two extra bytes on every short tag. The card's typical response is dominated by 32-byte and 33-byte cryptographic values (chain codes, public keys, signatures); a single-byte tag header is the right trade-off. A future MEAP that exhausts the `0x01..0xFE` tag space (`0x00` and `0xFF` are reserved as TLV escape values) MAY introduce multi-byte tags via a versioned extension; we do not anticipate that within the v1.0 horizon.
+Multi-byte BER-TLV tags would future-proof the protocol but cost two extra bytes on every short tag. The card's typical response is dominated by 32-byte and 33-byte cryptographic values (chain codes, public keys, signatures); a single-byte tag header is the right trade-off. A future MEAP that exhausts the `0x01..0xFE` tag space (`0x00` and `0xFF` are reserved as TLV escape values) MAY introduce multi-byte tags via a versioned extension; the current allocation density makes that contingency remote.
 
 ### INS bands
 
@@ -161,7 +157,7 @@ Allocating opcodes by semantic band rather than densely lets a reader of the dis
 
 ## Backwards Compatibility
 
-N/A — this is the v1.0 wire. There is no prior meowl protocol revision to be compatible with. MEAP-1 will declare itself superseded by a future MEAP if the wire ever needs a non-monotonic change.
+N/A — no prior revision. A successor MEAP MAY supersede this one if the wire requires a non-monotonic change.
 
 ## Test Vectors
 

@@ -14,7 +14,7 @@ author: meowl.social contributors
 
 ## Abstract
 
-This MEAP specifies the three signing primitives the card exposes: ECDSA on secp256k1 (`SIGN_ECDSA_K1`), BIP-340 Schnorr on secp256k1 (`SIGN_SCHNORR_K1`), and Ed25519 EdDSA (`SIGN_ED25519`). Together these cover every chain in the v1.0 supported set: secp256k1 ECDSA for Bitcoin / EVM / Cosmos / Tron / Filecoin / Spark / XRPL; BIP-340 Schnorr for Bitcoin Taproot and Nostr; Ed25519 for Solana / Sui / TON / Aptos. Each primitive is pinned end-to-end: input layout, output layout, nonce derivation, canonicalisation rules, and the host's responsibilities for any chain-specific framing the card does not perform.
+This MEAP specifies the three signing primitives the card exposes: ECDSA on secp256k1 (`SIGN_ECDSA_K1`), BIP-340 Schnorr on secp256k1 (`SIGN_SCHNORR_K1`), and Ed25519 EdDSA (`SIGN_ED25519`). Together these cover every chain in the supported set: secp256k1 ECDSA for Bitcoin / EVM / Cosmos / Tron / Filecoin / Spark / XRPL; BIP-340 Schnorr for Bitcoin Taproot and Nostr; Ed25519 for Solana / Sui / TON / Aptos. Each primitive is pinned end-to-end: input layout, output layout, nonce derivation, canonicalisation rules, and the host's responsibilities for any chain-specific framing the card does not perform.
 
 ## Motivation
 
@@ -86,7 +86,7 @@ A conforming applet MUST use the platform's native ECDSA nonce policy:
 - **Real silicon** (JCOP3 / JCOP4 / NXP P71 / Infineon SLE78): the ECDSA primitive draws a fresh random `k` per signature from the card's TRNG (the same source that backs the `authentikey` and the `GENERATE_SEED` CSPRNG). Two signatures over the same digest at the same path yield different `r,s` bytes with overwhelming probability.
 - **Simulator** (JCardSim or any environment whose `Signature.ALG_ECDSA_SHA_256` defaults to RFC 6979): the implementation may use deterministic nonces. Two signatures over the same digest at the same path may then be byte-for-byte identical.
 
-Both behaviours are valid ECDSA per FIPS 186-4 §6.4 and per every chain in the v1.0 set. A conforming applet MUST NOT install an external `k` to force RFC 6979 because doing so is impossible on JC 3.0.5 without re-implementing ECDSA in software, and the operational cost is not justified — a host that needs RFC 6979 reproducibility can compute it off-card from the seed itself (which the host owns post-`GENERATE_SEED` or post-`IMPORT_SEED`).
+Both behaviours are valid ECDSA per FIPS 186-4 §6.4 and per every chain in the supported set. A conforming applet MUST NOT install an external `k` to force RFC 6979 because doing so is impossible on JC 3.0.5 without re-implementing ECDSA in software, and the operational cost is not justified — a host that needs RFC 6979 reproducibility can compute it off-card from the seed itself (which the host owns post-`GENERATE_SEED` or post-`IMPORT_SEED`).
 
 A conforming host MUST NOT assume determinism on either side; it MUST treat each signing call's `r,s` output as fresh.
 
@@ -94,7 +94,7 @@ A conforming host MUST NOT assume determinism on either side; it MUST treat each
 
 A conforming applet MUST NOT emit a recovery byte. Hosts that need `v` (Ethereum, Filecoin, EIP-712 wallets) recover it post-facto by trying both `v ∈ {0, 1}`, recovering a candidate pubkey from `(r, s, digest, v)`, and matching against the expected pubkey returned by a prior `EXPORT_XPUB`. Standard reference libraries (`bitcoinjs-lib`, `noble-curves`, `kobe`) do this in O(1) elliptic-curve operations.
 
-The rationale for keeping `v` off-card: computing `v` on-card requires recovering the `R` point from `r`, which entails a modular square root over `F_p`. JC 3.0.5 provides no primitive for this; we would have to implement Tonelli-Shanks or exploit `p ≡ 3 mod 4` (`r^((p+1)/4) mod p`) in user code, plus point arithmetic to compare candidates. The added code surface for one bit of information is not justified.
+The rationale for keeping `v` off-card: computing `v` on-card requires recovering the `R` point from `r`, which entails a modular square root over `F_p`. JC 3.0.5 provides no primitive for this, so an on-card implementation would have to fall back to Tonelli-Shanks or exploit `p ≡ 3 mod 4` (`r^((p+1)/4) mod p`) in user code, plus point arithmetic to compare candidates. The added code surface for one bit of information is not justified.
 
 ### `SIGN_SCHNORR_K1` (INS `0x51`)
 
@@ -132,7 +132,7 @@ The parity flip of BIP-340 §3.2 step 6 (`k ← n − k'` whenever `y(k' · G)` 
 
 #### Implementation
 
-A conforming applet implements Schnorr in software on top of [`Bignat`](../../applet/src/main/java/social/meowl/applet/Bignat.java) (multi-precision arithmetic) and `Bip32.scalarMultG` (delegating to `KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY` for the two `scalarMult(G)` calls — once for `P = d · G`, once for `R = k · G`). Tagged hashing follows BIP-340 §2 verbatim.
+A conforming applet implements Schnorr on top of [`BigNat`](../../applet/src/main/java/social/meowl/applet/BigNat.java) (multi-precision arithmetic), [`Barrett`](../../applet/src/main/java/social/meowl/applet/Barrett.java) (constant-time modular reduction over `n`) and `Bip32.scalarMultG`, which delegates to `KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY` for the two scalar-base multiplications (`P = d · G` and `R = k · G`). Tagged hashing follows BIP-340 §2 verbatim.
 
 A conforming applet MUST emit `6FE1` (internal error) if the signing path produces a should-never-happen sentinel — most notably, if the tagged-hash output reduces to zero mod `n` during the challenge computation. BIP-340 mandates failing the signature in that case; the probability is ≈ `2⁻²⁵⁶` and is below any practical concern. A conforming host SHOULD treat `6FE1` as transient and retry; subsequent calls draw fresh aux randomness and will not collide with overwhelming probability.
 
@@ -178,31 +178,18 @@ No RNG is consulted; two signatures over the same `(path, message)` are byte-for
 
 #### Implementation
 
-JavaCard 3.0.5 ships **no native Ed25519 / edwards25519 primitive at all** — not even a scalar-multiplication building block. A conforming applet MUST therefore implement the full algebraic stack in software:
+JavaCard 3.0.5's EC coprocessor accepts short-Weierstrass curves only; Ed25519's native group is twisted Edwards. A conforming applet MUST therefore route Ed25519 through a **Weierstrass-25519 bridge** rather than implementing the twisted-Edwards group law in software:
 
-- **Field arithmetic** over `F_p` with `p = 2²⁵⁵ − 19`: `add / sub / neg / mul / sqr / inv`. The reference implementation uses `Bignat.mult` and `Bignat.mod` for multiplication / squaring, and Fermat's little theorem (`a⁻¹ = a^(p−2) mod p`) for inversion.
-- **Twisted-Edwards group operations** in extended projective coordinates `(X, Y, Z, T)` per the EFD `add-2008-hwcd-3` (9 multiplications) and `dbl-2008-hwcd` (3 squarings + 4 multiplications) formulas, specialised for `a = −1`.
-- **Constant-time scalar multiplication** — the reference implementation uses double-and-always-add over the full 256 scalar bits; each iteration performs exactly one doubling and one addition with the addend selected via byte-wise masking between the input point and the identity element so the secret bit never branches the control flow.
-- **RFC 8032 §5.1.2 LE-compressed point encoding** — 32-byte little-endian `y` with bit 0 of `x` placed in the high bit of byte 31.
+- **EC scalar multiplication** delegates to the hardware coprocessor via `KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY` against the Weierstrass form of curve25519 ([`Wei25519`](../../applet/src/main/java/social/meowl/applet/Wei25519.java)). Both `A = s · G` and `R = r · G` run on the coprocessor; no software scalar ladder is required.
+- **Cofactor handling** uses the `(s/8) · (8 · G)` identity. The clamped Ed25519 scalar `s` satisfies `s ≡ 0 (mod 8)` and exceeds the Wei25519 subgroup order `ℓ` (which `ECPrivateKey.setS` rejects); reducing to `s/8` against the precomputed point `8 · G` produces the same product in one coprocessor call. `Ed25519.scalarMultByPrivateScalar` implements this.
+- **Affine-Weierstrass → compressed-Edwards encoding** is performed by `Wei25519.encodeEdwards`, applying the curve isomorphism `(x_W, y_W) → (x_E, y_E)` and emitting the 32-byte little-endian `y_E ‖ x_E_parity_bit` form mandated by RFC 8032 §5.1.2. The encoding uses [`Fp25519`](../../applet/src/main/java/social/meowl/applet/Fp25519.java) for the field operations and [`Fp25519Inv`](../../applet/src/main/java/social/meowl/applet/Fp25519Inv.java) for the single modular inverse.
+- **Scalar arithmetic mod ℓ** (`r + k · s mod ℓ` for the final `S` component) is performed in software via `BigNat.mult` followed by [`Barrett`](../../applet/src/main/java/social/meowl/applet/Barrett.java) reduction; the final mod-ℓ trim uses constant-time `BigNat.condSubInPlace`.
 
-The whole stack uses one 1024-byte `CLEAR_ON_DESELECT` transient scratch buffer that hosts SHA-512 outputs, the four scalar slots (clamped `s`, ephemeral `r`, challenge `k`, accumulated `S`), the two intermediate point buffers, the base point and the 512-byte scalar-mult workspace. `Ed25519.sign(...)` MUST wipe the entire buffer in a `finally` clause regardless of which code path threw.
+The signing pipeline uses a 609-byte `CLEAR_ON_DESELECT` scratch buffer that stages the expanded private key (`s`, prefix), three scalar slots (`r`, `k`, `S`), two SHA-512 digest outputs, the 65-byte Wei25519 affine-point staging area and a 288-byte encode-scratch workspace. `Ed25519.sign(...)` MUST wipe the entire buffer in a `finally` clause regardless of which code path threw.
 
 #### Wire-budget note
 
 The Ed25519 sign APDU's `message` field is variable-length, capped by the surrounding APDU framing. After the depth + path + Secure Channel overhead, a single short APDU comfortably accommodates messages up to ~225 bytes. Hosts that need to sign messages larger than that MUST use the chain's existing pre-hashing convention (Solana already wraps in a 32-byte transaction hash for cross-program invocation; Sui / TON / Aptos likewise); this is a wire-budget concern, not a protocol-correctness concern — the algorithm itself accepts arbitrary-length messages.
-
-### Status words owned by this MEAP
-
-| Status word | Meaning |
-| ----------- | ------- |
-| `9000` | success |
-| `6700` | wrong length (data field shorter or longer than the layout requires) |
-| `6982` | security status not satisfied (`pin_verified` false) |
-| `6985` | conditions of use not satisfied (lifecycle ≠ `SEEDED`, or per-child validity check failed during inline derivation) |
-| `6A86` | incorrect P1/P2 (e.g. unknown `EXPORT_XPUB` curve byte) |
-| `6FB0` | lifecycle invalid (state ≠ `SEEDED`) |
-| `6FE0` | unsupported feature — the JC platform produced a non-conformant DER signature |
-| `6FE1` | internal error — a should-never-happen sentinel (Schnorr challenge reduced to zero mod `n`) |
 
 ## Rationale
 
@@ -224,23 +211,23 @@ The alternative (emitting a parity hint alongside `bytes(R)`) would let the host
 
 Pre-hashing the message to feed `SIGN_ED25519` would produce signatures that no Ed25519 verifier accepts — the signature would be over the hash, not over the message, and the verifier (which doesn't know the hash function the host applied) would compute its own SHA-512 of the hash and get a different challenge. The only way to produce a verifier-compatible Ed25519 signature is to feed the algorithm the raw message. RFC 8032 §5.1.6 hashes the message itself — the message IS the input.
 
-This is the single principled exception to the hash-only invariant. Every chain in the v1.0 Ed25519 set (Solana / Sui / TON / Aptos) uses RFC 8032 Ed25519 (not Ed25519ph), so the principled exception is also the practical one.
+This is the single principled exception to the hash-only invariant. Every chain in the supported Ed25519 set (Solana / Sui / TON / Aptos) uses RFC 8032 Ed25519 (not Ed25519ph), so the principled exception is also the practical one.
 
 ### Why deterministic Ed25519, non-deterministic Schnorr, mixed ECDSA
 
 Three different stories for three different reasons:
 
-- **Ed25519** is deterministic by RFC 8032 design — there is no nonce parameter to randomise. Any "non-deterministic Ed25519" would be a different signature scheme, and we don't need it (the chain ecosystem expects determinism).
+- **Ed25519** is deterministic by RFC 8032 design — there is no nonce parameter to randomise. A "non-deterministic Ed25519" would be a different signature scheme; the chain ecosystem expects the standard one.
 - **BIP-340 Schnorr** is recommended by BIP-340 §3.2 to be synthetic-nonce (TRNG-derived `aux` XOR'd with a deterministic mask). The synthetic-nonce variant adds fault-resistance over the pure-deterministic one; the cost is non-determinism in the signature, which BIP-340 itself accepts. Hosts that want pure-deterministic BIP-340 (`aux = 0x00..00`) for cross-card replay must sign in software with the seed they own.
-- **ECDSA** uses whatever the platform exposes — random on silicon, deterministic on JCardSim — because installing an external `k` is not supported on JC 3.0.5 without a software ECDSA reimplementation. This is a deviation from the original "deterministic RFC 6979" design intent, accepted because the cost (re-implementing ECDSA in software) is not justified for v1.0 and the reproducibility property is recoverable host-side.
+- **ECDSA** uses whatever the platform exposes — random on silicon, deterministic on JCardSim — because installing an external `k` is not supported on JC 3.0.5 without a software ECDSA reimplementation. The deviation from a pure "deterministic RFC 6979" design is accepted because the cost (re-implementing ECDSA in software) is not justified and the reproducibility property is recoverable host-side.
 
 ### Software big-integer arithmetic (Schnorr and Ed25519)
 
-JavaCard 3.0.5 does not expose a multi-precision integer type. The Schnorr signing path needs `s = (k + e · d) mod n` over secp256k1; the Ed25519 path needs the entire field-and-curve stack over `F_p` and over the ed25519 group order ℓ. The reference implementation lives in [`Bignat`](../../applet/src/main/java/social/meowl/applet/Bignat.java), [`Field25519`](../../applet/src/main/java/social/meowl/applet/Field25519.java) and [`Edwards25519`](../../applet/src/main/java/social/meowl/applet/Edwards25519.java), totalling a few hundred lines of school-book arithmetic. The big-integer code is exercised against `java.math.BigInteger` by 800+ randomised tests in [`BignatTest`](../../tests/src/test/java/social/meowl/applet/BignatTest.java) and [`Field25519Test`](../../tests/src/test/java/social/meowl/applet/Field25519Test.java); the Ed25519 path is end-to-end-verified against the JDK's `Signature.getInstance("Ed25519")` for every card-produced signature in [`Ed25519SigningTest`](../../tests/src/test/java/social/meowl/applet/Ed25519SigningTest.java).
+JavaCard 3.0.5 does not expose a multi-precision integer type. The Schnorr signing path needs `s = (k + e · d) mod n` over secp256k1; the Ed25519 path needs `F_p`-field arithmetic over `p = 2²⁵⁵ − 19` and `(r + k · s) mod ℓ` scalar arithmetic over the ed25519 group order. The reference implementation lives in [`BigNat`](../../applet/src/main/java/social/meowl/applet/BigNat.java) (multi-precision unsigned arithmetic with constant-time conditional add/sub/negate primitives), [`Barrett`](../../applet/src/main/java/social/meowl/applet/Barrett.java) (constant-time Barrett reduction parameterised by the modulus), [`Fp25519`](../../applet/src/main/java/social/meowl/applet/Fp25519.java) and [`Fp25519Inv`](../../applet/src/main/java/social/meowl/applet/Fp25519Inv.java) (curve25519 field arithmetic with an RSA-engine-accelerated inversion fast path), and [`Wei25519`](../../applet/src/main/java/social/meowl/applet/Wei25519.java) (Weierstrass-25519 curve parameters and the Edwards isomorphism). Randomised cross-checks against `java.math.BigInteger` live in [`BigNatTest`](../../tests/src/test/java/social/meowl/applet/BigNatTest.java), [`Fp25519Test`](../../tests/src/test/java/social/meowl/applet/Fp25519Test.java) and [`Wei25519Test`](../../tests/src/test/java/social/meowl/applet/Wei25519Test.java); the Ed25519 pipeline is end-to-end-verified against the JDK's `Signature.getInstance("Ed25519")` in [`Ed25519SigningTest`](../../tests/src/test/java/social/meowl/applet/Ed25519SigningTest.java).
 
 ## Backwards Compatibility
 
-N/A — v1.0 greenfield.
+N/A — no prior revision.
 
 ## Test Vectors
 
@@ -286,10 +273,12 @@ Each test class additionally exercises:
 - ECDSA signing: [`EcdsaK1`](../../applet/src/main/java/social/meowl/applet/EcdsaK1.java).
 - Schnorr signing: [`Schnorr`](../../applet/src/main/java/social/meowl/applet/Schnorr.java).
 - Ed25519 signing: [`Ed25519`](../../applet/src/main/java/social/meowl/applet/Ed25519.java).
-- Field and curve arithmetic for Ed25519: [`Field25519`](../../applet/src/main/java/social/meowl/applet/Field25519.java), [`Edwards25519`](../../applet/src/main/java/social/meowl/applet/Edwards25519.java).
-- Multi-precision arithmetic shared by Schnorr and Ed25519: [`Bignat`](../../applet/src/main/java/social/meowl/applet/Bignat.java).
-- Modular arithmetic over the secp256k1 group order: [`ModN`](../../applet/src/main/java/social/meowl/applet/ModN.java).
-- Reference test classes: [`EcdsaK1Test`](../../tests/src/test/java/social/meowl/applet/EcdsaK1Test.java), [`SchnorrK1Test`](../../tests/src/test/java/social/meowl/applet/SchnorrK1Test.java), [`Ed25519SigningTest`](../../tests/src/test/java/social/meowl/applet/Ed25519SigningTest.java); plus the unit-test classes for the underlying primitives: [`BignatTest`](../../tests/src/test/java/social/meowl/applet/BignatTest.java), [`ModNTest`](../../tests/src/test/java/social/meowl/applet/ModNTest.java), [`Field25519Test`](../../tests/src/test/java/social/meowl/applet/Field25519Test.java), [`Edwards25519Test`](../../tests/src/test/java/social/meowl/applet/Edwards25519Test.java).
+- Weierstrass-25519 bridge and curve constants: [`Wei25519`](../../applet/src/main/java/social/meowl/applet/Wei25519.java).
+- Curve25519 field arithmetic: [`Fp25519`](../../applet/src/main/java/social/meowl/applet/Fp25519.java), [`Fp25519Inv`](../../applet/src/main/java/social/meowl/applet/Fp25519Inv.java).
+- Multi-precision arithmetic shared by Schnorr and Ed25519: [`BigNat`](../../applet/src/main/java/social/meowl/applet/BigNat.java).
+- Constant-time Barrett reduction over `n` (secp256k1) and `ℓ` (ed25519): [`Barrett`](../../applet/src/main/java/social/meowl/applet/Barrett.java).
+- EC scalar multiplication via the hardware coprocessor: [`EcPoint`](../../applet/src/main/java/social/meowl/applet/EcPoint.java).
+- Reference test classes: [`EcdsaK1Test`](../../tests/src/test/java/social/meowl/applet/EcdsaK1Test.java), [`SchnorrK1Test`](../../tests/src/test/java/social/meowl/applet/SchnorrK1Test.java), [`SchnorrTagHashTest`](../../tests/src/test/java/social/meowl/applet/SchnorrTagHashTest.java), [`Ed25519SigningTest`](../../tests/src/test/java/social/meowl/applet/Ed25519SigningTest.java); plus unit-test classes for the underlying primitives: [`BigNatTest`](../../tests/src/test/java/social/meowl/applet/BigNatTest.java), [`Fp25519Test`](../../tests/src/test/java/social/meowl/applet/Fp25519Test.java), [`Wei25519Test`](../../tests/src/test/java/social/meowl/applet/Wei25519Test.java).
 
 ## Security Considerations
 
@@ -301,47 +290,42 @@ Without a screen, the user has no on-device visual confirmation of what the card
 - MUST refuse to forward suspicious payloads (e.g. unknown-script Bitcoin transactions, unknown-method EVM transactions, arbitrary EIP-191 messages).
 - SHOULD use a chain-specific transaction-decoder library on the host side and present the decoded fields in human-readable form.
 
-A future card variant with a display MAY implement a transaction parser; this MEAP does not anticipate that for v1.0.
+A future card variant with a display MAY implement a transaction parser; this MEAP does not anticipate that.
 
 ### Side channels in software primitives
 
-The Schnorr and Ed25519 paths are software-implemented. A conforming implementation MUST take constant-time precautions on every operation that touches the private scalar or the ephemeral nonce:
+The Schnorr and Ed25519 paths combine software big-integer arithmetic with EC scalar multiplication delegated to the hardware coprocessor. Constant-time precautions on the software side cover every operation that touches a private scalar or an ephemeral nonce:
 
-- **Ed25519 scalar multiplication** uses a constant-time double-and-always-add; the secret bit never branches the control flow.
-- **`s = (r + k · s) mod ℓ`** in Ed25519 is computed via `Bignat.mult` (which is not constant-time but operates on values both of which are already public after the signature emerges) followed by `Bignat.mod` (likewise post-emergence).
-- **`s = (k + e · d) mod n`** in Schnorr is similarly computed on values that are public after the signature emerges, with one subtlety: the conditional `n − s` flip during scalar canonicalisation is **not** performed, so no timing channel exists at that step.
-- **MAC comparisons** in the Secure Channel use `ConstantTime.equals` per [MEAP-2](./meap-2.md).
-- **Mod-n / Mod-p comparisons** (`ModN.lessThanN`, `Field25519.add/sub/neg/equals/isZero`, `Bignat.ctIsZero`, …) use mask-based constant-time helpers (`Bignat.condAddInPlace`, `Bignat.condSubInPlace`, `Bignat.ctLessThan`, `Bignat.ctIsZero`); audit F-01 and F-03 introduced these primitives in v1.1.
-- **Edwards25519 scalar multiplication** randomises its projective `(X, Y, Z, T)` coordinates on every call by sampling a non-zero blinding scalar `r ∈ [1, p)` and replacing `(X, Y, Z, T)` with `(X·r, Y·r, Z·r, T·r)` before the schedule starts (see `Edwards25519.randomizeProjective` and `Ed25519.blindBasePoint`). The blind is uniform on a set of size `p − ε`, drawn from `RandomData.ALG_KEYGENERATION` (or `ALG_TRNG` fallback). Per <https://eprint.iacr.org/2009/444>, projective randomisation breaks the link between the still-variable-time inner `Bignat.mod` reduction and any single secret bit.
+- **MAC comparisons** in the Secure Channel use `BigNat.ctEquals` per [MEAP-2](./meap-2.md).
+- **Mod-`n` / mod-`ℓ` ordering and zero tests** use `BigNat.ctLessThan` and `BigNat.ctIsZero`; conditional add / sub / negate use the mask-based helpers `BigNat.condAddInPlace`, `BigNat.condSubInPlace` and `BigNat.condNegateInPlace`. Every byte of the operand is read on every call regardless of the secret bit.
+- **Schnorr y-parity flips** (`d ← n − d` and `k ← n − k`) use `BigNat.condNegateInPlace`, mask-driven so the wall-clock is independent of the parity bit — the per-signature 1-bit oracle a branchful flip would expose is closed.
+- **`s = (k + e · d) mod n`** in Schnorr and **`s = (r + k · s) mod ℓ`** in Ed25519 reduce their secret-derived dividends through `Barrett`, whose byte schedule is data-independent by construction (the reduction performs the full set of conditional subtracts regardless of where the borrow chain settles).
+- **EC scalar multiplication** is performed by the hardware coprocessor (`KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY`). Side-channel resistance at the EC layer therefore relies entirely on the underlying silicon's countermeasures (clock jitter, dummy operations, masked private keys); the applet adds no software point blinding above it.
 
-The reference implementation does not claim full SCA resistance; deployments where SCA is in scope (lab attackers with side-channel equipment) MUST use a card whose silicon-level countermeasures (clock jitter, dummy operations, masked private keys) defend the underlying JC primitives.
+The reference implementation does not claim full SCA resistance against lab-grade adversaries. Deployments where SCA is in scope MUST select silicon whose declared countermeasures defend the underlying JC primitives, and SHOULD prefer EAL 6+ certified platforms.
 
 ### Threat model
 
-The v1.0 / v1.1 threat model targets a **software-only adversary on the host**:
+The threat model targets a **software-only adversary on the host**:
 
 - **In scope.** Host-resident malware reading process memory; networked APIs probing the SDK; an attacker with full APDU traffic on the bus but no fine-grained timing oracle (typical PCSC reader jitter is 1–5 ms).
 - **In scope.** Replay, MAC truncation, padding-oracle and key-confusion attacks on the Secure Channel — defended by MEAP-2 (Encrypt-then-MAC, strict IV monotonicity, session invalidation on first failure).
 - **In scope.** A lost / stolen card whose attacker has only commodity reader hardware — defended by the PIN/PUK retry counter and the EAL 5+ Augmented certification of the underlying NXP J3R180.
-- **Out of scope.** A *strong physical adversary* with sub-millisecond timing precision on the PCSC link, glitch-injection equipment, or invasive die probes. The variable-time `Bignat.mod` reduction (used inside `Field25519.mul / sqr` and inside `ModN`) yields a theoretical accumulating timing leak under such conditions, mitigated but not eliminated by the projective blinding above. Users in this threat model should wait for the v2.0 limb-radix `Field25519` rewrite tracked in [`AUDIT-REPORT.md` §6.3](../AUDIT-REPORT.md), or pick a vendor with EAL 6+ silicon.
+- **Out of scope.** A *strong physical adversary* with sub-millisecond timing precision on the PCSC link, glitch-injection equipment, or invasive die probes. The hardware EC coprocessor is the only line of defence at that tier; deployments in this threat class SHOULD select EAL 6+ silicon with declared SCA countermeasures.
 - **Out of scope.** Supply-chain attacks against the toolchain itself; defended at the build layer by SLSA L3 provenance and the CycloneDX SBOM published with each release.
 
 ### Performance budget
 
-The numbers below are wall-clock budgets observed on a J3R180 SECID card running at ~32 MHz over a contact reader; NFC adds another ~50 ms of bus latency. Host SDKs SHOULD plan their UX timeouts around the *upper* bound of each range. The corresponding line in [`README.md`](../../README.md) is the user-facing version of this table.
+The numbers below are wall-clock budgets observed on a J3R180 SECID card running at ~32 MHz over a contact reader; NFC adds another ~50 ms of bus latency. Host SDKs SHOULD plan their UX timeouts around the *upper* bound of each range.
 
 | INS | Operation | Typical | Notes |
 | --- | --------- | ------- | ----- |
-| `SIGN_ECDSA_K1` (0x50) | secp256k1 ECDSA | **150 – 300 ms** | Native `Signature.ALG_ECDSA_SHA_256`, dominated by EC scalar mul on the secure-element coprocessor |
-| `SIGN_SCHNORR_K1` (0x51) | BIP-340 Schnorr | **400 – 900 ms** | Two software scalar mults on secp256k1 + three SHA-256 ingests; tag pre-hashing (audit F-12) saves ~15–30 ms vs the previous draft |
-| `SIGN_ED25519` (0x52) | RFC 8032 Ed25519 | **3 – 6 s** | Two software scalar mults on Edwards25519 plus projective blinding (audit F-01); message capped at ~222 bytes by the inner short-form LC |
+| `SIGN_ECDSA_K1` (0x50) | secp256k1 ECDSA | **150 – 300 ms** | Native `Signature.ALG_ECDSA_SHA_256`, dominated by EC scalar mul on the secure-element coprocessor. |
+| `SIGN_SCHNORR_K1` (0x51) | BIP-340 Schnorr | **400 – 900 ms** | Two coprocessor scalar mults (`P = d·G`, `R = k·G`) interleaved with software `BigNat` + `Barrett` arithmetic for the challenge and `s` computation; three SHA-256 ingests for tagged-hash domain separation. |
+| `SIGN_ED25519` (0x52) | RFC 8032 Ed25519 | **3 – 6 s** | Two coprocessor scalar mults via the Weierstrass-25519 bridge interleaved with two SHA-512 ingests, the `Wei25519.encodeEdwards` modular inversions and `Barrett`-mediated mod-`ℓ` reduction; message capped at ~222 bytes by the inner short-form LC. |
 | `EXPORT_XPUB` (0x42) | One BIP-32 / SLIP-10 step | **80 – 200 ms** | Hardened: one HMAC-SHA-512. Non-hardened: one HMAC-SHA-512 + one EC point add via JC `KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY`. |
 
-Limb-radix-`2^26` rewrites of `Field25519` and `Bignat` would likely cut Ed25519 below 1 s and Schnorr below 250 ms; both are tracked as v2.0 line items.
-
-### Transient-memory wipe discipline
-
-Every signing primitive MUST wipe its scratch buffers in a `finally` clause regardless of which code path threw. The reference implementations (`Schnorr.signDigest`, `Ed25519.sign`) do this with `Util.arrayFillNonAtomic(scratch, 0, SCRATCH_LEN, (byte) 0)`. A `CLEAR_ON_DESELECT` lifecycle alone is NOT sufficient because subsequent calls within the same Secure Channel session would otherwise see stale scalar / nonce material in the slot.
+Ed25519 latency is dominated by the two `Wei25519.encodeEdwards` modular inversions (one per scalar mult); the RSA-engine fast path in `Fp25519Inv` (selected at install when the silicon advertises `Cipher.ALG_RSA_NOPAD` over a 512-bit modulus) shaves roughly 30 % vs. the software Fermat ladder fallback.
 
 ### Recovery byte cross-card replay
 

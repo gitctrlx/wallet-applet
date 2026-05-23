@@ -177,22 +177,6 @@ A conforming applet MUST preserve the `authentikey` keypair across the wipe per 
 
 A conforming host SHOULD render the countdown to the user in a confirmation UI ("3 more confirmations needed to wipe the card"). The status-word encoding gives the host the remaining count without any extra round-trip.
 
-### Status words owned by this MEAP
-
-| Status word | Meaning |
-| ----------- | ------- |
-| `9000` | success |
-| `6700` | wrong length |
-| `6982` | security status not satisfied — Secure Channel not open or `pin_verified` not set when required |
-| `6983` | auth blocked — PIN retry counter exhausted, or PUK retry counter exhausted |
-| `6985` | conditions of use not satisfied — lifecycle FSM forbids this command in the current state |
-| `63Cn` | wrong PIN, `n` retries remain (`n ∈ {0..2}`; `n = 0` is reported as `6983` instead) |
-| `6FA0` | reset done — final invocation triggered the wipe |
-| `6FA1`–`6FA3` | reset countdown — `n` more `RESET_TO_FACTORY` APDUs needed |
-| `6FB0` | lifecycle invalid — illegal forward transition or wrong-state command |
-
-The complete status-word reference is [MEAP-7](./meap-7.md).
-
 ## Rationale
 
 ### One PIN, one PUK
@@ -222,7 +206,7 @@ A previous draft of the personalisation flow committed PIN install, PUK install,
 
 ## Backwards Compatibility
 
-N/A — v1.0 greenfield.
+N/A — no prior revision.
 
 ## Test Vectors
 
@@ -251,15 +235,11 @@ The PIN retry counter is 3. An attacker with sustained physical access can submi
 
 ### `OwnerPIN.check` timing
 
-The JavaCard 3.x specification does NOT document `OwnerPIN.check` as constant-time. A timing side channel on `check` would in principle leak whether the first byte of the candidate matches the first byte of the stored PIN, accelerating brute-force. We accept this residual leak because the bounded retry counter (3 attempts then permanent block) reduces the attacker's signal-to-noise ratio below any usable level: the attacker would have to recover the PIN from at most three `check` calls with timing variance dwarfed by the secure-element clock noise. Future implementations MAY layer a constant-time wrapper over `check`; the reference implementation does not.
+The JavaCard 3.x specification does NOT document `OwnerPIN.check` as constant-time. A timing side channel on `check` would in principle leak whether the first byte of the candidate matches the first byte of the stored PIN, accelerating brute-force. This MEAP accepts the residual leak because the bounded retry counter (3 attempts then permanent block) reduces the attacker's signal-to-noise ratio below any usable level: the attacker would have to recover the PIN from at most three `check` calls with timing variance dwarfed by the secure-element clock noise. Future implementations MAY layer a constant-time wrapper over `check`; the reference implementation does not.
 
 ### Reset as DoS
 
 Even with the four-step countdown, a sufficiently determined attacker with sustained contact-interface access can still wipe the card. This is unavoidable without a physical confirmation button on the device; MEAP-3's design only deters drive-by attacks, not patient ones. Users who deploy meowl cards in adversarial physical environments SHOULD enclose them in tamper-evident packaging or use them in conjunction with an external confirmation device.
-
-### PIN-flag scope
-
-Tying `pin_verified` to the Secure Channel session (rather than to the lifetime of the applet) means an attacker who steals an authenticated card cannot use a side channel to keep the card "alive" past the host's deselect. The card's deselect is **not** something the attacker can prevent; even a contactless tap of a different applet AID forces deselect, and the card vacates the PIN flag in the same atomic action that it tears down the Secure Channel session.
 
 ## Copyright
 

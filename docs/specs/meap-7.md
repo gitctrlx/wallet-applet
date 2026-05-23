@@ -109,7 +109,7 @@ ISO 7816-4 has more granular length codes (`6CXX` for "wrong Le, expected XX byt
 
 ## Backwards Compatibility
 
-N/A — v1.0 greenfield.
+N/A — no prior revision.
 
 ## Test Vectors
 

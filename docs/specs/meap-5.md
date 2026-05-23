@@ -132,7 +132,7 @@ For non-hardened secp256k1 derivation the applet MUST compute `serP(point(k_par)
 
 #### Master-key validity check
 
-After deriving `k_master = parse256(I_L)` from the seed (in either tree), the applet MUST verify `0 < k_master < n` (where `n` is the secp256k1 group order for the BIP-32 tree, or the ed25519 prime-subgroup order ℓ for the SLIP-10 tree). The check uses the `ModN` helper module on the BIP-32 path; SLIP-10 values are not subject to a `mod ℓ` check because SLIP-10's hardened-only walk never adds I_L to a parent key.
+After deriving `k_master = parse256(I_L)` from the seed (in either tree), the applet MUST verify `0 < k_master < n` (where `n` is the secp256k1 group order for the BIP-32 tree, or the ed25519 prime-subgroup order ℓ for the SLIP-10 tree). The check uses the constant-time primitives `BigNat.ctLessThan` and `BigNat.ctIsZero` on the BIP-32 path; SLIP-10 values are not subject to a `mod ℓ` check because SLIP-10's hardened-only walk never adds I_L to a parent key.
 
 A conforming applet MUST reject `IMPORT_SEED` with `6985` if either master fails the validity check. For `GENERATE_SEED` the applet MUST resample (up to a defensive cap of 8 attempts) and return `6985` only if the cap is exhausted — this is a should-never-happen sentinel, not an expected error code in normal operation. The probability of a single random seed failing on the BIP-32 side is `1 − n/2²⁵⁶ ≈ 2⁻¹²⁸`.
 
@@ -140,26 +140,11 @@ A conforming applet MUST reject `IMPORT_SEED` with `6985` if either master fails
 
 For non-hardened BIP-32 derivation, the applet MUST compute `k_i = (parse256(I_L) + k_par) mod n` and reject the derivation with `6985` if either `parse256(I_L) ≥ n` or `k_i = 0`. The host SDK MAY pick a different `i` and retry.
 
-The reference `ModN` helper performs the addition with carry, then a single conditional subtract of `n` if either the carry was set or the unreduced sum is `≥ n`. The `lessThan` predicate it relies on iterates byte-by-byte short-circuiting on the first decision; this is **not** constant-time but the inputs (`k_par + I_L`) are not directly attacker-controlled in a useful way (the attacker sees only `I_L`'s output through HMAC of unobserved internal state).
+The reference implementation performs the addition with carry via `BigNat.addLowerHalfCt`, then conditionally subtracts `n` via `BigNat.condSubInPlace` driven by a mask `~ctLessThan(sum, n) | carry`. The comparison is constant-time; every byte of the sum is examined on every call regardless of where the borrow chain settles.
 
 #### Scalar-key hygiene
 
-The `ECPrivateKey` slot used for non-hardened EC scalar multiplication is EEPROM-backed on the cards we target (JC 3.0.5 does not universally support `TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT`). A conforming applet SHOULD compensate by calling `clearKey()` at the tail of every `derivePath` to scrub the leaf scalar from EEPROM. A conforming applet MUST install the curve parameters (the secp256k1 prime, generator, group order, cofactor) at the head of every public-key computation that follows a `clearKey()` because some implementations (notably JCardSim, and some JCOP profiles) treat `clearKey()` as a full reset that drops curve parameters.
-
-### Negative-path status words
-
-| Condition | Status word |
-| --------- | ----------- |
-| `seed_len ∉ [16, 64]` | `6700` |
-| Seed produces invalid `k_master` (BIP-32) | `6985` |
-| `GENERATE_SEED` exhausts the resample cap | `6985` |
-| `depth > 8` | `6700` |
-| Inner-data length mismatch (`!= 2 + 4 × depth`) | `6700` |
-| Unknown `curve` byte | `6A86` |
-| SLIP-10 path contains a non-hardened index | `6985` |
-| Per-child validity check fails (`k_i = 0` or `I_L ≥ n`) | `6985` |
-| Lifecycle gate violation (e.g. `EXPORT_XPUB` before `SEEDED`) | `6FB0` |
-| `pin_verified` not set | `6982` |
+The `ECPrivateKey` slot used for non-hardened EC scalar multiplication is EEPROM-backed on the cards this MEAP targets (JC 3.0.5 does not universally support `TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT`). A conforming applet SHOULD compensate by calling `clearKey()` at the tail of every `derivePath` to scrub the leaf scalar from EEPROM. A conforming applet MUST install the curve parameters (the secp256k1 prime, generator, group order, cofactor) at the head of every public-key computation that follows a `clearKey()` because some implementations (notably JCardSim, and some JCOP profiles) treat `clearKey()` as a full reset that drops curve parameters.
 
 ## Rationale
 
@@ -186,13 +171,9 @@ BIP-32 §"Private parent key → private child key" specifies that if `k_i = 0` 
 - The host's path is what produces the user's deterministic address sequence. A silent increment would produce a different address than the host expected.
 - The probability of triggering the check is below `2⁻¹²⁷`. A user encountering this on a randomly generated path is, in expectation, never. For pathological paths chosen by an attacker (which would still need to compute SHA-512 collisions), the host should observe the error and back off.
 
-### Master-key validity check
-
-BIP-32 §"Master key generation" specifies the same `0 < k_master < n` check at the root. We enforce it at `IMPORT_SEED` (host expected to discard the seed) and at `GENERATE_SEED` (card resamples); the failure probability is again below `2⁻¹²⁷`.
-
 ## Backwards Compatibility
 
-N/A — v1.0 greenfield. A future MEAP that adds new derivation curves (e.g. BLS12-381 for Ethereum 2 staking) will declare itself dependent on this MEAP and extend the `curve` byte allocation.
+N/A — no prior revision. A successor MEAP that adds new derivation curves (e.g. BLS12-381 for Ethereum 2 staking) will declare itself dependent on this MEAP and extend the `curve` byte allocation.
 
 ## Test Vectors
 
@@ -227,7 +208,7 @@ For each vector the response from `EXPORT_XPUB` must match the reference `(pubke
 - Master seed persistence: [`MasterSeed`](../../applet/src/main/java/social/meowl/applet/MasterSeed.java).
 - BIP-32 walk and EC scalar multiplication: [`Bip32`](../../applet/src/main/java/social/meowl/applet/Bip32.java).
 - SLIP-10 walk: [`Slip10`](../../applet/src/main/java/social/meowl/applet/Slip10.java).
-- Modular helpers: [`ModN`](../../applet/src/main/java/social/meowl/applet/ModN.java).
+- Constant-time `mod n` arithmetic: `BigNat.ctLessThan`, `BigNat.ctIsZero`, `BigNat.condAddInPlace`, `BigNat.condSubInPlace`, `BigNat.condNegateInPlace` in [`BigNat`](../../applet/src/main/java/social/meowl/applet/BigNat.java).
 - Reference test class: [`HdDerivationTest`](../../tests/src/test/java/social/meowl/applet/HdDerivationTest.java).
 
 ## Security Considerations
@@ -242,13 +223,9 @@ For each vector the response from `EXPORT_XPUB` must match the reference `(pubke
 
 The Secure Channel protects the response on the wire; the host's hygiene is what protects it after.
 
-### Validity-check non-constant-time `lessThan`
+### EEPROM scalar-key persistence
 
-The `Bignat.lessThan` predicate the validity check relies on short-circuits on the first byte that differs. For random inputs (which the seed and the HMAC-SHA-512 outputs are) the timing leak is uniform — there is no useful side channel because the attacker would need to control the inputs to force a specific timing. The reference implementation accepts this leak; future revisions MAY harden the predicate to constant-time without changing the wire spec.
-
-### EEPROM scalar-key hygiene
-
-The `ECPrivateKey` slot used in non-hardened secp256k1 derivation is EEPROM-backed on cards lacking `TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT`. A conforming applet MUST `clearKey()` at the tail of every `derivePath` to scrub the leaf scalar; failure to do so leaves the most-recently-derived child scalar in EEPROM where a sufficiently invasive attacker (chip-decapping, flash-readout) could recover it. The reference implementation clears the slot and re-installs curve parameters at every entry to make the next derivation correct.
+The Specification's `clearKey()` rule closes the most-recent-derivation exposure window, but on silicon lacking `TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT` the leaf-scalar `ECPrivateKey` slot is EEPROM-backed: a chip-decapping or flash-readout adversary may still recover any cell that was committed and not yet overwritten by a later derivation. Deployments where invasive physical attacks are in scope MUST select silicon that supports `TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT` (preferred), or accept the residual exposure of the most-recently-cleared cell prior to its overwrite.
 
 ### Per-child failure leakage
 

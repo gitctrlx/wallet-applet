@@ -127,7 +127,7 @@ A conforming applet MUST process inbound `OPEN_SECURE_CHANNEL` APDUs as follows:
 
 1. **Verify lengths**: the data field MUST be at least 32 bytes (`IV + minimum ciphertext + MAC` is `16 + 0 + 16` but the minimum non-empty ciphertext is one 16-byte block, so the minimum useful length is 48). Reject with `6700` otherwise.
 2. **Verify replay**: compare `IV` byte-for-byte against `last_inbound_IV`. If `IV ≤ last_inbound_IV`, reject with `6FB2` (Secure Channel cryptographic check failed). The replay check MUST happen before MAC verification so a wire attacker with no MAC key still gets a hard reject; this is a defense-in-depth measure.
-3. **Verify MAC**: compute `expected_MAC = HMAC-SHA-256(K_mac, [CLA INS P1 P2 LC] ‖ IV ‖ ciphertext)[0..16]`. Compare against the received `MAC` using a constant-time equality function (the reference implementation uses `ConstantTime.equals`; `Util.arrayCompare` is **not** constant-time per the JC 3.x specification and MUST NOT be used here). If the comparison fails, reject with `6FB2`.
+3. **Verify MAC**: compute `expected_MAC = HMAC-SHA-256(K_mac, [CLA INS P1 P2 LC] ‖ IV ‖ ciphertext)[0..16]`. Compare against the received `MAC` using a constant-time equality function (the reference implementation uses `BigNat.ctEquals`; `Util.arrayCompare` is **not** constant-time per the JC 3.x specification and MUST NOT be used here). If the comparison fails, reject with `6FB2`.
 4. **Decrypt**: `padded_plaintext = AES-256-CBC-decrypt(K_enc, IV, ciphertext)`. Strip the trailing PKCS#5 padding to recover the inner APDU. A pad length outside `[1, 16]` or any `pad[i] ≠ pad_length` MUST cause a `6FB2` rejection — this case can only arise from a key mismatch (the MAC having already verified) or from a buggy host, neither of which the card should accommodate.
 5. **Update replay state**: as soon as the MAC verification and the strict-greater-than `IV` check have both passed, store `IV` as the new `last_inbound_IV`. The applet MUST commit the replay counter at this point — before AES decryption proceeds — because any subsequent failure (PKCS#5 padding mismatch, decrypt error, inner-INS dispatch error) tears down the session entirely and requires a fresh `INIT_SECURE_CHANNEL` handshake before the host can resume; the legitimate host therefore never re-uses an `IV` and an attacker cannot exploit a stale `IV` either. Anchoring the counter advance to the MAC + IV-monotonicity check (both of which the attacker cannot pass without `K_mac`) is what makes the replay defense tight: a wire attacker fabricating an envelope under a fresh `IV` either gets a `6FB2` (MAC mismatch) without advancing the counter, or — if they somehow break the MAC — has already won and the counter advance is irrelevant.
 6. **Dispatch**: parse the inner APDU header from the decrypted plaintext and dispatch to the appropriate inner-INS handler.
@@ -170,9 +170,9 @@ The `pin_verified` flag is **session-scoped**: a host that has called `VERIFY_PI
 
 ### Why CBC + HMAC, not GCM
 
-JCAlgTest's [survey of 112 production cards](https://jcalgtest.org/) finds `AEADCipher.ALG_AES_GCM` available on only 7 cards (≈6%). Even within the JCOP 3 / JCOP 4 family — our primary deployment target — the SECID-grade J3R180 does not advertise GCM. By contrast `Cipher.ALG_AES_BLOCK_128_CBC_NOPAD` is on ≈45% of cards and `Signature.ALG_HMAC_SHA_256` on ≈54%, with the modern silicon sample skewing heavily toward "supported". Choosing CBC + HMAC therefore maximises silicon portability without sacrificing security level: AES-256-CBC with a 256-bit HMAC-SHA-256 MAC matches the 256-bit symmetric strength of AES-256-GCM exactly, given two side conditions both met by this MEAP:
+JCAlgTest's [survey of 112 production cards](https://jcalgtest.org/) finds `AEADCipher.ALG_AES_GCM` available on only 7 cards (≈6%). Even within the JCOP 3 / JCOP 4 family — the primary deployment target of this MEAP — the SECID-grade J3R180 does not advertise GCM. By contrast `Cipher.ALG_AES_BLOCK_128_CBC_NOPAD` is on ≈45% of cards and `Signature.ALG_HMAC_SHA_256` on ≈54%, with the modern silicon sample skewing heavily toward "supported". Choosing CBC + HMAC therefore maximises silicon portability without sacrificing security level: AES-256-CBC with a 256-bit HMAC-SHA-256 MAC matches the 256-bit symmetric strength of AES-256-GCM exactly, given two side conditions both met by this MEAP:
 
-1. The MAC verification is constant-time (`ConstantTime.equals`).
+1. The MAC verification is constant-time (`BigNat.ctEquals`).
 2. The plaintext is **never** parsed before the MAC has been verified (the MAC-then-decrypt order).
 
 A future MEAP MAY introduce an AES-GCM cipher suite once silicon support is broader. Such a MEAP would assign a different HKDF `info` label so that the two suites cannot be confused for one another by a host.
@@ -199,7 +199,7 @@ PKCS#5 (= PKCS#7 for AES's 16-byte block) is the only padding scheme universally
 
 ## Backwards Compatibility
 
-N/A — this is the v1.0 wire. A future MEAP MAY introduce an alternative cipher suite, identified by a different `info` label and a different `CAP_SC_*` capability bit; until that MEAP exists, every implementation MUST speak `meowl-sc-v1`.
+N/A — no prior revision. A successor MEAP MAY introduce an alternative cipher suite, identified by a different `info` label and a different `CAP_SC_*` capability bit; until then, every implementation MUST speak `meowl-sc-v1`.
 
 ## Test Vectors
 
@@ -246,23 +246,14 @@ The reference test scaffolding builds and consumes the envelope in pure JCE / Bo
 
 - Handshake and record layer: [`SecureChannel`](../../applet/src/main/java/social/meowl/applet/SecureChannel.java).
 - HKDF-SHA-256 implementation: [`Hkdf`](../../applet/src/main/java/social/meowl/applet/Hkdf.java).
-- Constant-time comparison used in MAC verification: [`ConstantTime.equals`](../../applet/src/main/java/social/meowl/applet/ConstantTime.java).
+- Constant-time MAC comparison: `BigNat.ctEquals` in [`BigNat`](../../applet/src/main/java/social/meowl/applet/BigNat.java).
 - Reference test class: [`SecureChannelTest`](../../tests/src/test/java/social/meowl/applet/SecureChannelTest.java); the inner-INS test files (`PersonalisationTest`, `HdDerivationTest`, `EcdsaK1Test`, `SchnorrK1Test`, `Ed25519SigningTest`) each carry an inline host-side `Session` helper that exercises the wire end-to-end.
 
 ## Security Considerations
 
 ### Padding-oracle resistance
 
-PKCS#5 padding is theoretically vulnerable to padding-oracle attacks: an attacker who can submit modified ciphertexts and observe a padding-valid versus padding-invalid distinguisher recovers the plaintext one byte per ≈128 queries. MEAP-2 closes this attack surface in two ways:
-
-1. **MAC-then-decrypt order**: the AES decryption is invoked only after MAC verification has already accepted the ciphertext. An attacker who modifies the ciphertext gets a MAC failure (`6FB2`) and never reaches the padding check.
-2. **Constant-time MAC comparison**: `ConstantTime.equals` XOR-accumulates every byte into a single difference register. A short-circuit on first mismatch (which `Util.arrayCompare` is permitted by the JC spec to do) would leak the position of the first differing byte, opening a different timing-based attack on the MAC itself.
-
-A non-constant-time `Util.arrayCompare` substitute MUST NOT be used in the MAC-verify path. The reference implementation enforces this by routing every MAC comparison through `ConstantTime.equals` and by exercising the equivalence in `ConstantTimeTest`.
-
-### Ephemeral-key destruction
-
-A conforming applet MUST destroy the ephemeral private key (`eph_card_priv`) as soon as the ECDH shared secret has been computed. The reference implementation accomplishes this by overwriting the `ephKeypair`'s scalar when the next handshake regenerates the keypair; a more aggressive implementation MAY zeroise it immediately after `KeyAgreement.generateSecret` returns. Either is conforming.
+PKCS#5 padding alone would be vulnerable to padding-oracle attacks. MEAP-2 closes the surface through two Specification-level rules: MAC-then-decrypt ordering (a tampered ciphertext fails MAC verification before the padding check is ever reached) and constant-time MAC comparison via `BigNat.ctEquals`. The audit-critical invariant is that a non-constant-time substitute such as `Util.arrayCompare` MUST NOT replace `BigNat.ctEquals` in the MAC-verify path; the tamper-MAC and replay-IV cases in `SecureChannelTest` exercise the equivalence end-to-end.
 
 ### Post-handshake authentication
 
@@ -278,13 +269,11 @@ A counterfeit card with its own legitimately-issued `authentikey` (e.g. a card f
 
 ### Invalid-point rejection
 
-The handshake's secp256k1 ECDH is the only place in the applet where an attacker-controlled EC point reaches a private-scalar multiplication. If the silicon's `KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY` implementation silently accepts a point that does not lie on the curve, the resulting "shared secret" can be drawn from a twist or substitution subgroup with much smaller order; combined with multiple handshakes, an attacker can in principle recover the ephemeral private scalar. The JC 3.0.5 specification mandates that conforming implementations raise `CryptoException.ILLEGAL_VALUE` on such inputs; every JCOP 3, JCOP 4 and SECID silicon in JCAlgTest's current corpus complies. Nevertheless:
+The handshake's secp256k1 ECDH is the only place where an attacker-controlled EC point reaches a private-scalar multiplication. If the silicon's `KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY` were to silently accept a point that does not lie on the curve, the "shared secret" could land on a twist or substitution subgroup with much smaller order; multiple handshakes would then suffice to recover the ephemeral private scalar (invalid-curve attack).
 
-- A conforming applet MUST capture any exception raised by `generateSecret` and convert it to `6FB2`, never letting the silicon-specific exception type leak to the host (which would itself be a fingerprinting channel).
-- A conforming deployment MUST include a silicon admission check that exercises the ECDH path with a deliberately off-curve point (the JCAlgTest `ec.dh.invalid-point` probe is sufficient) and verify that the card responds with `6FB2`.
-- The applet does NOT carry an in-software `y² ≡ x³ + 7 (mod p)` validator. The cost is prohibitive (≈5 KB CAP overhead and a fresh audit surface for a modular square-root implementation) and is not warranted while every modern target silicon validates correctly. A future MEAP MAY revisit this trade-off if reliable evidence emerges of production cards that fail the admission check.
+The Specification's exception-to-`6FB2` rule and the deployment-side admission check it cites both depend on the silicon actually validating points natively. Every JCOP 3, JCOP 4 and SECID platform in JCAlgTest's current corpus complies; deployments MUST re-verify on every new silicon revision before qualification. The applet does NOT carry an in-software `y² ≡ x³ + 7 (mod p)` validator — the cost (≈5 KB CAP space plus a modular-square-root audit surface) is not warranted while every modern target silicon validates correctly.
 
-The damage from a missed validation is bounded by the ephemeral-ephemeral handshake construction: the long-lived `authentikey` never participates in any EC arithmetic with attacker-controlled input. The worst case is that an attacker who can mount an invalid-curve attack against a vulnerable silicon recovers the ephemeral scalar of a single handshake, which protects exactly one Secure Channel session — a session whose plaintext the attacker, being the originating host, already has.
+Damage from a missed validation is bounded by the ephemeral-ephemeral construction: the long-lived `authentikey` never participates in EC arithmetic with attacker-controlled input. The worst case is the recovery of the ephemeral scalar of a single handshake — protecting one Secure Channel session whose plaintext the attacker, being the originating host, already has.
 
 ## Copyright
 
