@@ -117,7 +117,7 @@ public final class EcdsaK1 {
             parseDerSignature(scratch, DER_OFF, derLen);
 
             // Low-s normalisation: if s > ⌊n/2⌋ replace s with n − s. ctLessThan(HALF_N, S)
-            // returns -1 exactly when S > HALF_N, which is the flip-needed mask. condNegateInPlace
+            // returns -1 exactly when S > HALF_N, which is the flip-needed mask. ctSelectNeg
             // runs the full subtract on every call so the elapsed wall-clock is independent of
             // the s-parity bit.
             short flipMask =
@@ -127,7 +127,7 @@ public final class EcdsaK1 {
                             scratch,
                             S_OFF,
                             Constants.EC_SCALAR_LEN);
-            BigNat.condNegateInPlace(
+            BigNat.ctSelectNeg(
                     scratch, S_OFF, Secp256k1Curve.N, (short) 0, Constants.EC_SCALAR_LEN, flipMask);
 
             Util.arrayCopyNonAtomic(scratch, R_OFF, outBuf, outOff, Constants.EC_SCALAR_LEN);

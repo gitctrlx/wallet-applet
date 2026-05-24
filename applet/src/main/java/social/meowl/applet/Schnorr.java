@@ -31,9 +31,9 @@ import javacard.security.RandomData;
  *   <li>{@code s ← (k + e · d) mod n}; emit {@code bytes(R) ‖ s} (64 bytes).
  * </ol>
  *
- * <p>Both parity flips ({@code d} and {@code k}) use {@link BigNat#condNegateInPlace} — the
- * conditional negation is mask-driven so the wall-clock is independent of the y-parity bit. This
- * closes audit finding A-01 (variable-time {@code y(R)} flip leaking the nonce parity bit through a
+ * <p>Both parity flips ({@code d} and {@code k}) use {@link BigNat#ctSelectNeg} — the conditional
+ * negation is mask-driven so the wall-clock is independent of the y-parity bit. This closes audit
+ * finding A-01 (variable-time {@code y(R)} flip leaking the nonce parity bit through a
  * per-signature timing oracle).
  *
  * <p>Tagged hashing follows BIP-340 §3.2: {@code SHA256(SHA256(tag) ‖ SHA256(tag) ‖ msg)}. The
@@ -172,8 +172,7 @@ public final class Schnorr {
             //    with the y(R) path below so both call sites are structurally identical.
             byte pyLastByte = scratch[(short) (P_OFF + Constants.EC_POINT_UNCOMPRESSED_LEN - 1)];
             short pParityMask = (short) -((pyLastByte & 0x01));
-            BigNat.condNegateInPlace(
-                    scratch, D_OFF, Secp256k1Curve.N, (short) 0, COORD_LEN, pParityMask);
+            BigNat.ctSelectNeg(scratch, D_OFF, Secp256k1Curve.N, (short) 0, COORD_LEN, pParityMask);
 
             // 3. t = bytes(d) ⊕ tagged_hash("BIP0340/aux", aux).
             //    aux staged at WORK_OFF; the slot is reused for the multiply-add later.
@@ -194,7 +193,7 @@ public final class Schnorr {
             //    rand < 2²⁵⁶ and n > 2²⁵⁵ so one conditional subtract suffices.
             short kLessN =
                     BigNat.ctLessThan(scratch, K_OFF, Secp256k1Curve.N, (short) 0, COORD_LEN);
-            BigNat.condSubInPlace(
+            BigNat.ctSelectSub(
                     scratch, K_OFF, Secp256k1Curve.N, (short) 0, COORD_LEN, (short) ~kLessN);
             if (BigNat.ctIsZero(scratch, K_OFF, COORD_LEN) != 0) {
                 ISOException.throwIt(Constants.SW_INTERNAL_ERROR);
@@ -202,13 +201,12 @@ public final class Schnorr {
 
             // 6. R = k' · G; k = (y(R) odd ? n − k' : k').
             //    The y(R) parity is derived from the ephemeral nonce k' and therefore SECRET.
-            //    Mask-driven condNegate avoids the 1-bit per-signature timing oracle that a
+            //    Mask-driven ctSelectNeg avoids the 1-bit per-signature timing oracle that a
             //    branchful flip would expose.
             bip32.scalarMultG(scratch, K_OFF, scratch, R_OFF);
             byte ryLastByte = scratch[(short) (R_OFF + Constants.EC_POINT_UNCOMPRESSED_LEN - 1)];
             short rParityMask = (short) -((ryLastByte & 0x01));
-            BigNat.condNegateInPlace(
-                    scratch, K_OFF, Secp256k1Curve.N, (short) 0, COORD_LEN, rParityMask);
+            BigNat.ctSelectNeg(scratch, K_OFF, Secp256k1Curve.N, (short) 0, COORD_LEN, rParityMask);
 
             // 7. e = int(tagged_hash("BIP0340/challenge", R.x ‖ P.x ‖ m)) mod n.
             taggedHashStart(HASH_OF_TAG_CHALLENGE);
@@ -217,7 +215,7 @@ public final class Schnorr {
             sha256.doFinal(scratch, M_OFF, COORD_LEN, scratch, E_OFF);
             short eLessN =
                     BigNat.ctLessThan(scratch, E_OFF, Secp256k1Curve.N, (short) 0, COORD_LEN);
-            BigNat.condSubInPlace(
+            BigNat.ctSelectSub(
                     scratch, E_OFF, Secp256k1Curve.N, (short) 0, COORD_LEN, (short) ~eLessN);
 
             // 7b. Emit bytes(R) now. R.x is the only thing we still need from R; the upcoming
@@ -228,10 +226,10 @@ public final class Schnorr {
             // 8. s = (k + e · d) mod n.
             // 8a. e · d (32×32 → 64) into WORK_OFF.
             BigNat.mult(scratch, E_OFF, scratch, D_OFF, COORD_LEN, scratch, WORK_OFF);
-            // 8b. Add k (zero-extended to 64 bytes) into WORK[0..64]. addLowerHalfCt walks every
+            // 8b. Add k (zero-extended to 64 bytes) into WORK[0..64]. ctAddLowerHalf walks every
             //     byte of the upper half unconditionally so the wall-clock is independent of
             //     where the carry chain stops.
-            BigNat.addLowerHalfCt(scratch, WORK_OFF, scratch, K_OFF, COORD_LEN);
+            BigNat.ctAddLowerHalf(scratch, WORK_OFF, scratch, K_OFF, COORD_LEN);
             // 8c. Reduce WORK[0..64] mod n into the trailing 32 bytes of WORK with constant-time
             //     Barrett. The unreduced dividend k + e·d is a SECRET intermediate.
             //     The 132-byte Barrett scratch reuses scratch[D_OFF..D_OFF+132]; by this point d,

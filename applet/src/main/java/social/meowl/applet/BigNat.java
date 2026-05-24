@@ -23,10 +23,10 @@ import javacard.framework.Util;
  * <ul>
  *   <li><b>Variable-time</b>: {@link #lessThan}, {@link #isZero}. These early-exit and MUST only be
  *       fed public material (host-provided lengths, recovered public points).
- *   <li><b>Constant-time</b>: every {@code ct*} / {@code cond*} primitive walks every byte
- *       unconditionally and uses a mask-driven select between two computed values.
+ *   <li><b>Constant-time</b>: every {@code ct*} primitive walks every byte unconditionally and uses
+ *       a mask-driven select between two computed values.
  *   <li><b>Schedule-independent</b>: {@link #add}, {@link #sub}, {@link #mult}, {@link
- *       #multAsymmetric}, {@link #addLowerHalfCt}, {@link #modAdd}, {@link #modSub}. The byte-level
+ *       #multAsymmetric}, {@link #ctAddLowerHalf}, {@link #modAdd}, {@link #modSub}. The byte-level
  *       loop count is fixed by the {@code size} arguments alone; values flowing through the carry /
  *       borrow chain are data-dependent but the work pattern is not. Safe on secrets.
  * </ul>
@@ -103,7 +103,7 @@ public final class BigNat {
      * Schnorr} to fold the ephemeral nonce {@code k} into the 64-byte {@code e·d} product without
      * exposing the carry-stop position of the secret sum.
      */
-    public static void addLowerHalfCt(byte[] x, short xOff, byte[] y, short yOff, short halfSize) {
+    public static void ctAddLowerHalf(byte[] x, short xOff, byte[] y, short yOff, short halfSize) {
         short carry = 0;
         for (short i = (short) (halfSize - 1); i >= 0; i--) {
             short sum =
@@ -250,7 +250,7 @@ public final class BigNat {
      * so when {@code mask == 0} the operation reduces to a pure read-write of zero into the borrow
      * chain — same wall-clock as the active path.
      */
-    public static void condSubInPlace(
+    public static void ctSelectSub(
             byte[] x, short xOff, byte[] y, short yOff, short size, short mask) {
         short borrow = 0;
         for (short i = (short) (size - 1); i >= 0; i--) {
@@ -261,8 +261,8 @@ public final class BigNat {
         }
     }
 
-    /** Mask-driven in-place add. Symmetric to {@link #condSubInPlace}. */
-    public static void condAddInPlace(
+    /** Mask-driven in-place add. Symmetric to {@link #ctSelectSub}. */
+    public static void ctSelectAdd(
             byte[] x, short xOff, byte[] y, short yOff, short size, short mask) {
         short carry = 0;
         for (short i = (short) (size - 1); i >= 0; i--) {
@@ -277,7 +277,7 @@ public final class BigNat {
      * Mask-driven byte-wise conditional copy: {@code if (mask == -1) dst[..] = src[..]; else
      * no-op}. {@code mask} must be {@code -1} (0xFFFF) or {@code 0}.
      */
-    public static void condCopyInPlace(
+    public static void ctSelectCopy(
             byte[] dst, short dstOff, byte[] src, short srcOff, short size, short mask) {
         short keep = (short) ~mask;
         for (short i = 0; i < size; i++) {
@@ -296,7 +296,7 @@ public final class BigNat {
      * {@link Schnorr} to flip the secret-derived nonce on the y-parity bit, and by ECDSA's
      * low-{@code s} normalisation.
      */
-    public static void condNegateInPlace(
+    public static void ctSelectNeg(
             byte[] a, short aOff, byte[] m, short mOff, short size, short mask) {
         short keep = (short) ~mask;
         short borrow = 0;
@@ -338,7 +338,7 @@ public final class BigNat {
         short carryMask = (short) -carry;
         short lessMask = ctLessThan(out, outOff, m, mOff, size);
         short reduceMask = (short) (carryMask | ~lessMask);
-        condSubInPlace(out, outOff, m, mOff, size, reduceMask);
+        ctSelectSub(out, outOff, m, mOff, size, reduceMask);
     }
 
     /**
@@ -369,6 +369,6 @@ public final class BigNat {
             borrow = (short) ((diff >>> 15) & 1);
         }
         short addMask = (short) -borrow;
-        condAddInPlace(out, outOff, m, mOff, size, addMask);
+        ctSelectAdd(out, outOff, m, mOff, size, addMask);
     }
 }

@@ -140,7 +140,7 @@ A conforming applet MUST reject `IMPORT_SEED` with `6985` if either master fails
 
 For non-hardened BIP-32 derivation, the applet MUST compute `k_i = (parse256(I_L) + k_par) mod n` and reject the derivation with `6985` if either `parse256(I_L) ≥ n` or `k_i = 0`. The host SDK MAY pick a different `i` and retry.
 
-The reference implementation performs the addition with carry via `BigNat.addLowerHalfCt`, then conditionally subtracts `n` via `BigNat.condSubInPlace` driven by a mask `~ctLessThan(sum, n) | carry`. The comparison is constant-time; every byte of the sum is examined on every call regardless of where the borrow chain settles.
+The reference implementation performs the addition with carry via `BigNat.ctAddLowerHalf`, then conditionally subtracts `n` via `BigNat.ctSelectSub` driven by a mask `~ctLessThan(sum, n) | carry`. The comparison is constant-time; every byte of the sum is examined on every call regardless of where the borrow chain settles.
 
 #### Scalar-key hygiene
 
@@ -208,7 +208,7 @@ For each vector the response from `EXPORT_XPUB` must match the reference `(pubke
 - Master seed persistence: [`MasterSeed`](../../applet/src/main/java/social/meowl/applet/MasterSeed.java).
 - BIP-32 walk and EC scalar multiplication: [`Bip32`](../../applet/src/main/java/social/meowl/applet/Bip32.java).
 - SLIP-10 walk: [`Slip10`](../../applet/src/main/java/social/meowl/applet/Slip10.java).
-- Constant-time `mod n` arithmetic: `BigNat.ctLessThan`, `BigNat.ctIsZero`, `BigNat.condAddInPlace`, `BigNat.condSubInPlace`, `BigNat.condNegateInPlace` in [`BigNat`](../../applet/src/main/java/social/meowl/applet/BigNat.java).
+- Constant-time `mod n` arithmetic: `BigNat.ctLessThan`, `BigNat.ctIsZero`, `BigNat.ctSelectAdd`, `BigNat.ctSelectSub`, `BigNat.ctSelectNeg` in [`BigNat`](../../applet/src/main/java/social/meowl/applet/BigNat.java).
 - Reference test class: [`HdDerivationTest`](../../tests/src/test/java/social/meowl/applet/HdDerivationTest.java).
 
 ## Security Considerations

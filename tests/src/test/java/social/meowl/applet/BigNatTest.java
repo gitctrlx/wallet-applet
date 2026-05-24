@@ -183,43 +183,43 @@ class BigNatTest {
     class CondMutations {
 
         @Test
-        @DisplayName("condSubInPlace with mask -1 subtracts; with mask 0 is a no-op")
-        void condSub() {
+        @DisplayName("ctSelectSub with mask -1 subtracts; with mask 0 is a no-op")
+        void ctSelectSub() {
             byte[] x = randomScalar();
             byte[] y = randomScalar();
 
             byte[] subbed = x.clone();
-            BigNat.condSubInPlace(subbed, (short) 0, y, (short) 0, LEN, (short) -1);
+            BigNat.ctSelectSub(subbed, (short) 0, y, (short) 0, LEN, (short) -1);
             BigInteger expected = bigInt(x).subtract(bigInt(y));
             BigInteger wrap =
                     expected.add(BigInteger.ONE.shiftLeft(256)).mod(BigInteger.ONE.shiftLeft(256));
             assertArrayEquals(beBytes(wrap), subbed);
 
             byte[] untouched = x.clone();
-            BigNat.condSubInPlace(untouched, (short) 0, y, (short) 0, LEN, (short) 0);
+            BigNat.ctSelectSub(untouched, (short) 0, y, (short) 0, LEN, (short) 0);
             assertArrayEquals(x, untouched);
         }
 
         @Test
-        @DisplayName("condCopyInPlace with mask -1 copies src; with mask 0 keeps dst")
-        void condCopy() {
+        @DisplayName("ctSelectCopy with mask -1 copies src; with mask 0 keeps dst")
+        void ctSelectCopy() {
             byte[] src = randomScalar();
             byte[] dst = randomScalar();
             byte[] copied = dst.clone();
 
-            BigNat.condCopyInPlace(copied, (short) 0, src, (short) 0, LEN, (short) -1);
+            BigNat.ctSelectCopy(copied, (short) 0, src, (short) 0, LEN, (short) -1);
             assertArrayEquals(src, copied);
 
             byte[] kept = dst.clone();
-            BigNat.condCopyInPlace(kept, (short) 0, src, (short) 0, LEN, (short) 0);
+            BigNat.ctSelectCopy(kept, (short) 0, src, (short) 0, LEN, (short) 0);
             assertArrayEquals(dst, kept);
         }
 
         @Test
         @DisplayName(
-                "condNegateInPlace with mask -1 produces (m − a); zero corner is masked back to"
+                "ctSelectNeg with mask -1 produces (m − a); zero corner is masked back to"
                         + " zero by neg")
-        void condNegate() {
+        void ctSelectNeg() {
             byte[] m = Secp256k1Curve.N;
             for (int i = 0; i < 20; i++) {
                 BigInteger aValue;
@@ -229,12 +229,12 @@ class BigNatTest {
                 byte[] a = beBytes(aValue);
 
                 byte[] negated = a.clone();
-                BigNat.condNegateInPlace(negated, (short) 0, m, (short) 0, LEN, (short) -1);
+                BigNat.ctSelectNeg(negated, (short) 0, m, (short) 0, LEN, (short) -1);
                 BigInteger expected = new BigInteger(1, m).subtract(aValue);
                 assertArrayEquals(beBytes(expected), negated);
 
                 byte[] kept = a.clone();
-                BigNat.condNegateInPlace(kept, (short) 0, m, (short) 0, LEN, (short) 0);
+                BigNat.ctSelectNeg(kept, (short) 0, m, (short) 0, LEN, (short) 0);
                 assertArrayEquals(a, kept);
             }
         }

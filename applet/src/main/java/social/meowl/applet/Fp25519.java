@@ -106,7 +106,7 @@ public final class Fp25519 {
             borrow = (short) ((d >>> 15) & 1);
         }
         short zeroMask = BigNat.ctIsZero(a, aOff, LEN);
-        BigNat.condSubInPlace(out, outOff, P, (short) 0, LEN, zeroMask);
+        BigNat.ctSelectSub(out, outOff, P, (short) 0, LEN, zeroMask);
     }
 
     /**
@@ -121,7 +121,7 @@ public final class Fp25519 {
             carry = (short) ((sum >>> BigNat.DIGIT_BITS) & 0x01);
         }
         short geMask = (short) ~BigNat.ctLessThan(dst, dstOff, P, (short) 0, LEN);
-        BigNat.condSubInPlace(dst, dstOff, P, (short) 0, LEN, geMask);
+        BigNat.ctSelectSub(dst, dstOff, P, (short) 0, LEN, geMask);
     }
 
     /**
@@ -136,7 +136,7 @@ public final class Fp25519 {
             borrow = (short) ((diff >>> 15) & 1);
         }
         short addMask = (short) -borrow;
-        BigNat.condAddInPlace(dst, dstOff, P, (short) 0, LEN, addMask);
+        BigNat.ctSelectAdd(dst, dstOff, P, (short) 0, LEN, addMask);
     }
 
     /**
@@ -218,8 +218,8 @@ public final class Fp25519 {
             c3 = (short) ((sum >>> BigNat.DIGIT_BITS) & 1);
         }
         short ge1 = (short) ~BigNat.ctLessThan(dst, dstOff, P, (short) 0, LEN);
-        BigNat.condSubInPlace(dst, dstOff, P, (short) 0, LEN, ge1);
+        BigNat.ctSelectSub(dst, dstOff, P, (short) 0, LEN, ge1);
         short ge2 = (short) ~BigNat.ctLessThan(dst, dstOff, P, (short) 0, LEN);
-        BigNat.condSubInPlace(dst, dstOff, P, (short) 0, LEN, ge2);
+        BigNat.ctSelectSub(dst, dstOff, P, (short) 0, LEN, ge2);
     }
 }

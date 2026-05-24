@@ -206,8 +206,7 @@ public final class Ed25519 {
             short lessMask =
                     BigNat.ctLessThan(scratch, S_OUT_OFF, Wei25519.L, (short) 0, SCALAR_LEN);
             short reduceMask = (short) (carryMask | ~lessMask);
-            BigNat.condSubInPlace(
-                    scratch, S_OUT_OFF, Wei25519.L, (short) 0, SCALAR_LEN, reduceMask);
+            BigNat.ctSelectSub(scratch, S_OUT_OFF, Wei25519.L, (short) 0, SCALAR_LEN, reduceMask);
 
             // 9. Output R_ed || S_LE.
             Util.arrayCopyNonAtomic(scratch, R_ED_OFF, outBuf, outOff, SCALAR_LEN);
