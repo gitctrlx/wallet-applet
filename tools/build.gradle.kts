@@ -104,11 +104,18 @@ tasks.test {
     }
 }
 
-// Opt-in `realCardTest`: runs `@Tag("real-card")` suites. Today jcardsim still
-// hosts the integration tests, so this task fails by design until they migrate
-// to a PCSC BIBO backend (parallel to the `:tests:realCardTest` epic).
+// Opt-in `realCardTest`: runs the `@Tag("real-card")` integration tests against a physical
+// J3R180 via PCSC. Mirrors `:tests:realCardTest` but lives here because SecureChannelClientIT
+// belongs to the `tools` module (it exercises `SecureChannelClient`).
+//
+// Usage:
+//   ./gradlew :tools:realCardTest                     # first PCSC terminal found
+//   ./gradlew :tools:realCardTest -Preader=NAME       # explicit reader by name
+//   ./gradlew :tools:realCardTest -PuseSimulator      # force simulator backend
+//                                                     #   (most cases still fail by design;
+//                                                     #    useful only for fixture sanity)
 tasks.register<Test>("realCardTest") {
-    description = "Runs @Tag(\"real-card\") integration tests (placeholder until PCSC BIBO lands)."
+    description = "Runs @Tag(\"real-card\") integration tests against a real J3R180 via PCSC."
     group = "verification"
     testClassesDirs = sourceSets["test"].output.classesDirs
     classpath = sourceSets["test"].runtimeClasspath
@@ -120,6 +127,9 @@ tasks.register<Test>("realCardTest") {
         showStandardStreams = true
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
+    val backend = if (project.hasProperty("useSimulator")) "simulator" else "real"
+    systemProperty("cardBackend", backend)
+    project.findProperty("reader")?.let { systemProperty("cardReader", it.toString()) }
 }
 
 tasks.register<Exec>("installCap") {
