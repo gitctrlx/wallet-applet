@@ -409,7 +409,7 @@ public final class SecureChannel {
 
     /**
      * Increments the 16-byte outbound counter; on overflow the channel is torn down and {@link
-     * Constants.Sw#SECURE_CHANNEL_FAILED} is raised. Without this guard a wrapped counter would
+     * Constants#SW_SECURE_CHANNEL_FAILED} is raised. Without this guard a wrapped counter would
      * reuse {@code IV_base XOR 0} on a fresh ciphertext — AES-CBC with the same (key, IV) leaks
      * plaintext XOR. Practically unreachable after 2¹²⁸ - 1 wraps; defence-in-depth against fault
      * injection.
@@ -459,7 +459,7 @@ public final class SecureChannel {
 
     /**
      * Validates and strips PKCS#5/#7 padding from an AES-CBC plaintext block in place; returns the
-     * unpadded length. Any malformed pad raises {@link Constants.Sw#SECURE_CHANNEL_FAILED}.
+     * unpadded length. Any malformed pad raises {@link Constants#SW_SECURE_CHANNEL_FAILED}.
      *
      * <p>Every padding-error branch folds into a single accumulator {@code failMask} checked once
      * at the end, so the time taken here is independent of which pad invariant failed.

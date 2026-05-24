@@ -37,12 +37,6 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
      */
     private static final short INNER_SCRATCH_LEN = (short) 128;
 
-    /** Selector for {@link #signWithDigest}: secp256k1 ECDSA signer. */
-    private static final byte SIGNER_ECDSA_K1 = (byte) 0;
-
-    /** Selector for {@link #signWithDigest}: BIP-340 Schnorr signer. */
-    private static final byte SIGNER_SCHNORR_K1 = (byte) 1;
-
     private final LifecycleState state;
     private final Authentikey authentikey;
     private final ResetToFactory resetTrigger;
@@ -253,7 +247,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
 
     /**
      * Common gate for any handler that requires the user PIN to be verified in this Secure Channel
-     * session. Throws {@link Constants.Sw#SECURITY_STATUS_NOT_SATISFIED} otherwise.
+     * session. Throws {@link Constants#SW_SECURITY_STATUS_NOT_SATISFIED} otherwise.
      */
     private void requirePinVerified() {
         if (!pinManager.isPinVerified()) {
@@ -556,26 +550,6 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
      * Returns {@code [r(32), s(32)]} with {@code s} low-{@code s} normalised per BIP-62 / EIP-2.
      */
     private short handleSignEcdsaK1(byte[] buffer, short dataOff, short dataLen) {
-        return signWithDigest(buffer, dataOff, dataLen, SIGNER_ECDSA_K1);
-    }
-
-    /**
-     * {@code SIGN_SCHNORR_K1} inner data layout: {@code [depth(1), path(4*depth), digest(32)]}.
-     * Returns the 64-byte BIP-340 signature {@code bytes(R) ‖ s}. Software-implemented on top of
-     * {@link Schnorr}; aux randomness from the on-card RNG makes the signature non-deterministic.
-     */
-    private short handleSignSchnorrK1(byte[] buffer, short dataOff, short dataLen) {
-        return signWithDigest(buffer, dataOff, dataLen, SIGNER_SCHNORR_K1);
-    }
-
-    /**
-     * Common backbone of {@code SIGN_ECDSA_K1} and {@code SIGN_SCHNORR_K1}: enforce lifecycle + PIN
-     * gating, validate the {@code [depth(1), path(4*depth), digest(32)]} envelope, stage the digest
-     * into {@link #innerScratch} (so the signature output anchored at {@code OFFSET_CDATA} cannot
-     * trample it mid-flight), dispatch to the selected primitive, and wipe the staged digest on
-     * every code path.
-     */
-    private short signWithDigest(byte[] buffer, short dataOff, short dataLen, byte signerKind) {
         state.require(LifecycleState.SEEDED);
         requirePinVerified();
         if (dataLen < (short) (1 + Constants.Ec.DIGEST_LEN)) {
@@ -588,19 +562,41 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         }
         short pathOff = (short) (dataOff + 1);
         short digestOff = (short) (pathOff + depth * Bip32.INDEX_LEN);
+        // Stage the digest in innerScratch so the response (anchored at OFFSET_CDATA) cannot
+        // trample the input bytes mid-signature; try-finally wipe clears it even on exception.
         Util.arrayCopyNonAtomic(
                 buffer, digestOff, innerScratch, (short) 0, Constants.Ec.DIGEST_LEN);
         try {
-            if (signerKind == SIGNER_ECDSA_K1) {
-                return ecdsaK1.signDigest(
-                        buffer,
-                        pathOff,
-                        depth,
-                        innerScratch,
-                        (short) 0,
-                        buffer,
-                        ISO7816.OFFSET_CDATA);
-            }
+            return ecdsaK1.signDigest(
+                    buffer, pathOff, depth, innerScratch, (short) 0, buffer, ISO7816.OFFSET_CDATA);
+        } finally {
+            Util.arrayFillNonAtomic(innerScratch, (short) 0, Constants.Ec.DIGEST_LEN, (byte) 0);
+        }
+    }
+
+    /**
+     * {@code SIGN_SCHNORR_K1} inner data layout: {@code [depth(1), path(4*depth), digest(32)]}.
+     * Returns the 64-byte BIP-340 signature {@code bytes(R) ‖ s}. Software-implemented on top of
+     * {@link Schnorr}; aux randomness from the on-card RNG makes the signature non-deterministic.
+     */
+    private short handleSignSchnorrK1(byte[] buffer, short dataOff, short dataLen) {
+        state.require(LifecycleState.SEEDED);
+        requirePinVerified();
+        if (dataLen < (short) (1 + Constants.Ec.DIGEST_LEN)) {
+            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+        }
+        short depth = (short) (buffer[dataOff] & 0xFF);
+        if (depth > Constants.Hd.MAX_DEPTH
+                || (short) (1 + depth * Bip32.INDEX_LEN + Constants.Ec.DIGEST_LEN) != dataLen) {
+            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+        }
+        short pathOff = (short) (dataOff + 1);
+        short digestOff = (short) (pathOff + depth * Bip32.INDEX_LEN);
+        // Stage the digest in innerScratch so the response (anchored at OFFSET_CDATA) cannot
+        // trample the input bytes mid-signature; try-finally wipe clears it even on exception.
+        Util.arrayCopyNonAtomic(
+                buffer, digestOff, innerScratch, (short) 0, Constants.Ec.DIGEST_LEN);
+        try {
             return schnorr.signDigest(
                     buffer, pathOff, depth, innerScratch, (short) 0, buffer, ISO7816.OFFSET_CDATA);
         } finally {

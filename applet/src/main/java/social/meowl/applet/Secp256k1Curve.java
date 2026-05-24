@@ -18,10 +18,10 @@ import javacard.security.ECKey;
  */
 public final class Secp256k1Curve {
 
-    /** EC scalar length. Use {@link Constants.Ec#SCALAR_LEN} from outside this class. */
+    /** EC scalar length. Use {@link Constants#EC_SCALAR_LEN} from outside this class. */
     private static final short SCALAR_LEN = (short) 32;
 
-    /** Uncompressed EC point length. Use {@link Constants.Ec#POINT_UNCOMPRESSED_LEN} externally. */
+    /** Uncompressed EC point length. Use {@link Constants#EC_POINT_UNCOMPRESSED_LEN} externally. */
     private static final short POINT_UNCOMPRESSED_LEN = (short) 65;
 
     /** Cofactor {@code h = 1}. */

@@ -17,8 +17,8 @@ import javacard.framework.Util;
  *
  * <ul>
  *   <li>Correct PIN/PUK → {@code 9000}; wrong value → {@code 0x63Cn} with the 4-bit retry count in
- *       the low nibble (ISO 7816-4); exhausted counter → {@link Constants.Sw#AUTH_BLOCKED}.
- *   <li>Length-policy violations return {@link Constants.Sw#WRONG_LENGTH} and do <em>not</em>
+ *       the low nibble (ISO 7816-4); exhausted counter → {@link Constants#SW_AUTH_BLOCKED}.
+ *   <li>Length-policy violations return {@link Constants#SW_WRONG_LENGTH} and do <em>not</em>
  *       consume a retry — they are host-side protocol errors, not guesses.
  *   <li>{@link #unblockPin} consumes a PUK attempt even when the new PIN fails policy.
  * </ul>
@@ -34,8 +34,8 @@ public final class PinManager {
 
     /**
      * Scratch used by {@link #wipe()} to drive a known-pattern write through both {@link OwnerPIN}
-     * cells before discarding their references. Sized at {@link Constants.Pin#PUK_MAX_LEN} so the
-     * same buffer covers PIN and PUK updates.
+     * cells before discarding their references. Sized at {@link Constants#PUK_MAX_LEN} so the same
+     * buffer covers PIN and PUK updates.
      */
     private final byte[] scrub;
 
@@ -91,9 +91,9 @@ public final class PinManager {
     /**
      * Verifies a candidate PIN. On success {@link OwnerPIN#isValidated} returns {@code true}.
      *
-     * @throws ISOException with status word {@link Constants.Sw#PIN_RETRIES_BASE} {@code | n} where
+     * @throws ISOException with status word {@link Constants#SW_PIN_RETRIES_BASE} {@code | n} where
      *     {@code n} is the number of attempts remaining after the failed verification, or {@link
-     *     Constants.Sw#AUTH_BLOCKED} if the counter was already zero.
+     *     Constants#SW_AUTH_BLOCKED} if the counter was already zero.
      */
     public void verifyPin(byte[] buf, short offset, short length) {
         requireProvisioned();

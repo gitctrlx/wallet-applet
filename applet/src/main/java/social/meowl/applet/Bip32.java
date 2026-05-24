@@ -111,7 +111,7 @@ public final class Bip32 {
      * {@code outBuf[outOff..+32]}. Caller MUST wipe the destination as soon as the scalar has been
      * consumed so it does not linger past the signing primitive's own scope.
      *
-     * @return {@link Constants.Ec#SCALAR_LEN}
+     * @return {@link Constants#EC_SCALAR_LEN}
      */
     public short deriveLeafScalar(
             byte[] pathBuf, short pathOff, short depth, byte[] outBuf, short outOff) {
@@ -124,7 +124,7 @@ public final class Bip32 {
     /**
      * SEC 1 §2.3.3 compressed encoding of {@code scalar · G}.
      *
-     * @return {@link Constants.Ec#POINT_COMPRESSED_LEN}
+     * @return {@link Constants#EC_POINT_COMPRESSED_LEN}
      */
     public short computePubkey(byte[] scalar, short scalarOff, byte[] outBuf, short outOff) {
         return computeCompressedPubkey(scalar, scalarOff, outBuf, outOff);
@@ -134,7 +134,7 @@ public final class Bip32 {
      * Uncompressed encoding {@code 0x04 ‖ x ‖ y} of {@code scalar · G}. Exposed for {@link Schnorr}
      * which needs the {@code y}-coordinate parity.
      *
-     * @return {@link Constants.Ec#POINT_UNCOMPRESSED_LEN}
+     * @return {@link Constants#EC_POINT_UNCOMPRESSED_LEN}
      */
     public short scalarMultG(byte[] scalar, short scalarOff, byte[] outBuf, short outOff) {
         return secp256k1Ec.multiplyG(scalar, scalarOff, Constants.Ec.SCALAR_LEN, outBuf, outOff);
@@ -172,7 +172,7 @@ public final class Bip32 {
      * <p>BIP-32 §"Specification: Key derivation" states that if {@code parse256(I_L) ≥ n} or {@code
      * k_i == 0}, the resulting key is invalid and the caller should proceed with the next value for
      * {@code i} (probability {@code < 2⁻¹²⁷}, unreachable in practice). We raise {@link
-     * Constants.Sw#CONDITIONS_NOT_SATISFIED} rather than auto-retrying so the applet never silently
+     * Constants#SW_CONDITIONS_NOT_SATISFIED} rather than auto-retrying so the applet never silently
      * changes the path the host requested — matching the behaviour of Trezor's {@code
      * hdnode_private_ckd} and libsecp256k1's {@code secp256k1_ec_seckey_tweak_add}.
      */

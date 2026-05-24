@@ -42,7 +42,7 @@ public final class Authentikey {
      * trailing y-coordinate bytes past the 33-byte compressed point are zeroised so no residue
      * leaks into outbound buffers.
      *
-     * @return {@link Constants.Ec#POINT_COMPRESSED_LEN}
+     * @return {@link Constants#EC_POINT_COMPRESSED_LEN}
      */
     public short writeCompressedPubkeyTo(byte[] dst, short offset) {
         Bounds.requireCapacity(dst, offset, Constants.Ec.POINT_UNCOMPRESSED_LEN);

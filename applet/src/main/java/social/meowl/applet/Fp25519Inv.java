@@ -183,7 +183,7 @@ public final class Fp25519Inv {
     }
 
     /**
-     * {@code out ← a⁻¹ mod p}. Throws {@link Constants.Sw#INTERNAL_ERROR} on {@code a == 0}.
+     * {@code out ← a⁻¹ mod p}. Throws {@link Constants#SW_INTERNAL_ERROR} on {@code a == 0}.
      *
      * @param a canonical 32-byte big-endian field element; UNMODIFIED
      * @param aOff start offset within {@code a}
