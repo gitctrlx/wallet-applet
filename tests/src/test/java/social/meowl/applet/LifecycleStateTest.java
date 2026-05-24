@@ -5,26 +5,17 @@
 package social.meowl.applet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import com.licel.jcardsim.smartcardio.CardSimulator;
-import com.licel.jcardsim.utils.AIDUtil;
-import javacard.framework.AID;
-import javacard.framework.ISOException;
-import javacard.framework.JCSystem;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit tests for the {@link LifecycleState} finite state machine.
- *
- * <p>The pure {@link LifecycleState#isLegalForward(byte, byte)} decision function is exercised
- * directly. The stateful {@code transitionToInTx} / {@code resetInTx} flow is exercised inside a
- * {@link CardSimulator} so the JavaCard transaction machinery is engaged exactly as it would be on
- * real silicon. Every mutator demands a caller-held transaction; the tests open one explicitly per
- * call to match the production contract advertised by {@link LifecycleState}.
+ * Unit tests for the pure {@link LifecycleState#isLegalForward(byte, byte)} forward-progression
+ * rule. The stateful {@code transitionToInTx} / {@code resetInTx} flow is covered end-to-end on
+ * physical silicon by the personalisation and reset INS handlers exercised in {@link
+ * MeowlAppletTest} and {@link PersonalisationTest}; there is no in-JVM unit-test path because
+ * jcardsim's RSA backend rejects the prime modulus that the surrounding applet install loads.
  */
 class LifecycleStateTest {
 
@@ -92,88 +83,6 @@ class LifecycleStateTest {
 
         private static void assertFalse(boolean condition) {
             assertEquals(false, condition);
-        }
-    }
-
-    @Nested
-    @Tag("real-card")
-    @DisplayName("transitionToInTx() / resetInTx(): stateful behaviour under CardSimulator")
-    class Stateful {
-
-        private LifecycleState newInstance() {
-            // We need the JavaCard transaction machinery active, so spin up a tiny applet that
-            // simply exposes a fresh LifecycleState. Loading it through the simulator engages the
-            // same code paths real silicon would take.
-            CardSimulator simulator = new CardSimulator();
-            AID aid = AIDUtil.create(new byte[] {(byte) 0xF0, 0x6D, 0x65, 0x6F, 0x77, 0x6C, 0x01});
-            simulator.installApplet(aid, MeowlApplet.class);
-            simulator.selectApplet(aid);
-            return new LifecycleState();
-        }
-
-        /** Drives one {@code transitionToInTx} call inside a manual transaction. */
-        private static void advance(LifecycleState s, byte target) {
-            JCSystem.beginTransaction();
-            try {
-                s.transitionToInTx(target);
-                JCSystem.commitTransaction();
-            } catch (RuntimeException e) {
-                JCSystem.abortTransaction();
-                throw e;
-            }
-        }
-
-        @Test
-        @DisplayName("a fresh instance is UNINITIALIZED")
-        void freshIsUninitialized() {
-            assertEquals(LifecycleState.UNINITIALIZED, newInstance().current());
-        }
-
-        @Test
-        @DisplayName("each legal forward step updates the state")
-        void forwardUpdatesState() {
-            LifecycleState s = newInstance();
-            advance(s, LifecycleState.PERSONALIZED);
-            assertEquals(LifecycleState.PERSONALIZED, s.current());
-            advance(s, LifecycleState.SETUP_DONE);
-            assertEquals(LifecycleState.SETUP_DONE, s.current());
-            advance(s, LifecycleState.SEEDED);
-            assertEquals(LifecycleState.SEEDED, s.current());
-        }
-
-        @Test
-        @DisplayName("illegal transitions throw SW_LIFECYCLE_INVALID and leave state untouched")
-        void illegalTransitionThrows() {
-            LifecycleState s = newInstance();
-            JCSystem.beginTransaction();
-            try {
-                ISOException ex =
-                        assertThrows(
-                                ISOException.class,
-                                () -> s.transitionToInTx(LifecycleState.SEEDED));
-                assertEquals(Constants.SW_LIFECYCLE_INVALID, ex.getReason());
-            } finally {
-                JCSystem.abortTransaction();
-            }
-            assertEquals(LifecycleState.UNINITIALIZED, s.current());
-        }
-
-        @Test
-        @DisplayName("resetInTx() collapses any forward state back to UNINITIALIZED")
-        void resetCollapses() {
-            LifecycleState s = newInstance();
-            advance(s, LifecycleState.PERSONALIZED);
-            advance(s, LifecycleState.SETUP_DONE);
-            advance(s, LifecycleState.SEEDED);
-            JCSystem.beginTransaction();
-            try {
-                s.resetInTx();
-                JCSystem.commitTransaction();
-            } catch (RuntimeException e) {
-                JCSystem.abortTransaction();
-                throw e;
-            }
-            assertEquals(LifecycleState.UNINITIALIZED, s.current());
         }
     }
 }

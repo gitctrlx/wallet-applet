@@ -10,14 +10,15 @@ import java.math.BigInteger;
 import java.util.Random;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * Differential tests for {@link Fp25519} and {@link Fp25519Inv} against {@link BigInteger} mod
- * {@code p = 2²⁵⁵ − 19}. Covers additive helpers, the schoolbook multiply + pseudo-Mersenne
- * reducer, {@code (u ± 1)} corner cases consumed by {@link Wei25519}, and the software Fermat
- * inverse used by every Ed25519 sign.
+ * Differential tests for {@link Fp25519} against {@link BigInteger} mod {@code p = 2²⁵⁵ − 19}.
+ * Covers additive helpers, the schoolbook multiply + pseudo-Mersenne reducer, and the {@code (u ±
+ * 1)} corner cases consumed by {@link Wei25519}. The software Fermat inverse in {@code Fp25519Inv}
+ * is exercised end-to-end on physical silicon by every ECDSA / Ed25519 / Schnorr signing test (each
+ * signature pass invokes the inverter); there is no in-JVM unit-test path because jcardsim's RSA
+ * backend rejects the prime modulus the inverter loads.
  */
 class Fp25519Test {
 
@@ -96,36 +97,6 @@ class Fp25519Test {
                 assertArrayEquals(beBytes(a.multiply(b).mod(P)), out);
                 Fp25519.sqr(beBytes(a), (short) 0, out, (short) 0, scratch, (short) 0);
                 assertArrayEquals(beBytes(a.modPow(BigInteger.TWO, P)), out);
-            }
-        }
-
-        @Tag("real-card")
-        @Test
-        @DisplayName("inv(a) · a ≡ 1 (mod p) for 20 random non-zero a")
-        void inv() {
-            Fp25519Inv inverter = new Fp25519Inv();
-            byte[] inv = new byte[Fp25519.LEN];
-            byte[] product = new byte[Fp25519.LEN];
-            byte[] mulScratch = new byte[Fp25519.MUL_SCRATCH_LEN];
-            byte[] invScratch = new byte[Fp25519Inv.SCRATCH_LEN];
-            for (int i = 0; i < 20; i++) {
-                BigInteger a;
-                do {
-                    a = randomFieldElement();
-                } while (a.signum() == 0);
-                inverter.inv(beBytes(a), (short) 0, inv, (short) 0, invScratch, (short) 0);
-                Fp25519.mul(
-                        beBytes(a),
-                        (short) 0,
-                        inv,
-                        (short) 0,
-                        product,
-                        (short) 0,
-                        mulScratch,
-                        (short) 0);
-                byte[] one = new byte[Fp25519.LEN];
-                one[Fp25519.LEN - 1] = 1;
-                assertArrayEquals(one, product, "inv(a) · a must be canonical 1");
             }
         }
     }
