@@ -40,7 +40,7 @@ public final class Bip32 {
     private static final byte[] HARDENED_PREFIX = {(byte) 0x00};
 
     private final MasterSeed masterSeed;
-    private final HmacSha hmac;
+    private final HmacSha512 hmac;
     private final EcPoint secp256k1Ec;
 
     /** Walking buffer: {@code k_cur(32) ‖ c_cur(32) ‖ I(64) ‖ pub_scratch(65)}, total 193 bytes. */
@@ -57,7 +57,7 @@ public final class Bip32 {
      * @param sharedHmac512 same engine handed to {@link MasterSeed} and {@link Slip10}; safe to
      *     share because APDU dispatch is single-threaded.
      */
-    public Bip32(MasterSeed masterSeed, HmacSha sharedHmac512) {
+    public Bip32(MasterSeed masterSeed, HmacSha512 sharedHmac512) {
         this.masterSeed = masterSeed;
         this.hmac = sharedHmac512;
         this.secp256k1Ec =

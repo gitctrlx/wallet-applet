@@ -81,8 +81,9 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
 
     private MeowlApplet() {
         // SC moved off HMAC-SHA-256 onto AES-CMAC-128 (Kdf class) — only HMAC-SHA-512 remains
-        // necessary, for BIP-32 / SLIP-10 derivation.
-        HmacSha sharedHmac512 = new HmacSha(HmacSha.ALG_SHA_512);
+        // necessary, for BIP-32 / SLIP-10 derivation. The dedicated HmacSha512 class collapses
+        // the previously algorithm-agnostic HmacSha into a single-target SHA-512 engine.
+        HmacSha512 sharedHmac512 = new HmacSha512();
         Fp25519Inv sharedInv = new Fp25519Inv();
         // CLEAR_ON_DESELECT scratch: nothing outlives a session, and the install-time
         // CLEAR_ON_RESET pool on NFC SECID cards (J3R180) is too small for a 600-byte allocation.

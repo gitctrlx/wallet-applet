@@ -68,14 +68,14 @@ public final class MasterSeed {
     /** {@code [0] != 0} once a seed has been imported or generated. */
     private final byte[] seededFlag;
 
-    private final HmacSha hmac;
+    private final HmacSha512 hmac;
 
     /**
      * @param sharedHmac512 a shared HMAC-SHA-512 engine reused by {@link Bip32} and {@link Slip10}.
      *     Safe because APDU dispatch is single-threaded; one engine saves ~192 transient bytes on
      *     cards that take the software fallback path.
      */
-    public MasterSeed(HmacSha sharedHmac512) {
+    public MasterSeed(HmacSha512 sharedHmac512) {
         this.bip32Material = new byte[MASTER_LEN];
         this.slip10Material = new byte[MASTER_LEN];
         this.seededFlag = new byte[1];

@@ -14,23 +14,24 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
- * Verifies {@link HmacSha} against:
+ * Verifies {@link HmacSha512} against:
  *
  * <ul>
- *   <li>The seven RFC 4231 §4.2-4.8 test vectors for HMAC-SHA-256 and HMAC-SHA-512 (the canonical
- *       interop suite that pins MAC bytes for every other implementation in the world).
- *   <li>Random-input differential testing against the JDK's built-in {@code javax.crypto.Mac} (1000
+ *   <li>The seven RFC 4231 §4.2-4.8 test vectors for HMAC-SHA-512 (the canonical interop suite that
+ *       pins MAC bytes for every other implementation in the world).
+ *   <li>Random-input differential testing against the JDK's built-in {@code javax.crypto.Mac} (200
  *       random {@code (key, message)} pairs), proving byte-for-byte agreement on inputs that are
  *       not in the RFC test set.
  * </ul>
  *
- * <p>{@link HmacSha} is the RFC 2104 software implementation the runtime J3R180 takes (the chip
- * exposes no {@code ALG_HMAC_SHA_*} primitive). This test runs in the same JVM as jcardsim's mock
- * JC API, so {@link HmacSha} is exercised as a plain Java class without an applet dispatch layer.
+ * <p>{@link HmacSha512} is the RFC 2104 software implementation the runtime J3R180 takes (the chip
+ * exposes no {@code ALG_HMAC_SHA_512} primitive). This test runs in the same JVM as jcardsim's mock
+ * JC API, so the engine is exercised as a plain Java class without an applet dispatch layer.
  */
-class HmacShaTest {
+class HmacSha512Test {
 
     /** RFC 4231 §4.2: 20-byte key, short message. */
     private static final byte[] RFC4231_KEY_1 = repeat((byte) 0x0b, 20);
@@ -80,16 +81,6 @@ class HmacShaTest {
         RFC4231_DATA_7
     };
 
-    /** RFC 4231 §4.2-4.8 expected HMAC-SHA-256 outputs (truncated tests 5/6 omitted). */
-    private static final String[] RFC4231_HMAC_SHA256_EXPECTED = {
-        "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7",
-        "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843",
-        "773ea91e36800e46854db8ebd09181a72959098b3ef8c122d9635514ced565fe",
-        "82558a389a443c0ea4cc819899f2083a85f0faa3e578f8077a2e3ff46729665b",
-        "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54",
-        "9b09ffa71b942fcb27635fbcd5b0e944bfdc63644f0713938a7f51535c3a35e2",
-    };
-
     /** RFC 4231 §4.2-4.8 expected HMAC-SHA-512 outputs. */
     private static final String[] RFC4231_HMAC_SHA512_EXPECTED = {
         "87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cdedaa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854",
@@ -106,14 +97,6 @@ class HmacShaTest {
             args.add(
                     Arguments.of(
                             i,
-                            "SHA-256",
-                            RFC4231_KEYS[i],
-                            RFC4231_DATA[i],
-                            hex(RFC4231_HMAC_SHA256_EXPECTED[i])));
-            args.add(
-                    Arguments.of(
-                            i,
-                            "SHA-512",
                             RFC4231_KEYS[i],
                             RFC4231_DATA[i],
                             hex(RFC4231_HMAC_SHA512_EXPECTED[i])));
@@ -121,12 +104,11 @@ class HmacShaTest {
         return args.stream();
     }
 
-    @ParameterizedTest(name = "RFC 4231 vector {0} - HMAC-{1}")
+    @ParameterizedTest(name = "RFC 4231 vector {0}")
     @MethodSource("rfcVectors")
-    @DisplayName("RFC 4231 vectors")
-    void rfc4231(int idx, String algName, byte[] key, byte[] data, byte[] expected) {
-        HmacSha h =
-                new HmacSha("SHA-256".equals(algName) ? HmacSha.ALG_SHA_256 : HmacSha.ALG_SHA_512);
+    @DisplayName("RFC 4231 HMAC-SHA-512 vectors")
+    void rfc4231(int idx, byte[] key, byte[] data, byte[] expected) {
+        HmacSha512 h = new HmacSha512();
         byte[] out = new byte[expected.length];
         short n =
                 h.sign(
@@ -139,20 +121,18 @@ class HmacShaTest {
                         out,
                         (short) 0);
         assertEquals(expected.length, n);
-        assertArrayEquals(expected, out, "RFC 4231 vector " + idx + " mismatch (" + algName + ")");
+        assertArrayEquals(expected, out, "RFC 4231 vector " + idx + " mismatch");
     }
 
     /**
      * Differential agreement against {@code javax.crypto.Mac} on 200 random {@code (key, message)}
-     * pairs per algorithm. The seed range exercises every length branch in the RFC 2104 software
-     * path: {@code |K| == 0}, {@code |K| < B}, {@code |K| == B}, {@code |K| > B}, and messages
-     * shorter / equal / longer than the digest block.
+     * pairs. The seed range exercises every length branch in the RFC 2104 software path: {@code |K|
+     * == 0}, {@code |K| < B}, {@code |K| == B}, {@code |K| > B}, and messages shorter / equal /
+     * longer than the SHA-512 block.
      */
-    @ParameterizedTest(name = "HMAC-{0} matches JDK on 200 random inputs")
-    @org.junit.jupiter.params.provider.ValueSource(strings = {"SHA-256", "SHA-512"})
-    void matchesJdkOnRandomInputs(String algName) throws Exception {
-        String jdkAlg = "SHA-256".equals(algName) ? "HmacSHA256" : "HmacSHA512";
-        byte alg = "SHA-256".equals(algName) ? HmacSha.ALG_SHA_256 : HmacSha.ALG_SHA_512;
+    @ParameterizedTest(name = "HMAC-SHA-512 matches JDK on seed {0}")
+    @ValueSource(ints = {0})
+    void matchesJdkOnRandomInputs(int unused) throws Exception {
         for (int seed = 0; seed < 200; seed++) {
             java.util.Random rng = new java.util.Random(seed);
             int keyLen = rng.nextInt(257); // 0..256, hits both <B and >B branches
@@ -165,11 +145,11 @@ class HmacShaTest {
             // JDK's Mac.init rejects 0-length keys; HMAC is technically defined for them, so we
             // substitute a single zero byte on both sides for parity. Real callers never pass 0.
             byte[] safeKey = key.length == 0 ? new byte[1] : key;
-            Mac jdkMac = Mac.getInstance(jdkAlg);
-            jdkMac.init(new SecretKeySpec(safeKey, jdkAlg));
+            Mac jdkMac = Mac.getInstance("HmacSHA512");
+            jdkMac.init(new SecretKeySpec(safeKey, "HmacSHA512"));
             byte[] expected = jdkMac.doFinal(msg);
 
-            HmacSha h = new HmacSha(alg);
+            HmacSha512 h = new HmacSha512();
             byte[] out = new byte[expected.length];
             h.sign(
                     safeKey,
@@ -184,9 +164,7 @@ class HmacShaTest {
             assertArrayEquals(
                     expected,
                     out,
-                    "HMAC-"
-                            + algName
-                            + " disagrees with JDK on seed="
+                    "HMAC-SHA-512 disagrees with JDK on seed="
                             + seed
                             + ", keyLen="
                             + safeKey.length

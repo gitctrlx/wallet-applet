@@ -38,7 +38,7 @@ public final class Slip10 {
     private static final short STATE_LEN = (short) 128;
 
     private final MasterSeed masterSeed;
-    private final HmacSha hmac;
+    private final HmacSha512 hmac;
 
     /** {@code k_cur(32) ‖ c_cur(32) ‖ I(64)} scratch. */
     private final byte[] state;
@@ -47,7 +47,7 @@ public final class Slip10 {
      * @param sharedHmac512 same engine used by {@link MasterSeed} and {@link Bip32}; safe to share
      *     because APDU dispatch is single-threaded.
      */
-    public Slip10(MasterSeed masterSeed, HmacSha sharedHmac512) {
+    public Slip10(MasterSeed masterSeed, HmacSha512 sharedHmac512) {
         this.masterSeed = masterSeed;
         this.hmac = sharedHmac512;
         this.state = JCSystem.makeTransientByteArray(STATE_LEN, JCSystem.CLEAR_ON_DESELECT);

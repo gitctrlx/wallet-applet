@@ -32,7 +32,7 @@ import javacard.security.Signature;
  * exposes neither {@code Signature.ALG_HMAC_SHA_*} nor {@code TYPE_HMAC*}, so an HMAC-based KDF
  * would have to fall through to a software RFC 2104 implementation. Hardware CMAC is roughly 20×
  * faster than software HMAC and lets the entire SC handshake — derive K_enc/K_mac/IV_base —
- * complete inside one APDU round-trip without dragging in the {@link HmacSha} engine.
+ * complete inside one APDU round-trip without dragging in the software HMAC engine.
  *
  * <p>Buffer ownership: every operation writes into caller-supplied buffers; the {@link #prk} and
  * {@link #scratch} slots are {@link JCSystem#CLEAR_ON_DESELECT} so a session deselect wipes the
