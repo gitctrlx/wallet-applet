@@ -80,18 +80,28 @@ that any change to a MEAP wire format is a major-version bump.
   footprint.
 - **MEAP-2 wire format.** **BREAKING CHANGE for any external host SDK.**
   Hosts that previously implemented the Secure Channel against HMAC-SHA-256
-  + HKDF-SHA-256 will need to upgrade to AES-CMAC-128 + the KBKDF described
-  in `docs/specs/meap-2.md`. The `meowl-sc-v1` HKDF/KBKDF info label is
-  re-used (it now refers to the new construction); a future Secure Channel
-  revision MUST allocate a fresh label.
+  with HKDF-SHA-256 will need to upgrade to AES-CMAC-128 with the KBKDF
+  described in `docs/specs/meap-2.md`. The `meowl-sc-v1` HKDF/KBKDF info
+  label is re-used (it now refers to the new construction); a future Secure
+  Channel revision MUST allocate a fresh label.
 
 ### Verification status
 
-- ✅ `:applet:buildCap`, `:applet:test`, `:tools:test`, `:tests:test`,
-  `spotlessCheck` all green on every commit in this release window.
-- ⏳ Byte-level KDF / MAC pinning against a physical J3R180 is captured by
-  `:tests:realCardTest` and `:tools:realCardTest` but is not yet wired
-  into hosted CI; production releases gate on a manual run against an
-  ACR1552 + J3R180 pairing until a card-attached runner is provisioned.
+- **Verified — simulator.** `:applet:buildCap`, `:applet:test`,
+  `:tools:test`, `:tests:test` and `spotlessCheck` all green on every
+  commit in this release window.
+- **Verified — real card (J3R180 + ACR1552U-MF).** Byte-level KDF and
+  MAC correctness pinned end-to-end against physical silicon:
+  - `:tests:realCardTest --tests SecureChannelTest`: 13/13 passing
+    (5.77 s). Covers handshake (ECDH + KBKDF + ECDSA signature) and
+    envelope round-trip (encrypt, AES-CMAC-128 MAC, IV monotonicity,
+    replay defense); MAC bytes match `KdfCmacHost` byte-for-byte.
+  - `:tools:realCardTest`: 7/7 passing (2.81 s). Covers
+    `SecureChannelClient` MEAP-2 host implementation against the same
+    physical card (handshake, oversize rejection, wrong-authentikey
+    detection, two-envelope round-trip, session invalidation).
+- **Pending — hosted CI.** Real-card verification still gates on a
+  manual run against an ACR1552 + J3R180 pairing until a card-attached
+  runner is provisioned.
 
 [Unreleased]: https://github.com/qntx/meowl-applet/commits/main
