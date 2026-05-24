@@ -9,13 +9,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.licel.jcardsim.smartcardio.CardSimulator;
-import com.licel.jcardsim.utils.AIDUtil;
 import java.math.BigInteger;
 import java.security.SecureRandom;
 import java.security.Security;
 import java.util.Arrays;
-import javacard.framework.AID;
 import javax.crypto.Cipher;
 import javax.crypto.Mac;
 import javax.crypto.spec.IvParameterSpec;
@@ -26,17 +23,21 @@ import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.crypto.ec.CustomNamedCurves;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.math.ec.ECPoint;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import social.meowl.applet.cardclient.CardClient;
+import social.meowl.applet.cardclient.CardClientFactory;
 
 /**
- * End-to-end Secure Channel tests against the JCardSim-simulated applet.
+ * End-to-end Secure Channel tests driving MeowlApplet through {@link CardClient}.
  *
  * <p>Verifies the entire handshake (ECDH + HKDF-SHA-256 + authentikey ECDSA signature) and the
- * envelope round-trip (encrypt, MAC, IV monotonicity, replay defense).
+ * envelope round-trip (encrypt, MAC, IV monotonicity, replay defense). Tagged {@code real-card}
+ * because the simulator backend cannot install the post-Phase-1 applet.
  */
 @Tag("real-card")
 class SecureChannelTest {
@@ -55,7 +56,7 @@ class SecureChannelTest {
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    private CardSimulator simulator;
+    private CardClient card;
 
     @BeforeAll
     static void registerProvider() {
@@ -66,10 +67,14 @@ class SecureChannelTest {
 
     @BeforeEach
     void setUp() {
-        simulator = new CardSimulator();
-        AID aid = AIDUtil.create(APPLET_AID_BYTES);
-        simulator.installApplet(aid, MeowlApplet.class);
-        simulator.selectApplet(aid);
+        card = CardClientFactory.create(APPLET_AID_BYTES);
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (card != null) {
+            card.close();
+        }
     }
 
     @Test
@@ -373,7 +378,7 @@ class SecureChannelTest {
                 data == null
                         ? new CommandAPDU(CLA, ins, p1, p2)
                         : new CommandAPDU(CLA, ins, p1, p2, data);
-        return simulator.transmitCommand(cmd);
+        return card.transmit(cmd);
     }
 
     private static byte[] bytes(int... ints) {

@@ -9,13 +9,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.licel.jcardsim.smartcardio.CardSimulator;
-import com.licel.jcardsim.utils.AIDUtil;
 import java.math.BigInteger;
 import java.security.SecureRandom;
 import java.security.Security;
 import java.util.Arrays;
-import javacard.framework.AID;
 import javax.crypto.Cipher;
 import javax.crypto.Mac;
 import javax.crypto.spec.IvParameterSpec;
@@ -26,12 +23,15 @@ import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.crypto.ec.CustomNamedCurves;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.math.ec.ECPoint;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import social.meowl.applet.cardclient.CardClient;
+import social.meowl.applet.cardclient.CardClientFactory;
 
 /**
  * End-to-end tests for the personalisation flow — PIN/PUK setup plus PKI manufacturer-cert import
@@ -61,7 +61,7 @@ class PersonalisationTest {
     private static final byte[] DEFAULT_PIN = "123456".getBytes();
     private static final byte[] DEFAULT_PUK = "ABCDEFGH".getBytes();
 
-    private CardSimulator simulator;
+    private CardClient card;
     private Session session;
 
     @BeforeAll
@@ -73,11 +73,15 @@ class PersonalisationTest {
 
     @BeforeEach
     void setUp() {
-        simulator = new CardSimulator();
-        AID aid = AIDUtil.create(APPLET_AID_BYTES);
-        simulator.installApplet(aid, MeowlApplet.class);
-        simulator.selectApplet(aid);
+        card = CardClientFactory.create(APPLET_AID_BYTES);
         session = openSession();
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (card != null) {
+            card.close();
+        }
     }
 
     @Nested
@@ -616,7 +620,7 @@ class PersonalisationTest {
                 data == null
                         ? new CommandAPDU(CLA, ins, p1, p2)
                         : new CommandAPDU(CLA, ins, p1, p2, data);
-        return simulator.transmitCommand(cmd);
+        return card.transmit(cmd);
     }
 
     private static byte[] concat(byte[] a, byte[] b) {

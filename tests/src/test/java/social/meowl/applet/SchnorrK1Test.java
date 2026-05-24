@@ -8,14 +8,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.licel.jcardsim.smartcardio.CardSimulator;
-import com.licel.jcardsim.utils.AIDUtil;
 import java.math.BigInteger;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.security.Security;
 import java.util.Arrays;
-import javacard.framework.AID;
 import javax.crypto.Cipher;
 import javax.crypto.Mac;
 import javax.crypto.spec.IvParameterSpec;
@@ -26,12 +23,15 @@ import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.crypto.ec.CustomNamedCurves;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.math.ec.ECPoint;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import social.meowl.applet.cardclient.CardClient;
+import social.meowl.applet.cardclient.CardClientFactory;
 
 /**
  * End-to-end tests for the {@code SIGN_SCHNORR_K1} primitive — BIP-340 Schnorr signing under a
@@ -73,7 +73,7 @@ class SchnorrK1Test {
     private static final byte[] SAMPLE_DIGEST =
             hex("a591a6d40bf420404a011733cfb7b190d62c65bf0bcda32b57b277d9ad9f146e");
 
-    private CardSimulator simulator;
+    private CardClient card;
     private Session session;
 
     @BeforeAll
@@ -85,14 +85,18 @@ class SchnorrK1Test {
 
     @BeforeEach
     void setUp() throws Exception {
-        simulator = new CardSimulator();
-        AID aid = AIDUtil.create(APPLET_AID_BYTES);
-        simulator.installApplet(aid, MeowlApplet.class);
-        simulator.selectApplet(aid);
+        card = CardClientFactory.create(APPLET_AID_BYTES);
         session = openSession();
         bringToSetupDoneAndVerifyPin();
         sendInnerExpectOk(
                 Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(BIP32_VECTOR_1_SEED));
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (card != null) {
+            card.close();
+        }
     }
 
     @Nested
@@ -267,10 +271,9 @@ class SchnorrK1Test {
         @Test
         @DisplayName("SIGN_SCHNORR_K1 before SEEDED is rejected with SW_LIFECYCLE_INVALID")
         void signBeforeSeeded() throws Exception {
-            simulator = new CardSimulator();
-            AID aid = AIDUtil.create(APPLET_AID_BYTES);
-            simulator.installApplet(aid, MeowlApplet.class);
-            simulator.selectApplet(aid);
+            // Discard the seeded card from @BeforeEach and bring up a fresh one without a seed.
+            card.close();
+            card = CardClientFactory.create(APPLET_AID_BYTES);
             session = openSession();
             bringToSetupDoneAndVerifyPin();
             ResponseAPDU r = signSchnorrResp(new int[] {0}, SAMPLE_DIGEST);
@@ -610,7 +613,7 @@ class SchnorrK1Test {
                 data == null
                         ? new CommandAPDU(CLA, ins, p1, p2)
                         : new CommandAPDU(CLA, ins, p1, p2, data);
-        return simulator.transmitCommand(cmd);
+        return card.transmit(cmd);
     }
 
     private static byte[] concat(byte[] a, byte[] b) {

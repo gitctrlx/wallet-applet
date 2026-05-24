@@ -8,13 +8,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.licel.jcardsim.smartcardio.CardSimulator;
-import com.licel.jcardsim.utils.AIDUtil;
 import java.math.BigInteger;
 import java.security.SecureRandom;
 import java.security.Security;
 import java.util.Arrays;
-import javacard.framework.AID;
 import javax.crypto.Cipher;
 import javax.crypto.Mac;
 import javax.crypto.spec.IvParameterSpec;
@@ -34,6 +31,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import social.meowl.applet.cardclient.CardClient;
+import social.meowl.applet.cardclient.CardClientFactory;
 
 /**
  * End-to-end tests for the {@code SIGN_ECDSA_K1} primitive — secp256k1 ECDSA signing under a
@@ -77,7 +76,7 @@ class EcdsaK1Test {
     private static final byte[] SAMPLE_DIGEST =
             hex("a591a6d40bf420404a011733cfb7b190d62c65bf0bcda32b57b277d9ad9f146e");
 
-    private CardSimulator simulator;
+    private CardClient card;
     private Session session;
 
     @BeforeAll
@@ -89,10 +88,7 @@ class EcdsaK1Test {
 
     @BeforeEach
     void setUp() throws Exception {
-        simulator = new CardSimulator();
-        AID aid = AIDUtil.create(APPLET_AID_BYTES);
-        simulator.installApplet(aid, MeowlApplet.class);
-        simulator.selectApplet(aid);
+        card = CardClientFactory.create(APPLET_AID_BYTES);
         session = openSession();
         bringToSetupDoneAndVerifyPin();
         // SIGN_ECDSA_K1 needs a seeded card; install vector 1 seed before each test.
@@ -259,11 +255,9 @@ class EcdsaK1Test {
         @Test
         @DisplayName("SIGN_ECDSA_K1 before SEEDED is rejected with SW_LIFECYCLE_INVALID")
         void signBeforeSeeded() throws Exception {
-            // Re-build a fresh simulator that has not been seeded.
-            simulator = new CardSimulator();
-            AID aid = AIDUtil.create(APPLET_AID_BYTES);
-            simulator.installApplet(aid, MeowlApplet.class);
-            simulator.selectApplet(aid);
+            // Re-build a fresh card that has not been seeded.
+            card.close();
+            card = CardClientFactory.create(APPLET_AID_BYTES);
             session = openSession();
             bringToSetupDoneAndVerifyPin();
             // Do NOT import a seed: lifecycle is SETUP_DONE, not SEEDED.
@@ -538,7 +532,7 @@ class EcdsaK1Test {
                 data == null
                         ? new CommandAPDU(CLA, ins, p1, p2)
                         : new CommandAPDU(CLA, ins, p1, p2, data);
-        return simulator.transmitCommand(cmd);
+        return card.transmit(cmd);
     }
 
     private static byte[] concat(byte[] a, byte[] b) {

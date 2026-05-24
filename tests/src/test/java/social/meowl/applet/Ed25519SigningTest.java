@@ -10,8 +10,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.licel.jcardsim.smartcardio.CardSimulator;
-import com.licel.jcardsim.utils.AIDUtil;
 import java.math.BigInteger;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
@@ -22,7 +20,6 @@ import java.security.Signature;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Arrays;
-import javacard.framework.AID;
 import javax.crypto.Cipher;
 import javax.crypto.Mac;
 import javax.crypto.spec.IvParameterSpec;
@@ -33,12 +30,15 @@ import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.crypto.ec.CustomNamedCurves;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.math.ec.ECPoint;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import social.meowl.applet.cardclient.CardClient;
+import social.meowl.applet.cardclient.CardClientFactory;
 
 /**
  * End-to-end tests for the {@code SIGN_ED25519} primitive — RFC 8032 Ed25519 signing under a
@@ -96,7 +96,7 @@ class Ed25519SigningTest {
         (byte) 0x04, (byte) 0x22, (byte) 0x04, (byte) 0x20,
     };
 
-    private CardSimulator simulator;
+    private CardClient card;
     private Session session;
 
     @BeforeAll
@@ -108,14 +108,18 @@ class Ed25519SigningTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        simulator = new CardSimulator();
-        AID aid = AIDUtil.create(APPLET_AID_BYTES);
-        simulator.installApplet(aid, MeowlApplet.class);
-        simulator.selectApplet(aid);
+        card = CardClientFactory.create(APPLET_AID_BYTES);
         session = openSession();
         bringToSetupDoneAndVerifyPin();
         sendInnerExpectOk(
                 Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(SLIP10_VECTOR_1_SEED));
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (card != null) {
+            card.close();
+        }
     }
 
     @Nested
@@ -322,11 +326,9 @@ class Ed25519SigningTest {
         @Test
         @DisplayName("SIGN_ED25519 before seed is loaded → SW_LIFECYCLE_INVALID")
         void signWithoutSeed() throws Exception {
-            // Restart from a clean simulator without importing a seed.
-            simulator = new CardSimulator();
-            AID aid = AIDUtil.create(APPLET_AID_BYTES);
-            simulator.installApplet(aid, MeowlApplet.class);
-            simulator.selectApplet(aid);
+            // Restart from a clean card without importing a seed.
+            card.close();
+            card = CardClientFactory.create(APPLET_AID_BYTES);
             session = openSession();
             bringToSetupDoneAndVerifyPin();
             ResponseAPDU r = signEd25519Resp(new int[] {0x80000000}, SAMPLE_MESSAGE);
@@ -660,7 +662,7 @@ class Ed25519SigningTest {
                 data == null
                         ? new CommandAPDU(CLA, ins, p1, p2)
                         : new CommandAPDU(CLA, ins, p1, p2, data);
-        return simulator.transmitCommand(cmd);
+        return card.transmit(cmd);
     }
 
     private static byte[] concat(byte[] a, byte[] b) {
