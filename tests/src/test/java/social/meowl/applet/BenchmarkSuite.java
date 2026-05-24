@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import social.meowl.applet.cardclient.CardClient;
 import social.meowl.applet.cardclient.CardClientFactory;
+import social.meowl.applet.sc.KdfCmacHost;
 
 /**
  * jcardsim performance benchmarks for the meowl applet's signing and HD-walk paths.
@@ -66,7 +67,7 @@ class BenchmarkSuite {
     private static final int INS_OPEN_SC = Constants.INS_OPEN_SECURE_CHANNEL & 0xFF;
 
     private static final X9ECParameters SECP256K1 = CustomNamedCurves.getByName("secp256k1");
-    private static final byte[] HKDF_INFO = "meowl-sc-v1".getBytes();
+    private static final byte[] KDF_INFO = "meowl-sc-v1".getBytes();
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private static final byte[] DEFAULT_PIN = "123456".getBytes();
@@ -404,12 +405,12 @@ class BenchmarkSuite {
         byte[] clientX = Arrays.copyOfRange(clientPubEnc, 1, 33);
         byte[] cardX = Arrays.copyOfRange(cardEphPub, 1, 33);
         byte[] salt = concat(clientX, cardX);
-        byte[] prk = HkdfSha256.extract(salt, sharedX);
-        byte[] okm = HkdfSha256.expand(prk, HKDF_INFO, 32 + 32 + 16);
+        byte[] prk = KdfCmacHost.extract(salt, sharedX);
+        byte[] okm = KdfCmacHost.expand(prk, KDF_INFO, 32 + 16 + 16);
         return new Session(
                 Arrays.copyOfRange(okm, 0, 32),
-                Arrays.copyOfRange(okm, 32, 64),
-                Arrays.copyOfRange(okm, 64, 80));
+                Arrays.copyOfRange(okm, 32, 48),
+                Arrays.copyOfRange(okm, 48, 64));
     }
 
     private ResponseAPDU transmit(int ins, int p1, int p2, byte[] data) {
@@ -462,12 +463,12 @@ class BenchmarkSuite {
 
             int lc = iv.length + ct.length + Constants.SC_MAC_LEN;
             byte[] header = {(byte) CLA, (byte) INS_OPEN_SC, 0x00, 0x00, (byte) lc};
-            Mac m = Mac.getInstance("HmacSHA256");
-            m.init(new SecretKeySpec(kMac, "HmacSHA256"));
+            Mac m = Mac.getInstance("AESCMAC", BouncyCastleProvider.PROVIDER_NAME);
+            m.init(new SecretKeySpec(kMac, "AES"));
             m.update(header);
             m.update(iv);
             m.update(ct);
-            byte[] tag = Arrays.copyOf(m.doFinal(), Constants.SC_MAC_LEN);
+            byte[] tag = m.doFinal();
 
             byte[] out = new byte[lc];
             System.arraycopy(iv, 0, out, 0, iv.length);
@@ -487,12 +488,12 @@ class BenchmarkSuite {
                     Arrays.copyOfRange(
                             envelope, envelope.length - Constants.SC_MAC_LEN, envelope.length);
 
-            Mac m = Mac.getInstance("HmacSHA256");
-            m.init(new SecretKeySpec(kMac, "HmacSHA256"));
+            Mac m = Mac.getInstance("AESCMAC", BouncyCastleProvider.PROVIDER_NAME);
+            m.init(new SecretKeySpec(kMac, "AES"));
             m.update((byte) 0xFF);
             m.update(iv);
             m.update(ct);
-            byte[] expected = Arrays.copyOf(m.doFinal(), Constants.SC_MAC_LEN);
+            byte[] expected = m.doFinal();
             if (!Arrays.equals(expected, tag)) {
                 throw new IllegalStateException("outbound MAC mismatch");
             }
@@ -510,42 +511,6 @@ class BenchmarkSuite {
             System.arraycopy(in, 0, out, 0, in.length);
             for (int i = in.length; i < out.length; i++) out[i] = (byte) pad;
             return out;
-        }
-    }
-
-    private static final class HkdfSha256 {
-        static byte[] extract(byte[] salt, byte[] ikm) {
-            try {
-                Mac mac = Mac.getInstance("HmacSHA256");
-                mac.init(new SecretKeySpec(salt.length == 0 ? new byte[32] : salt, "HmacSHA256"));
-                return mac.doFinal(ikm);
-            } catch (Exception e) {
-                throw new IllegalStateException(e);
-            }
-        }
-
-        static byte[] expand(byte[] prk, byte[] info, int length) {
-            try {
-                Mac mac = Mac.getInstance("HmacSHA256");
-                byte[] out = new byte[length];
-                byte[] prev = new byte[0];
-                int pos = 0;
-                byte counter = 1;
-                while (pos < length) {
-                    mac.init(new SecretKeySpec(prk, "HmacSHA256"));
-                    mac.update(prev);
-                    mac.update(info);
-                    mac.update(counter);
-                    prev = mac.doFinal();
-                    int take = Math.min(prev.length, length - pos);
-                    System.arraycopy(prev, 0, out, pos, take);
-                    pos += take;
-                    counter++;
-                }
-                return out;
-            } catch (Exception e) {
-                throw new IllegalStateException(e);
-            }
         }
     }
 }

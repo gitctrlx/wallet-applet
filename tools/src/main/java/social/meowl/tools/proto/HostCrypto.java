@@ -32,24 +32,29 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider;
  * <ul>
  *   <li>secp256k1 ephemeral key generation + ECDH x-coordinate
  *   <li>AES-256-CBC encrypt / decrypt with PKCS#5 padding
- *   <li>HMAC-SHA-256 truncated to 16 bytes (the channel MAC)
+ *   <li>AES-CMAC-128 (the channel MAC; matches the J3R180 native primitive)
+ *   <li>SHA-256 with optional 16-byte truncation (the KDF salt compressor)
  *   <li>SHA-256-with-ECDSA verification on secp256k1 (handshake authentication)
  * </ul>
  *
- * <p>JDK JCE handles AES / HMAC / message-digest; BouncyCastle is used only for curve arithmetic.
+ * <p>JDK JCE handles AES / message-digest; BouncyCastle provides the AES-CMAC-128 PRF and the curve
+ * arithmetic.
  */
 public final class HostCrypto {
 
     /** secp256k1 curve parameters, sourced from BouncyCastle's named-curve registry. */
     public static final X9ECParameters SECP256K1 = CustomNamedCurves.getByName("secp256k1");
 
-    /** Length of the AES-256 key, in bytes. */
+    /** Length of the AES-256 K_enc key, in bytes. */
     public static final int AES_KEY_LEN = 32;
+
+    /** Length of the AES-128 K_mac key, in bytes (matches the AES-CMAC-128 key width). */
+    public static final int MAC_KEY_LEN = 16;
 
     /** AES-CBC block size and IV length, in bytes. */
     public static final int AES_BLOCK_LEN = 16;
 
-    /** Truncated HMAC-SHA-256 output length used for the channel MAC. */
+    /** AES-CMAC-128 tag length used for the channel MAC. */
     public static final int MAC_LEN = 16;
 
     /** Length of an EC scalar (private key, x-coordinate, hash output). */
@@ -192,19 +197,27 @@ public final class HostCrypto {
         return pkcs5Unpad(padded);
     }
 
-    /** Computes the MEAP-2 truncated HMAC-SHA-256 over the concatenation of {@code parts}. */
-    public static byte[] hmacSha256Truncated(byte[] key, byte[]... parts) {
+    /**
+     * Computes the MEAP-2 envelope MAC: AES-CMAC-128 over the concatenation of {@code parts} keyed
+     * by the 16-byte {@code key}. Matches the applet-side {@code Signature.ALG_AES_CMAC_128}
+     * primitive exactly.
+     */
+    public static byte[] aesCmac128(byte[] key, byte[]... parts) {
         Objects.requireNonNull(key, "key");
+        if (key.length != MAC_KEY_LEN) {
+            throw new IllegalArgumentException(
+                    "AES-CMAC-128 key must be %d bytes, got %d".formatted(MAC_KEY_LEN, key.length));
+        }
         try {
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(key, "HmacSHA256"));
+            Mac mac = Mac.getInstance("AESCMAC", BouncyCastleProvider.PROVIDER_NAME);
+            mac.init(new SecretKeySpec(key, "AES"));
             for (byte[] part : parts) {
                 Objects.requireNonNull(part, "part");
                 mac.update(part);
             }
-            return Arrays.copyOf(mac.doFinal(), MAC_LEN);
+            return mac.doFinal();
         } catch (GeneralSecurityException e) {
-            throw new IllegalStateException("HMAC-SHA-256 unavailable", e);
+            throw new IllegalStateException("AES-CMAC-128 unavailable", e);
         }
     }
 

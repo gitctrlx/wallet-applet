@@ -80,7 +80,8 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     private final short[] twoFieldDesc;
 
     private MeowlApplet() {
-        HmacSha sharedHmac256 = new HmacSha(HmacSha.ALG_SHA_256);
+        // SC moved off HMAC-SHA-256 onto AES-CMAC-128 (Kdf class) — only HMAC-SHA-512 remains
+        // necessary, for BIP-32 / SLIP-10 derivation.
         HmacSha sharedHmac512 = new HmacSha(HmacSha.ALG_SHA_512);
         Fp25519Inv sharedInv = new Fp25519Inv();
         // CLEAR_ON_DESELECT scratch: nothing outlives a session, and the install-time
@@ -90,7 +91,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         this.state = new LifecycleState();
         this.authentikey = new Authentikey();
         this.resetTrigger = new ResetToFactory();
-        this.secureChannel = new SecureChannel(this.authentikey, sharedHmac256, sharedScratch);
+        this.secureChannel = new SecureChannel(this.authentikey, sharedScratch);
         this.pinManager = new PinManager();
         this.pkiManager = new PkiManager(this.authentikey);
         this.masterSeed = new MasterSeed(sharedHmac512);

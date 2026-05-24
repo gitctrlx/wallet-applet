@@ -26,9 +26,9 @@ import javacardx.crypto.Cipher;
  *   Host  → Card : client_eph_pub_uncompressed (65 bytes, secp256k1)
  *   Card        : 1. eph_card = genKeyPair(secp256k1)      (transient)
  *                 2. shared    = ECDH_xy(eph_card_priv, client_eph_pub)
- *                 3. PRK       = HKDF-Extract(salt=client_x ‖ card_x, ikm=shared_x)
- *                 4. okm       = HKDF-Expand(PRK, info="meowl-sc-v1", L=80)
- *                                K_enc(32) ‖ K_mac(32) ‖ IV_base(16)
+ *                 3. PRK       = Kdf-Extract(salt=client_x ‖ card_x, ikm=shared_x)  (CMAC)
+ *                 4. okm       = Kdf-Expand(PRK, info="meowl-sc-v1", L=64)         (CMAC)
+ *                                K_enc(32) ‖ K_mac(16) ‖ IV_base(16)
  *                 5. sig       = ECDSA-SHA256(authentikey_priv,
  *                                             eph_card_pub ‖ client_eph_pub)
  *   Card  → Host : eph_card_pub_uncompressed (65) ‖ sigLen (2 BE) ‖ sig (DER, variable)
@@ -38,7 +38,7 @@ import javacardx.crypto.Cipher;
  *
  * <pre>
  *   APDU = [CLA INS P1 P2 LC]  IV(16)  ciphertext(N×16)  MAC(16)
- *     MAC = HMAC-SHA-256(K_mac, [CLA INS P1 P2 LC] ‖ IV ‖ ciphertext)[0..16]
+ *     MAC = AES-CMAC-128(K_mac, [CLA INS P1 P2 LC] ‖ IV ‖ ciphertext)
  *   The IV must strictly exceed the previously accepted IV (replay defense).
  *   plaintext = AES-256-CBC-decrypt(K_enc, IV, ciphertext) with PKCS#5 padding.
  * </pre>
@@ -47,12 +47,12 @@ import javacardx.crypto.Cipher;
  *
  * <pre>
  *   response = IV(16) ‖ ciphertext(N×16) ‖ MAC(16)
- *     MAC = HMAC-SHA-256(K_mac, 0xFF ‖ IV ‖ ciphertext)[0..16]
+ *     MAC = AES-CMAC-128(K_mac, 0xFF ‖ IV ‖ ciphertext)
  *     IV  = IV_base XOR monotonic_counter (16 bytes)
  * </pre>
  *
  * <p>The handshake stages its inputs in a dedicated transient scratch buffer ({@link #hsScratch})
- * rather than in the APDU buffer, because the working set during ECDH + HKDF + ECDSA-sign exceeds
+ * rather than in the APDU buffer, because the working set during ECDH + KDF + ECDSA-sign exceeds
  * the 261-byte short APDU buffer typical of contemporary silicon.
  *
  * <p>All session keys, IVs, replay counters and the open-flag live in {@link
@@ -64,13 +64,16 @@ public final class SecureChannel {
     /** Required size of the client ephemeral public key (uncompressed SEC1). */
     private static final short CLIENT_EPH_PUB_LEN = Constants.EC_POINT_UNCOMPRESSED_LEN;
 
-    /** {@code K_enc ‖ K_mac ‖ IV_base} layout produced by HKDF-Expand. */
+    /** {@code K_enc(32) ‖ K_mac(16) ‖ IV_base(16)} layout produced by {@link Kdf#expand}. */
     private static final short OKM_LEN =
-            (short) (Constants.SC_KEY_LEN + Constants.SC_KEY_LEN + Constants.SC_BLOCK_LEN);
+            (short) (Constants.SC_ENC_KEY_LEN + Constants.SC_MAC_KEY_LEN + Constants.SC_BLOCK_LEN);
+
+    /** Offset of {@code K_mac} inside {@link #okm}. */
+    private static final short OKM_MAC_OFFSET = Constants.SC_ENC_KEY_LEN;
 
     /** Offset of {@code IV_base} inside {@link #okm}. */
     private static final short OKM_IV_OFFSET =
-            (short) (Constants.SC_KEY_LEN + Constants.SC_KEY_LEN);
+            (short) (Constants.SC_ENC_KEY_LEN + Constants.SC_MAC_KEY_LEN);
 
     /** Handshake scratch layout (all sizes in bytes). */
     private static final short HS_CLIENT_PUB = (short) 0; // 65
@@ -82,8 +85,8 @@ public final class SecureChannel {
     private static final short HS_SALT = (short) (HS_SHARED + CLIENT_EPH_PUB_LEN); // 64 → ends 259
     private static final short HS_SCRATCH_LEN = (short) (HS_SALT + (Constants.EC_SCALAR_LEN * 2));
 
-    /** Application-binding label for HKDF-Expand. */
-    private static final byte[] HKDF_INFO = {
+    /** Application-binding label for {@link Kdf#expand}. */
+    private static final byte[] KDF_INFO = {
         (byte) 'm',
         (byte) 'e',
         (byte) 'o',
@@ -101,23 +104,22 @@ public final class SecureChannel {
     private static final byte[] RESP_HEADER = {(byte) 0xFF};
 
     private final Authentikey authentikey;
-    private final Hkdf hkdf;
+    private final Kdf kdf;
 
     private final KeyPair ephKeypair;
     private final KeyAgreement ecdh;
     private final AESKey encKey;
-    private final HmacSha hmac;
 
-    /**
-     * Session MAC key {@code K_mac} (CLEAR_ON_DESELECT). Stored as a byte array rather than {@code
-     * HMACKey} so the same code path works on cards (J3R180) that omit {@code TYPE_HMAC*}.
-     */
-    private final byte[] macKey;
+    /** Session MAC key {@code K_mac} (CLEAR_ON_DESELECT, 128-bit AES key for CMAC-128). */
+    private final AESKey macKey;
+
+    /** AES-CMAC-128 engine driving every envelope MAC. J3R180-native, ~76 µs/call. */
+    private final Signature macSig;
 
     private final Cipher aesCbc;
     private final Signature ecdsa;
 
-    /** {@code K_enc ‖ K_mac ‖ IV_base} scratch produced by HKDF-Expand. */
+    /** {@code K_enc ‖ K_mac ‖ IV_base} scratch produced by {@link Kdf#expand}. */
     private final byte[] okm;
 
     /** Last accepted inbound IV. Strictly-increasing IVs defeat replay. */
@@ -126,28 +128,26 @@ public final class SecureChannel {
     /** Monotonic counter feeding the next outbound IV. */
     private final byte[] outboundCounter;
 
-    /** Scratch buffer for HMAC-SHA-256 full-length output (32 bytes). */
+    /** Scratch buffer for the AES-CMAC-128 tag (16 bytes). */
     private final byte[] macScratch;
 
-    /** Handshake working scratch (sized for HKDF salt + shared + both pubkeys). */
+    /** Handshake working scratch (sized for KDF salt + shared + both pubkeys). */
     private final byte[] hsScratch;
 
     /** Single-byte open flag (transient). */
     private final byte[] openFlag;
 
     /**
-     * @param sharedHmac256 shared HMAC-SHA-256 engine reused by HKDF and the envelope MAC
      * @param sharedScratch singleton transient buffer of at least {@link #HS_SCRATCH_LEN} bytes,
      *     repurposed as handshake scratch; reused by {@link EcdsaK1}, {@link Schnorr} and {@link
      *     Ed25519} since APDU dispatch is single-threaded
      */
-    public SecureChannel(Authentikey authentikey, HmacSha sharedHmac256, byte[] sharedScratch) {
+    public SecureChannel(Authentikey authentikey, byte[] sharedScratch) {
         if ((short) sharedScratch.length < HS_SCRATCH_LEN) {
             ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
         this.authentikey = authentikey;
-        this.hkdf = new Hkdf(sharedHmac256);
-        this.hmac = sharedHmac256;
+        this.kdf = new Kdf();
 
         this.ephKeypair = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
         Secp256k1Curve.setCurveParameters((ECPrivateKey) ephKeypair.getPrivate());
@@ -156,6 +156,7 @@ public final class SecureChannel {
         this.ecdh = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY, false);
         this.aesCbc = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
         this.ecdsa = Signature.getInstance(Signature.ALG_ECDSA_SHA_256, false);
+        this.macSig = Signature.getInstance(Signature.ALG_AES_CMAC_128, false);
 
         // CLEAR_ON_DESELECT for every session-scoped buffer — standard SCP lifecycle, and a hard
         // requirement on cards (J3R180) whose CLEAR_ON_RESET pool is too small.
@@ -166,7 +167,11 @@ public final class SecureChannel {
                                 KeyBuilder.LENGTH_AES_256,
                                 false);
         this.macKey =
-                JCSystem.makeTransientByteArray(Constants.SC_KEY_LEN, JCSystem.CLEAR_ON_DESELECT);
+                (AESKey)
+                        KeyBuilder.buildKey(
+                                KeyBuilder.TYPE_AES_TRANSIENT_DESELECT,
+                                KeyBuilder.LENGTH_AES_128,
+                                false);
 
         this.okm = JCSystem.makeTransientByteArray(OKM_LEN, JCSystem.CLEAR_ON_DESELECT);
         this.lastInboundIv =
@@ -174,7 +179,7 @@ public final class SecureChannel {
         this.outboundCounter =
                 JCSystem.makeTransientByteArray(Constants.SC_BLOCK_LEN, JCSystem.CLEAR_ON_DESELECT);
         this.macScratch =
-                JCSystem.makeTransientByteArray(Hkdf.HASH_LEN, JCSystem.CLEAR_ON_DESELECT);
+                JCSystem.makeTransientByteArray(Constants.SC_MAC_LEN, JCSystem.CLEAR_ON_DESELECT);
         this.hsScratch = sharedScratch;
         this.openFlag = JCSystem.makeTransientByteArray((short) 1, JCSystem.CLEAR_ON_DESELECT);
     }
@@ -187,13 +192,12 @@ public final class SecureChannel {
     /** Tears down the session, clearing all derived keys and counters. */
     public void reset() {
         encKey.clearKey();
-        Util.arrayFillNonAtomic(macKey, (short) 0, Constants.SC_KEY_LEN, (byte) 0);
-        hmac.reset();
-        hkdf.reset();
+        macKey.clearKey();
+        kdf.reset();
         Util.arrayFillNonAtomic(okm, (short) 0, OKM_LEN, (byte) 0);
         Util.arrayFillNonAtomic(lastInboundIv, (short) 0, Constants.SC_BLOCK_LEN, (byte) 0);
         Util.arrayFillNonAtomic(outboundCounter, (short) 0, Constants.SC_BLOCK_LEN, (byte) 0);
-        Util.arrayFillNonAtomic(macScratch, (short) 0, Hkdf.HASH_LEN, (byte) 0);
+        Util.arrayFillNonAtomic(macScratch, (short) 0, Constants.SC_MAC_LEN, (byte) 0);
         Util.arrayFillNonAtomic(hsScratch, (short) 0, HS_SCRATCH_LEN, (byte) 0);
         openFlag[0] = 0;
     }
@@ -238,7 +242,7 @@ public final class SecureChannel {
                 ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
             }
 
-            // Compose HKDF salt = client_x ‖ card_x.
+            // Compose KDF salt = client_x ‖ card_x.
             Util.arrayCopyNonAtomic(
                     hsScratch,
                     (short) (HS_CLIENT_PUB + 1),
@@ -252,19 +256,16 @@ public final class SecureChannel {
                     (short) (HS_SALT + Constants.EC_SCALAR_LEN),
                     Constants.EC_SCALAR_LEN);
 
-            hkdf.extract(
+            kdf.extract(
                     hsScratch,
                     HS_SALT,
                     (short) (Constants.EC_SCALAR_LEN * 2),
                     hsScratch,
                     (short) (HS_SHARED + 1),
                     Constants.EC_SCALAR_LEN);
-            hkdf.expand(HKDF_INFO, (short) 0, (short) HKDF_INFO.length, okm, (short) 0, OKM_LEN);
+            kdf.expand(KDF_INFO, (short) 0, (short) KDF_INFO.length, okm, (short) 0, OKM_LEN);
             encKey.setKey(okm, (short) 0);
-            // K_mac in transient byte storage: the same code path works on cards without TYPE_HMAC*
-            // in their key builder catalogue (J3R180).
-            Util.arrayCopyNonAtomic(
-                    okm, Constants.SC_KEY_LEN, macKey, (short) 0, Constants.SC_KEY_LEN);
+            macKey.setKey(okm, OKM_MAC_OFFSET);
 
             Util.arrayFillNonAtomic(lastInboundIv, (short) 0, Constants.SC_BLOCK_LEN, (byte) 0);
             Util.arrayFillNonAtomic(outboundCounter, (short) 0, Constants.SC_BLOCK_LEN, (byte) 0);
@@ -334,11 +335,11 @@ public final class SecureChannel {
             ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
         }
 
-        // MAC = HMAC-SHA-256(K_mac, outer_header ‖ IV ‖ ciphertext)[0..16]. BigNat.ctEquals is
-        // mandatory: Util.arrayCompare is left-to-right ternary and leaks mismatch position.
-        hmac.init(macKey, (short) 0, Constants.SC_KEY_LEN);
-        hmac.update(apduBuffer, (short) 0, (short) 5);
-        hmac.doFinal(
+        // MAC = AES-CMAC-128(K_mac, outer_header ‖ IV ‖ ciphertext). BigNat.ctEquals is mandatory:
+        // Util.arrayCompare is left-to-right ternary and leaks mismatch position.
+        macSig.init(macKey, Signature.MODE_SIGN);
+        macSig.update(apduBuffer, (short) 0, (short) 5);
+        macSig.sign(
                 apduBuffer,
                 ivOffset,
                 (short) (Constants.SC_BLOCK_LEN + ctLen),
@@ -394,9 +395,9 @@ public final class SecureChannel {
                         Constants.SC_BLOCK_LEN);
 
         short macOffset = (short) (Constants.SC_BLOCK_LEN + ctLen);
-        hmac.init(macKey, (short) 0, Constants.SC_KEY_LEN);
-        hmac.update(RESP_HEADER, (short) 0, (short) RESP_HEADER.length);
-        hmac.doFinal(
+        macSig.init(macKey, Signature.MODE_SIGN);
+        macSig.update(RESP_HEADER, (short) 0, (short) RESP_HEADER.length);
+        macSig.sign(
                 apduBuffer,
                 (short) 0,
                 (short) (Constants.SC_BLOCK_LEN + ctLen),

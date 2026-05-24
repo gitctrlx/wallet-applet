@@ -15,8 +15,8 @@ import javacard.security.MessageDigest;
  * <p>The target silicon (NXP J3R180, JC 3.0.5 Classic) reports neither {@code
  * Signature.ALG_HMAC_SHA_*} nor {@code TYPE_HMAC*} in its algorithm catalogue (see {@code
  * 3rdparty/NXPJ3R180_NFC_1_ALGSUPPORT_*.csv}), so the only viable implementation is software. Every
- * HMAC consumer ({@link Hkdf}, {@link MasterSeed}, {@link Bip32}, {@link Slip10}, {@link
- * SecureChannel}) drives this engine.
+ * HMAC consumer ({@link MasterSeed}, {@link Bip32}, {@link Slip10}) drives this engine. Note that
+ * {@link SecureChannel} no longer routes through here — its KDF and MAC moved to AES-CMAC-128.
  *
  * <p>Algorithm — RFC 2104:
  *

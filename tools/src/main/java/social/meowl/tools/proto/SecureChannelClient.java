@@ -20,11 +20,11 @@ import java.util.Objects;
  *
  * <ul>
  *   <li>handshake: {@code [client_eph_pub(65)]} → {@code [card_eph_pub(65) | sigLen(2 BE) | sig]}
- *   <li>HKDF salt = {@code client_eph_x ‖ card_eph_x} (64 bytes)
- *   <li>HKDF info = ASCII {@code "meowl-sc-v1"} (11 bytes)
- *   <li>HKDF L = 80 bytes → {@code K_enc(32) ‖ K_mac(32) ‖ IV_base(16)}
- *   <li>inbound MAC = HMAC-SHA-256(K_mac, [CLA INS P1 P2 LC] ‖ IV ‖ CT)[0..16]
- *   <li>outbound MAC = HMAC-SHA-256(K_mac, 0xFF ‖ IV ‖ CT)[0..16]
+ *   <li>KDF salt = {@code client_eph_x ‖ card_eph_x} (64 bytes)
+ *   <li>KDF info = ASCII {@code "meowl-sc-v1"} (11 bytes)
+ *   <li>KDF L = 64 bytes → {@code K_enc(32) ‖ K_mac(16) ‖ IV_base(16)}
+ *   <li>inbound MAC = AES-CMAC-128(K_mac, [CLA INS P1 P2 LC] ‖ IV ‖ CT)
+ *   <li>outbound MAC = AES-CMAC-128(K_mac, 0xFF ‖ IV ‖ CT)
  * </ul>
  *
  * <p>Keys live in plain Java fields; the JDK offers no reliable {@code byte[]} scrubbing, so we do
@@ -41,11 +41,12 @@ public final class SecureChannelClient {
     /** {@code INS = 0x11} — OPEN_SECURE_CHANNEL, MEAP-2 §record-layer. */
     public static final int INS_OPEN_SC = 0x11;
 
-    /** HKDF info label, MEAP-2 §key-derivation. */
-    public static final byte[] HKDF_INFO = "meowl-sc-v1".getBytes(StandardCharsets.UTF_8);
+    /** KDF info label, MEAP-2 §key-derivation. */
+    public static final byte[] KDF_INFO = "meowl-sc-v1".getBytes(StandardCharsets.UTF_8);
 
-    /** HKDF output length: K_enc(32) + K_mac(32) + IV_base(16) = 80 bytes. */
-    private static final int HKDF_OKM_LEN = 80;
+    /** KDF output length: K_enc(32) + K_mac(16) + IV_base(16) = 64 bytes. */
+    private static final int KDF_OKM_LEN =
+            HostCrypto.AES_KEY_LEN + HostCrypto.MAC_KEY_LEN + HostCrypto.AES_BLOCK_LEN;
 
     /** Outbound MAC's direction-tag, fixed at 0xFF (MEAP-2 §record-layer outbound). */
     private static final byte OUTBOUND_DIRECTION_TAG = (byte) 0xFF;
@@ -139,16 +140,22 @@ public final class SecureChannelClient {
                     0, "authentikey ECDSA signature verification failed during handshake");
         }
 
-        // ECDH on the host side and HKDF schedule.
+        // ECDH on the host side and AES-CMAC-based KDF schedule.
         byte[] sharedX = HostCrypto.ecdhSharedX(keys.privateScalar(), cardEphPub);
         byte[] clientX = keys.xCoordinate();
         byte[] cardX = Arrays.copyOfRange(cardEphPub, 1, 1 + HostCrypto.EC_SCALAR_LEN);
         byte[] salt = HostCrypto.concat(clientX, cardX);
-        byte[] prk = HkdfSha256.extract(salt, sharedX);
-        byte[] okm = HkdfSha256.expand(prk, HKDF_INFO, HKDF_OKM_LEN);
+        byte[] prk = KdfCmac.extract(salt, sharedX);
+        byte[] okm = KdfCmac.expand(prk, KDF_INFO, KDF_OKM_LEN);
         kEnc = Arrays.copyOfRange(okm, 0, HostCrypto.AES_KEY_LEN);
-        kMac = Arrays.copyOfRange(okm, HostCrypto.AES_KEY_LEN, HostCrypto.AES_KEY_LEN * 2);
-        ivBase = Arrays.copyOfRange(okm, HostCrypto.AES_KEY_LEN * 2, HKDF_OKM_LEN);
+        kMac =
+                Arrays.copyOfRange(
+                        okm,
+                        HostCrypto.AES_KEY_LEN,
+                        HostCrypto.AES_KEY_LEN + HostCrypto.MAC_KEY_LEN);
+        ivBase =
+                Arrays.copyOfRange(
+                        okm, HostCrypto.AES_KEY_LEN + HostCrypto.MAC_KEY_LEN, KDF_OKM_LEN);
         inboundCounter = 0L;
         // Card increments outboundCounter to 1 before the first wrap; lastOutboundCounter
         // starts at 0 so the strict-greater check accepts the first IV.
@@ -183,7 +190,7 @@ public final class SecureChannelClient {
                             + " bytes (max 255). Reduce the inner APDU size.");
         }
         byte[] header = {(byte) CLA_MEOWL, (byte) INS_OPEN_SC, 0x00, 0x00, (byte) lc};
-        byte[] mac = HostCrypto.hmacSha256Truncated(kMac, header, iv, ciphertext);
+        byte[] mac = HostCrypto.aesCmac128(kMac, header, iv, ciphertext);
 
         byte[] envelope = HostCrypto.concat(iv, ciphertext, mac);
         ResponseAPDU resp =
@@ -281,10 +288,9 @@ public final class SecureChannelClient {
         byte[] mac =
                 Arrays.copyOfRange(envelope, envelope.length - HostCrypto.MAC_LEN, envelope.length);
 
-        // MAC = HMAC-SHA-256(K_mac, 0xFF || IV || ciphertext)[0..16].
+        // MAC = AES-CMAC-128(K_mac, 0xFF || IV || ciphertext).
         byte[] expected =
-                HostCrypto.hmacSha256Truncated(
-                        kMac, new byte[] {OUTBOUND_DIRECTION_TAG}, iv, ciphertext);
+                HostCrypto.aesCmac128(kMac, new byte[] {OUTBOUND_DIRECTION_TAG}, iv, ciphertext);
         if (!constantTimeEquals(mac, expected)) {
             invalidate();
             throw new SecureChannelException(0, "outbound envelope MAC mismatch");

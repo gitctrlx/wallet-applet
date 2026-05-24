@@ -260,13 +260,16 @@ public final class Constants {
 
     /*  Secure Channel sizes  */
 
-    /** AES key length (bytes) used by the Secure Channel — AES-256. */
-    public static final short SC_KEY_LEN = (short) 32;
+    /** AES-256 key length (bytes) used for the Secure Channel encryption key {@code K_enc}. */
+    public static final short SC_ENC_KEY_LEN = (short) 32;
+
+    /** AES-128 key length (bytes) used for the Secure Channel MAC key {@code K_mac} (CMAC-128). */
+    public static final short SC_MAC_KEY_LEN = (short) 16;
 
     /** AES-CBC block size and IV length (bytes). */
     public static final short SC_BLOCK_LEN = (short) 16;
 
-    /** Truncated HMAC-SHA-256 tag length (bytes) used as the Secure Channel MAC. */
+    /** AES-CMAC-128 tag length (bytes) used as the Secure Channel MAC. */
     public static final short SC_MAC_LEN = (short) 16;
 
     /*  PIN / PUK policy  */

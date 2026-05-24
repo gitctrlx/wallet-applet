@@ -139,17 +139,31 @@ class HostCryptoTest {
     }
 
     @Test
-    @DisplayName("hmacSha256Truncated returns 16 bytes and matches concatenated input")
-    void hmacTruncated() {
-        byte[] key = randomBytes(32);
+    @DisplayName("aesCmac128 returns a 16-byte tag invariant under varargs concatenation")
+    void aesCmac128IsAssociativeOverParts() {
+        byte[] key = randomBytes(HostCrypto.MAC_KEY_LEN);
         byte[] a = randomBytes(13);
         byte[] b = randomBytes(7);
-        byte[] tag = HostCrypto.hmacSha256Truncated(key, a, b);
+        byte[] tag = HostCrypto.aesCmac128(key, a, b);
         assertEquals(HostCrypto.MAC_LEN, tag.length);
 
+        // Splitting the message into multiple varargs parts must yield the same MAC as the
+        // already-concatenated single-part call.
         byte[] concat = HostCrypto.concat(a, b);
-        byte[] sameTag = HostCrypto.hmacSha256Truncated(key, concat);
+        byte[] sameTag = HostCrypto.aesCmac128(key, concat);
         assertArrayEquals(tag, sameTag);
+    }
+
+    @Test
+    @DisplayName("aesCmac128 rejects keys whose length is not 16 bytes")
+    void aesCmac128RejectsWrongKeyLength() {
+        byte[] shortKey = randomBytes(8);
+        byte[] longKey = randomBytes(32);
+        byte[] message = randomBytes(13);
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class, () -> HostCrypto.aesCmac128(shortKey, message));
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class, () -> HostCrypto.aesCmac128(longKey, message));
     }
 
     @Test

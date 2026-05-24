@@ -89,8 +89,32 @@ tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.add("-Aproject=${project.group}/${project.name}")
 }
 
+// Default `test` task: pure unit tests + simulator-safe assertions only. Tests
+// tagged `real-card` (notably `SecureChannelClientIT`) are excluded because the
+// post-Phase-1 applet cannot install on jcardsim. See `:tests:realCardTest` and
+// `:tools:realCardTest` for the on-card execution path.
 tasks.test {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        excludeTags("real-card")
+    }
+    testLogging {
+        events("passed", "failed", "skipped")
+        showStandardStreams = true
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+}
+
+// Opt-in `realCardTest`: runs `@Tag("real-card")` suites. Today jcardsim still
+// hosts the integration tests, so this task fails by design until they migrate
+// to a PCSC BIBO backend (parallel to the `:tests:realCardTest` epic).
+tasks.register<Test>("realCardTest") {
+    description = "Runs @Tag(\"real-card\") integration tests (placeholder until PCSC BIBO lands)."
+    group = "verification"
+    testClassesDirs = sourceSets["test"].output.classesDirs
+    classpath = sourceSets["test"].runtimeClasspath
+    useJUnitPlatform {
+        includeTags("real-card")
+    }
     testLogging {
         events("passed", "failed", "skipped")
         showStandardStreams = true

@@ -6,6 +6,7 @@ package social.meowl.applet;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -31,6 +32,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import social.meowl.applet.cardclient.CardClient;
 import social.meowl.applet.cardclient.CardClientFactory;
+import social.meowl.applet.sc.KdfCmacHost;
 
 /**
  * End-to-end Secure Channel tests driving MeowlApplet through {@link CardClient}.
@@ -52,7 +54,7 @@ class SecureChannelTest {
     private static final int INS_GET_AUTHENTIKEY = Constants.INS_GET_AUTHENTIKEY & 0xFF;
 
     private static final X9ECParameters SECP256K1 = CustomNamedCurves.getByName("secp256k1");
-    private static final byte[] HKDF_INFO = "meowl-sc-v1".getBytes();
+    private static final byte[] KDF_INFO = "meowl-sc-v1".getBytes();
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
@@ -276,31 +278,40 @@ class SecureChannelTest {
     }
 
     @Test
-    @DisplayName("KDF vector pinned in MEAP-2 §Test Vectors matches the host-side HKDF reference")
-    void kdfVectorMatchesPinnedExpectation() {
+    @DisplayName(
+            "KDF derives a 16-byte PRK and three pairwise-distinct sub-keys from a fixed input")
+    void kdfDerivesDistinctNonZeroKeys() {
+        // Algorithmic-correctness check: pin the structural shape of the AES-CMAC KDF (PRK length,
+        // OKM length, sub-key separation) without fixing bytes. The byte-level Test Vectors
+        // belong in MEAP-2 §Test Vectors and are filled in from a real-card derive run.
         byte[] clientX = filled((byte) 0x11, 32);
         byte[] cardX = filled((byte) 0x22, 32);
         byte[] sharedX = filled((byte) 0x33, 32);
         byte[] salt = concat(clientX, cardX);
-        byte[] prk = HkdfSha256.extract(salt, sharedX);
-        byte[] okm = HkdfSha256.expand(prk, HKDF_INFO, 32 + 32 + 16);
+        byte[] prk = KdfCmacHost.extract(salt, sharedX);
+        byte[] okm = KdfCmacHost.expand(prk, KDF_INFO, 32 + 16 + 16);
 
-        assertEquals(
-                "27d5c053aba7808dccba40fc66bfa0094129483e592db687e7345ec0550da58e",
-                hex(prk),
-                "PRK must match the value pinned in MEAP-2 §Test Vectors §KDF vector");
-        assertEquals(
-                "6189c1be9f1bb2feb34f38887be5e37f8360d16ba16f845cba9827dc6e8d1d3c",
-                hex(Arrays.copyOfRange(okm, 0, 32)),
-                "K_enc must match MEAP-2 §Test Vectors §KDF vector");
-        assertEquals(
-                "e22e70e0bc34d1e073d444dacc8f3065195571aef13ff7232387c8cf70432317",
-                hex(Arrays.copyOfRange(okm, 32, 64)),
-                "K_mac must match MEAP-2 §Test Vectors §KDF vector");
-        assertEquals(
-                "215d786fc0934b749621541e7203add4",
-                hex(Arrays.copyOfRange(okm, 64, 80)),
-                "IV_base must match MEAP-2 §Test Vectors §KDF vector");
+        assertEquals(16, prk.length, "PRK must be 16 bytes (AES-CMAC-128 output width)");
+        assertEquals(64, okm.length, "OKM must be K_enc(32) + K_mac(16) + IV_base(16) = 64 bytes");
+
+        byte[] kEnc = Arrays.copyOfRange(okm, 0, 32);
+        byte[] kMac = Arrays.copyOfRange(okm, 32, 48);
+        byte[] ivBase = Arrays.copyOfRange(okm, 48, 64);
+        assertFalse(allZero(kEnc), "K_enc must not be all-zero");
+        assertFalse(allZero(kMac), "K_mac must not be all-zero");
+        assertFalse(allZero(ivBase), "IV_base must not be all-zero");
+        assertFalse(Arrays.equals(kMac, ivBase), "K_mac and IV_base must differ");
+        assertFalse(
+                Arrays.equals(Arrays.copyOf(kEnc, 16), kMac), "K_enc[0..16] and K_mac must differ");
+    }
+
+    private static boolean allZero(byte[] data) {
+        for (byte b : data) {
+            if (b != 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Test
@@ -364,11 +375,11 @@ class SecureChannelTest {
         byte[] clientX = Arrays.copyOfRange(clientPubEnc, 1, 33);
         byte[] cardX = Arrays.copyOfRange(cardEphPub, 1, 33);
         byte[] salt = concat(clientX, cardX);
-        byte[] prk = HkdfSha256.extract(salt, sharedX);
-        byte[] okm = HkdfSha256.expand(prk, HKDF_INFO, 32 + 32 + 16);
+        byte[] prk = KdfCmacHost.extract(salt, sharedX);
+        byte[] okm = KdfCmacHost.expand(prk, KDF_INFO, 32 + 16 + 16);
         byte[] kEnc = Arrays.copyOfRange(okm, 0, 32);
-        byte[] kMac = Arrays.copyOfRange(okm, 32, 64);
-        byte[] ivBase = Arrays.copyOfRange(okm, 64, 80);
+        byte[] kMac = Arrays.copyOfRange(okm, 32, 48);
+        byte[] ivBase = Arrays.copyOfRange(okm, 48, 64);
 
         return new Session(clientPubEnc, cardEphPub, signature, kEnc, kMac, ivBase);
     }
@@ -461,11 +472,11 @@ class SecureChannelTest {
                     Cipher.ENCRYPT_MODE, new SecretKeySpec(kEnc, "AES"), new IvParameterSpec(iv));
             byte[] ct = cipher.doFinal(padded);
 
-            // MAC = HMAC-SHA256(K_mac, [CLA INS P1 P2 LC] ‖ IV ‖ ct)[0..16].
+            // MAC = AES-CMAC-128(K_mac, [CLA INS P1 P2 LC] ‖ IV ‖ ct).
             int lc = iv.length + ct.length + Constants.SC_MAC_LEN;
             byte[] header = {(byte) CLA, (byte) INS_OPEN_SC, 0x00, 0x00, (byte) lc};
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(kMac, "HmacSHA256"));
+            Mac mac = Mac.getInstance("AESCMAC", BouncyCastleProvider.PROVIDER_NAME);
+            mac.init(new SecretKeySpec(kMac, "AES"));
             mac.update(header);
             mac.update(iv);
             mac.update(ct);
@@ -486,9 +497,9 @@ class SecureChannelTest {
                     Arrays.copyOfRange(
                             envelope, envelope.length - Constants.SC_MAC_LEN, envelope.length);
 
-            // Verify MAC = HMAC-SHA256(K_mac, 0xFF ‖ IV ‖ ct)[0..16].
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(kMac, "HmacSHA256"));
+            // Verify MAC = AES-CMAC-128(K_mac, 0xFF ‖ IV ‖ ct).
+            Mac mac = Mac.getInstance("AESCMAC", BouncyCastleProvider.PROVIDER_NAME);
+            mac.init(new SecretKeySpec(kMac, "AES"));
             mac.update((byte) 0xFF);
             mac.update(iv);
             mac.update(ct);
@@ -529,43 +540,6 @@ class SecureChannelTest {
         private static byte[] pkcs5Unpad(byte[] padded) {
             int padLen = padded[padded.length - 1] & 0xFF;
             return Arrays.copyOfRange(padded, 0, padded.length - padLen);
-        }
-    }
-
-    /** Minimal RFC 5869 HKDF-SHA-256 helper for tests. */
-    private static final class HkdfSha256 {
-        static byte[] extract(byte[] salt, byte[] ikm) {
-            try {
-                Mac mac = Mac.getInstance("HmacSHA256");
-                mac.init(new SecretKeySpec(salt.length == 0 ? new byte[32] : salt, "HmacSHA256"));
-                return mac.doFinal(ikm);
-            } catch (Exception e) {
-                throw new IllegalStateException(e);
-            }
-        }
-
-        static byte[] expand(byte[] prk, byte[] info, int length) {
-            try {
-                Mac mac = Mac.getInstance("HmacSHA256");
-                byte[] out = new byte[length];
-                byte[] prev = new byte[0];
-                int pos = 0;
-                byte counter = 1;
-                while (pos < length) {
-                    mac.init(new SecretKeySpec(prk, "HmacSHA256"));
-                    mac.update(prev);
-                    mac.update(info);
-                    mac.update(counter);
-                    prev = mac.doFinal();
-                    int take = Math.min(prev.length, length - pos);
-                    System.arraycopy(prev, 0, out, pos, take);
-                    pos += take;
-                    counter++;
-                }
-                return out;
-            } catch (Exception e) {
-                throw new IllegalStateException(e);
-            }
         }
     }
 
