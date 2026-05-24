@@ -55,16 +55,10 @@ public final class Barrett {
     public static final short SCRATCH_LEN = 132;
 
     /** Byte length of a 256-bit modulus. */
-    public static final short MODULUS_LEN = 32;
+    private static final short MODULUS_LEN = 32;
 
     /** Byte length of the 512-bit dividend (a · b for 32-byte a, b). */
-    public static final short DIVIDEND_LEN = 64;
-
-    /**
-     * Byte length of the Barrett constant μ — one byte wider than the modulus to absorb {@code 2⁵¹²
-     * / m > 2²⁵⁶} for m near {@code 2²⁵⁶}.
-     */
-    public static final short MU_LEN = 33;
+    private static final short DIVIDEND_LEN = 64;
 
     private static final short EXT_LEN = 33;
     private static final short Q2_OFF = (short) 0;

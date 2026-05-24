@@ -12,10 +12,10 @@ import javacard.framework.Util;
  * <p>Used by {@link Wei25519} to perform the Edwards ↔ Weierstrass isomorphism after the hardware
  * EC coprocessor returns an affine Wei25519 point. The v1 {@code Field25519} class was the inner
  * loop of the software Edwards group law; in v2 only the encoding transformation lives here, so the
- * API is smaller. Scalar arithmetic ({@link #add}, {@link #sub}, {@link #neg}) delegates to {@link
- * BigNat}; multiplicative arithmetic ({@link #mul}, {@link #sqr}) uses schoolbook plus a
- * constant-time pseudo-Mersenne reducer that runs under 10 ms on J3R180 silicon. Modular inversion
- * is delegated to {@link Fp25519Inv} so the RSA dependency stays explicit.
+ * API is smaller. Additive arithmetic ({@link #sub}, {@link #increment}, {@link #decrement})
+ * delegates to {@link BigNat}; multiplicative arithmetic ({@link #mul}, {@link #sqr}) uses
+ * schoolbook plus a constant-time pseudo-Mersenne reducer that runs under 10 ms on J3R180 silicon.
+ * Modular inversion is delegated to {@link Fp25519Inv} so the RSA dependency stays explicit.
  *
  * <h2>Representation</h2>
  *

@@ -177,11 +177,6 @@ public final class Fp25519Inv {
         }
     }
 
-    /** Returns {@code true} if the platform RSA accelerator is in use, {@code false} otherwise. */
-    public boolean isHardwareAccelerated() {
-        return hardwareAvailable;
-    }
-
     /**
      * {@code out ← a⁻¹ mod p}. Throws {@link Constants#SW_INTERNAL_ERROR} on {@code a == 0}.
      *
