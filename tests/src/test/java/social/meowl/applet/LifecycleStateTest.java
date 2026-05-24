@@ -14,6 +14,7 @@ import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -95,6 +96,7 @@ class LifecycleStateTest {
     }
 
     @Nested
+    @Tag("real-card")
     @DisplayName("transitionToInTx() / resetInTx(): stateful behaviour under CardSimulator")
     class Stateful {
 

@@ -12,6 +12,7 @@ import java.util.HexFormat;
 import org.bouncycastle.math.ec.ECCurve;
 import org.bouncycastle.math.ec.ECPoint;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -26,6 +27,7 @@ import org.junit.jupiter.api.Test;
  * Three vectors exercise the encoder's parity / low-X / high-X branches; five vectors give a
  * comfortable safety margin.
  */
+@Tag("real-card")
 class Wei25519Test {
 
     private static final HexFormat HEX = HexFormat.of();

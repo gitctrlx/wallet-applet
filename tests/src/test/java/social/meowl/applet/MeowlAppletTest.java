@@ -19,6 +19,7 @@ import javax.smartcardio.ResponseAPDU;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -30,6 +31,7 @@ import org.junit.jupiter.api.Test;
  * fully isolated. Higher-level protocol behaviour (Secure Channel, PIN, signing) is covered by the
  * dedicated test classes for each subsystem.
  */
+@Tag("real-card")
 class MeowlAppletTest {
 
     private static final byte[] APPLET_AID_BYTES = {

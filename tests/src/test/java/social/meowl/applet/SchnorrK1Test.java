@@ -30,6 +30,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -46,6 +47,7 @@ import org.junit.jupiter.api.Test;
  * confirming the host-side verifier itself; one such vector is exercised in {@link
  * Bip340ReferenceVectors}.
  */
+@Tag("real-card")
 class SchnorrK1Test {
 
     private static final byte[] APPLET_AID_BYTES = {

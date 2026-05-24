@@ -13,6 +13,7 @@ import javacard.framework.AID;
 import javacard.framework.ISOException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -34,6 +35,7 @@ import org.junit.jupiter.api.Test;
  * <p>A {@link CardSimulator} is span up only to provide the JC transient-memory environment that
  * {@link ResetToFactory#ResetToFactory()} requires for its {@code CLEAR_ON_RESET} counter.
  */
+@Tag("real-card")
 class ResetToFactoryTest {
 
     private static final byte[] APPLET_AID_BYTES = {

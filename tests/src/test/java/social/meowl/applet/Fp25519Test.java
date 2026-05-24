@@ -10,6 +10,7 @@ import java.math.BigInteger;
 import java.util.Random;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -98,6 +99,7 @@ class Fp25519Test {
             }
         }
 
+        @Tag("real-card")
         @Test
         @DisplayName("inv(a) · a ≡ 1 (mod p) for 20 random non-zero a")
         void inv() {

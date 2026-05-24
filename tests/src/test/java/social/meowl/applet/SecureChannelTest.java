@@ -29,6 +29,7 @@ import org.bouncycastle.math.ec.ECPoint;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -37,6 +38,7 @@ import org.junit.jupiter.api.Test;
  * <p>Verifies the entire handshake (ECDH + HKDF-SHA-256 + authentikey ECDSA signature) and the
  * envelope round-trip (encrypt, MAC, IV monotonicity, replay defense).
  */
+@Tag("real-card")
 class SecureChannelTest {
 
     private static final byte[] APPLET_AID_BYTES = {

@@ -24,6 +24,7 @@ import org.bouncycastle.math.ec.ECPoint;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
@@ -51,6 +52,7 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
  * bench} CLI command for hardware-side numbers.
  */
 @EnabledIfSystemProperty(named = "bench", matches = "true")
+@Tag("real-card")
 class BenchmarkSuite {
 
     private static final int WARMUP = 5;

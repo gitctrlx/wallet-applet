@@ -29,6 +29,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -36,6 +37,7 @@ import org.junit.jupiter.api.Test;
  * derivation verified against the official BIP-32 vectors, and SLIP-10 Ed25519 derivation verified
  * against the official SLIP-10 vectors.
  */
+@Tag("real-card")
 class HdDerivationTest {
 
     private static final byte[] APPLET_AID_BYTES = {

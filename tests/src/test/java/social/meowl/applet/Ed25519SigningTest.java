@@ -37,6 +37,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -54,6 +55,7 @@ import org.junit.jupiter.api.Test;
  * HdDerivationTest} expects from {@code EXPORT_XPUB} are the ones whose signatures the JDK verifier
  * accepts here, closing the loop {@code seed → SLIP-10 → leaf k → A = s·B → sign}.
  */
+@Tag("real-card")
 class Ed25519SigningTest {
 
     private static final byte[] APPLET_AID_BYTES = {

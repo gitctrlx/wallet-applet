@@ -30,6 +30,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -42,6 +43,7 @@ import org.junit.jupiter.api.Test;
  * and the standard JCE. It lives inside this test file because we only need it here; once a real
  * host SDK exists in {@code tools/} it will subsume this scaffolding.
  */
+@Tag("real-card")
 class PersonalisationTest {
 
     private static final byte[] APPLET_AID_BYTES = {

@@ -32,6 +32,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -48,6 +49,7 @@ import org.junit.jupiter.api.Test;
  *   <li>{@code s ≤ ⌊n/2⌋} (proving the on-card low-{@code s} normalisation per BIP-62 / EIP-2).
  * </ol>
  */
+@Tag("real-card")
 class EcdsaK1Test {
 
     private static final byte[] APPLET_AID_BYTES = {
