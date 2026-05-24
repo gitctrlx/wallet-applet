@@ -16,7 +16,7 @@
 | Build system | Gradle 9 + Kotlin DSL |
 | CAP builder | [`ant-javacard`](https://github.com/martinpaljak/ant-javacard) (invoked natively from Gradle) |
 | SDK | Oracle JavaCard `3.2.0 v26.0`, target `3.0.5` |
-| Simulator | [`jcardsim`](https://github.com/licel/jcardsim) (`com.klinec` fork) |
+| Simulator | [`jcardsim`](https://github.com/licel/jcardsim) (`com.klinec` fork) — unit-test backend only; integration tests target real silicon |
 | Card loader | [GlobalPlatformPro](https://github.com/martinpaljak/GlobalPlatformPro) |
 | Host I/O | [`apdu4j`](https://github.com/martinpaljak/apdu4j) |
 | Tests | JUnit 6 + BouncyCastle |
@@ -38,6 +38,19 @@ gh attestation verify meowl-applet.cap --repo qntx/meowl-applet
 ```
 
 > The default AID prefix `F0` lives in the ISO/IEC 7816-5 *proprietary* range — fine for development. For production deployments register your own RID per ISO/IEC 7816-5.
+
+## Testing
+
+`meowl-applet` is single-target hardened for **NXP JCOP4 J3R180 (P71)**. Algorithm choices, key types, and memory layouts are picked from the JCAlgTest profile pinned in [`3rdparty/NXPJ3R180_NFC_1_ALGSUPPORT_*.csv`](3rdparty/) — no jcardsim-shaped fallbacks.
+
+Tests are split into two tracks via JUnit tags:
+
+| Task | Scope | Status |
+| --- | --- | --- |
+| `./gradlew :tests:test` | Pure unit tests + simulator-safe assertions (`HmacShaTest`, `BarrettTest`, `BigNatTest`, `Fp25519Test` arithmetic, `BoundsTest`, `ApduTlvTest`, `SchnorrTagHashTest`, `SecureChannelStripPkcs5Test`, `LifecycleStateTest.IsLegalForward`, …) | ✅ Default; runs in CI |
+| `./gradlew :tests:realCardTest` | `@Tag("real-card")` suites: `MeowlAppletTest`, `SecureChannelTest`, `SchnorrK1Test`, `EcdsaK1Test`, `Ed25519SigningTest`, `HdDerivationTest`, `PersonalisationTest`, `ResetToFactoryTest`, `Wei25519Test`, `BenchmarkSuite`, `LifecycleStateTest.Stateful`, `Fp25519Test.Multiplicative.inv` | 🚧 Placeholder — wired to a future `CardClient` / `RealCardClient` PCSC backend epic; today it still drives jcardsim and fails by design (J3R180 transient EC keys + prime-modulus RSA are out of jcardsim's surface) |
+
+Until the real-card backend lands, **every release tag is gated on a manual `./gradlew :tools:run --args="bench"` run against a real J3R180** plus a structural smoke test through the `meowl` CLI. The simulator alone is not a sufficient correctness target — the [`:applet:Fp25519Inv`](applet/src/main/java/social/meowl/applet/Fp25519Inv.java) RSA path and [`:applet:EcPoint`](applet/src/main/java/social/meowl/applet/EcPoint.java) transient EC key allocation only function on the real chip.
 
 ## Host-side CLI (`meowl`)
 
