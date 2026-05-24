@@ -40,27 +40,29 @@ import javacard.security.KeyBuilder;
  */
 public final class EcPoint {
 
-    /** Closure-style hook installed once at construction; sets curve parameters on the EC key. */
-    public interface CurveSetup {
-        /** Configures {@code key} with all curve parameters (p, a, b, G, r, k). */
-        void apply(ECPrivateKey key);
-    }
+    /** Curve selector: secp256k1 (BIP-32 / ECDSA / BIP-340 Schnorr). */
+    public static final byte CURVE_SECP256K1 = (byte) 0;
+
+    /** Curve selector: Wei25519 (short-Weierstrass bridge to Ed25519). */
+    public static final byte CURVE_WEI25519 = (byte) 1;
 
     private final KeyAgreement ka;
     private final ECPrivateKey scalarKey;
-    private final CurveSetup curveSetup;
+    private final byte curveKind;
     private final byte[] curveParams;
     private final short generatorOff;
     private final short pointLen;
 
     /**
-     * Builds an EcPoint engine for the curve described by {@code setup}.
+     * Builds an EcPoint engine for the curve identified by {@code curveKind}.
      *
-     * <p>The {@link CurveSetup} reference is kept and re-applied on every {@code multiply*}
-     * invocation: a {@code TRANSIENT_DESELECT} EC private key loses its field / curve parameters
-     * across a deselect, so the engine MUST reload them per call rather than only at install time.
+     * <p>Curve parameters are re-applied on every {@code multiply*} invocation: a {@code
+     * TRANSIENT_DESELECT} EC private key loses its field / curve parameters across a deselect, so
+     * the engine MUST reload them per call rather than only at install time. The dispatch is a
+     * single {@code if} on {@link #curveKind} — cheaper in both bytecode and CAP footprint than the
+     * SAM closure pattern (each {@code new CurveSetup() { ... }} spawns its own CAP class).
      *
-     * @param setup applies curve parameters (p, a, b, G, r, k) onto an ECPrivateKey.
+     * @param curveKind one of {@link #CURVE_SECP256K1}, {@link #CURVE_WEI25519}.
      * @param curveParams packed parameter array; the base point uncompressed encoding lives at
      *     {@code curveParams[generatorOff..generatorOff + pointLen]}.
      * @param generatorOff offset of the base point inside {@code curveParams}.
@@ -68,7 +70,7 @@ public final class EcPoint {
      * @param keyBitLength bit length of the curve scalar (256 for secp256k1 and Wei25519).
      */
     public EcPoint(
-            CurveSetup setup,
+            byte curveKind,
             byte[] curveParams,
             short generatorOff,
             short pointLen,
@@ -87,7 +89,7 @@ public final class EcPoint {
                             KeyBuilder.buildKey(KeyBuilder.TYPE_EC_FP_PRIVATE, keyBitLength, false);
         }
         this.scalarKey = key;
-        this.curveSetup = setup;
+        this.curveKind = curveKind;
         try {
             this.ka = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY, false);
         } catch (javacard.security.CryptoException e) {
@@ -108,7 +110,7 @@ public final class EcPoint {
      */
     public short multiplyG(
             byte[] scalar, short scalarOff, short scalarLen, byte[] out, short outOff) {
-        curveSetup.apply(scalarKey);
+        applyCurveParams();
         scalarKey.setS(scalar, scalarOff, scalarLen);
         ka.init(scalarKey);
         short len = ka.generateSecret(curveParams, generatorOff, pointLen, out, outOff);
@@ -131,7 +133,7 @@ public final class EcPoint {
             short pointOff,
             byte[] out,
             short outOff) {
-        curveSetup.apply(scalarKey);
+        applyCurveParams();
         scalarKey.setS(scalar, scalarOff, scalarLen);
         ka.init(scalarKey);
         short len = ka.generateSecret(point, pointOff, pointLen, out, outOff);
@@ -144,5 +146,13 @@ public final class EcPoint {
     /** Erases the scalar slot. Caller MUST invoke this in their {@code finally} block. */
     public void wipe() {
         scalarKey.clearKey();
+    }
+
+    private void applyCurveParams() {
+        if (curveKind == CURVE_SECP256K1) {
+            Secp256k1Curve.setCurveParameters(scalarKey);
+        } else {
+            Wei25519.setCurveParameters(scalarKey);
+        }
     }
 }

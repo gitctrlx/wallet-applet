@@ -111,12 +111,7 @@ public final class Ed25519 {
         }
         this.ec =
                 new EcPoint(
-                        new EcPoint.CurveSetup() {
-                            @Override
-                            public void apply(javacard.security.ECPrivateKey key) {
-                                Wei25519.setCurveParameters(key);
-                            }
-                        },
+                        EcPoint.CURVE_WEI25519,
                         Wei25519.G,
                         (short) 0,
                         Wei25519.POINT_UNCOMPRESSED_LEN,

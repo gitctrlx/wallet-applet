@@ -65,12 +65,7 @@ public final class Bip32 {
         this.hmac = sharedHmac512;
         this.secp256k1Ec =
                 new EcPoint(
-                        new EcPoint.CurveSetup() {
-                            @Override
-                            public void apply(javacard.security.ECPrivateKey key) {
-                                Secp256k1Curve.setCurveParameters(key);
-                            }
-                        },
+                        EcPoint.CURVE_SECP256K1,
                         Secp256k1Curve.PARAMS,
                         Secp256k1Curve.OFFSET_G,
                         Constants.EC_POINT_UNCOMPRESSED_LEN,

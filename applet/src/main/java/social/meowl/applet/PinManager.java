@@ -80,8 +80,8 @@ public final class PinManager {
         if (provisioned[0] != 0) {
             ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
         }
-        requirePinPolicy(pinLen);
-        requirePukPolicy(pukLen);
+        requireLengthPolicy(pinLen, Constants.PIN_MIN_LEN, Constants.PIN_MAX_LEN);
+        requireLengthPolicy(pukLen, Constants.PUK_MIN_LEN, Constants.PUK_MAX_LEN);
         pin.update(pinBuf, pinOffset, (byte) pinLen);
         puk.update(pukBuf, pukOffset, (byte) pukLen);
         provisioned[0] = 1;
@@ -96,25 +96,7 @@ public final class PinManager {
      */
     public void verifyPin(byte[] buf, short offset, short length) {
         requireProvisioned();
-        // Probe getTriesRemaining first so a blocked PIN reports as blocked regardless of length.
-        byte triesRemaining = pin.getTriesRemaining();
-        if (triesRemaining == 0) {
-            ISOException.throwIt(Constants.SW_AUTH_BLOCKED);
-        }
-        // Bounds-check before OwnerPIN.check (which raises AIOOBE on length > maxPINSize). Policy
-        // violations return SW_WRONG_LENGTH without consuming a retry — the same SW is returned
-        // for every length-violating input regardless of candidate bytes, so this path leaks no
-        // information to a brute-force attacker.
-        if (length < Constants.PIN_MIN_LEN || length > Constants.PIN_MAX_LEN) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
-        }
-        if (!pin.check(buf, offset, (byte) length)) {
-            byte remaining = pin.getTriesRemaining();
-            if (remaining == 0) {
-                ISOException.throwIt(Constants.SW_AUTH_BLOCKED);
-            }
-            ISOException.throwIt((short) (Constants.SW_PIN_RETRIES_BASE | (remaining & 0x0F)));
-        }
+        verifyOwnerPin(pin, buf, offset, length, Constants.PIN_MIN_LEN, Constants.PIN_MAX_LEN);
     }
 
     /**
@@ -129,7 +111,7 @@ public final class PinManager {
             short newOffset,
             short newLen) {
         requireProvisioned();
-        requirePinPolicy(newLen);
+        requireLengthPolicy(newLen, Constants.PIN_MIN_LEN, Constants.PIN_MAX_LEN);
         verifyPin(oldBuf, oldOffset, oldLen);
         JCSystem.beginTransaction();
         pin.update(newBuf, newOffset, (byte) newLen);
@@ -145,8 +127,9 @@ public final class PinManager {
             short newOffset,
             short newLen) {
         requireProvisioned();
-        requirePukPolicy(newLen);
-        verifyPukInternal(oldBuf, oldOffset, oldLen);
+        requireLengthPolicy(newLen, Constants.PUK_MIN_LEN, Constants.PUK_MAX_LEN);
+        verifyOwnerPin(
+                puk, oldBuf, oldOffset, oldLen, Constants.PUK_MIN_LEN, Constants.PUK_MAX_LEN);
         JCSystem.beginTransaction();
         puk.update(newBuf, newOffset, (byte) newLen);
         JCSystem.commitTransaction();
@@ -168,8 +151,9 @@ public final class PinManager {
         if (pin.getTriesRemaining() != 0) {
             ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
         }
-        verifyPukInternal(pukBuf, pukOffset, pukLen);
-        requirePinPolicy(newPinLen);
+        verifyOwnerPin(
+                puk, pukBuf, pukOffset, pukLen, Constants.PUK_MIN_LEN, Constants.PUK_MAX_LEN);
+        requireLengthPolicy(newPinLen, Constants.PIN_MIN_LEN, Constants.PIN_MAX_LEN);
         JCSystem.beginTransaction();
         pin.update(newPinBuf, newPinOffset, (byte) newPinLen);
         pin.resetAndUnblock();
@@ -217,16 +201,24 @@ public final class PinManager {
         return isProvisioned() ? puk.getTriesRemaining() : Constants.PUK_RETRY_LIMIT;
     }
 
-    private void verifyPukInternal(byte[] buf, short offset, short length) {
-        byte triesRemaining = puk.getTriesRemaining();
+    /**
+     * Shared verify backbone: tries-remaining probe → length-policy gate → {@link OwnerPIN#check}.
+     * On a wrong candidate, raises {@code SW_PIN_RETRIES_BASE | n} (or {@code SW_AUTH_BLOCKED} on
+     * exhaustion). Length-policy violations return {@code SW_WRONG_LENGTH} <em>without</em>
+     * consuming a retry — the same SW is returned for every length-violating input regardless of
+     * candidate bytes, so this path leaks no information to a brute-force attacker.
+     */
+    private static void verifyOwnerPin(
+            OwnerPIN owner, byte[] buf, short offset, short length, byte minLen, byte maxLen) {
+        byte triesRemaining = owner.getTriesRemaining();
         if (triesRemaining == 0) {
             ISOException.throwIt(Constants.SW_AUTH_BLOCKED);
         }
-        if (length < Constants.PUK_MIN_LEN || length > Constants.PUK_MAX_LEN) {
+        if (length < minLen || length > maxLen) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        if (!puk.check(buf, offset, (byte) length)) {
-            byte remaining = puk.getTriesRemaining();
+        if (!owner.check(buf, offset, (byte) length)) {
+            byte remaining = owner.getTriesRemaining();
             if (remaining == 0) {
                 ISOException.throwIt(Constants.SW_AUTH_BLOCKED);
             }
@@ -234,14 +226,8 @@ public final class PinManager {
         }
     }
 
-    private static void requirePinPolicy(short length) {
-        if (length < Constants.PIN_MIN_LEN || length > Constants.PIN_MAX_LEN) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
-        }
-    }
-
-    private static void requirePukPolicy(short length) {
-        if (length < Constants.PUK_MIN_LEN || length > Constants.PUK_MAX_LEN) {
+    private static void requireLengthPolicy(short length, byte minLen, byte maxLen) {
+        if (length < minLen || length > maxLen) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
     }

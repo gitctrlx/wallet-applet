@@ -37,6 +37,12 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
      */
     private static final short INNER_SCRATCH_LEN = (short) 128;
 
+    /** Selector for {@link #signWithDigest}: secp256k1 ECDSA signer. */
+    private static final byte SIGNER_ECDSA_K1 = (byte) 0;
+
+    /** Selector for {@link #signWithDigest}: BIP-340 Schnorr signer. */
+    private static final byte SIGNER_SCHNORR_K1 = (byte) 1;
+
     private final LifecycleState state;
     private final Authentikey authentikey;
     private final ResetToFactory resetTrigger;
@@ -50,6 +56,13 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     private final Schnorr schnorr;
     private final Ed25519 ed25519;
     private final byte[] innerScratch;
+
+    /**
+     * Transient {@code [off1, len1, off2, len2]} workspace populated by {@link
+     * #parseTwoLengthPrefixedFields}. Four {@code short} entries shared across PIN/PUK setup,
+     * change-pin, change-puk, unblock-pin — single-threaded APDU dispatch keeps the reads ordered.
+     */
+    private final short[] twoFieldDesc;
 
     private MeowlApplet() {
         HmacSha sharedHmac256 = new HmacSha(HmacSha.ALG_SHA_256);
@@ -73,6 +86,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         this.ed25519 = new Ed25519(sharedScratch, sharedInv);
         this.innerScratch =
                 JCSystem.makeTransientByteArray(INNER_SCRATCH_LEN, JCSystem.CLEAR_ON_DESELECT);
+        this.twoFieldDesc = JCSystem.makeTransientShortArray((short) 4, JCSystem.CLEAR_ON_DESELECT);
         register();
     }
 
@@ -254,23 +268,13 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         if (dataLen < (short) (1 + Constants.PIN_MIN_LEN + 1 + Constants.PUK_MIN_LEN)) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        short cursor = dataOff;
-        short pinLen = (short) (buffer[cursor++] & 0xFF);
-        short pinDataOff = cursor;
-        cursor += pinLen;
-        if ((short) (cursor + 1) > (short) (dataOff + dataLen)) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
-        }
-        short pukLen = (short) (buffer[cursor++] & 0xFF);
-        short pukDataOff = cursor;
-        if ((short) (cursor + pukLen) != (short) (dataOff + dataLen)) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
-        }
+        parseTwoLengthPrefixedFields(buffer, dataOff, dataLen);
         // PIN, PUK, provisioned flag and lifecycle advance commit atomically: a power loss between
         // them would brick the card (VERIFY_PIN gated out by the FSM, SETUP rejected by the
         // already-provisioned guard).
         JCSystem.beginTransaction();
-        pinManager.setupInTx(buffer, pinDataOff, pinLen, buffer, pukDataOff, pukLen);
+        pinManager.setupInTx(
+                buffer, twoFieldDesc[0], twoFieldDesc[1], buffer, twoFieldDesc[2], twoFieldDesc[3]);
         state.transitionToInTx(LifecycleState.SETUP_DONE);
         JCSystem.commitTransaction();
         return 0;
@@ -285,19 +289,9 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     /** {@code CHANGE_PIN} inner data layout: {@code [oldLen(1), old, newLen(1), new]}. */
     private short handleChangePin(byte[] buffer, short dataOff, short dataLen) {
         state.requireAtLeast(LifecycleState.SETUP_DONE);
-        short cursor = dataOff;
-        short oldLen = (short) (buffer[cursor++] & 0xFF);
-        short oldOff = cursor;
-        cursor += oldLen;
-        if ((short) (cursor + 1) > (short) (dataOff + dataLen)) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
-        }
-        short newLen = (short) (buffer[cursor++] & 0xFF);
-        short newOff = cursor;
-        if ((short) (cursor + newLen) != (short) (dataOff + dataLen)) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
-        }
-        pinManager.changePin(buffer, oldOff, oldLen, buffer, newOff, newLen);
+        parseTwoLengthPrefixedFields(buffer, dataOff, dataLen);
+        pinManager.changePin(
+                buffer, twoFieldDesc[0], twoFieldDesc[1], buffer, twoFieldDesc[2], twoFieldDesc[3]);
         return 0;
     }
 
@@ -309,39 +303,44 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     private short handleChangePuk(byte[] buffer, short dataOff, short dataLen) {
         state.requireAtLeast(LifecycleState.SETUP_DONE);
         requirePinVerified();
-        short cursor = dataOff;
-        short oldLen = (short) (buffer[cursor++] & 0xFF);
-        short oldOff = cursor;
-        cursor += oldLen;
-        if ((short) (cursor + 1) > (short) (dataOff + dataLen)) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
-        }
-        short newLen = (short) (buffer[cursor++] & 0xFF);
-        short newOff = cursor;
-        if ((short) (cursor + newLen) != (short) (dataOff + dataLen)) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
-        }
-        pinManager.changePuk(buffer, oldOff, oldLen, buffer, newOff, newLen);
+        parseTwoLengthPrefixedFields(buffer, dataOff, dataLen);
+        pinManager.changePuk(
+                buffer, twoFieldDesc[0], twoFieldDesc[1], buffer, twoFieldDesc[2], twoFieldDesc[3]);
         return 0;
     }
 
     /** {@code UNBLOCK_PIN} inner data layout: {@code [pukLen(1), PUK, newPinLen(1), newPIN]}. */
     private short handleUnblockPin(byte[] buffer, short dataOff, short dataLen) {
         state.requireAtLeast(LifecycleState.SETUP_DONE);
+        parseTwoLengthPrefixedFields(buffer, dataOff, dataLen);
+        pinManager.unblockPin(
+                buffer, twoFieldDesc[0], twoFieldDesc[1], buffer, twoFieldDesc[2], twoFieldDesc[3]);
+        return 0;
+    }
+
+    /**
+     * Parses two length-prefixed byte fields {@code [len1(1), field1, len2(1), field2]} from {@code
+     * buffer[dataOff .. dataOff + dataLen]} and stages the result into {@link #twoFieldDesc} as
+     * {@code [off1, len1, off2, len2]}. Raises {@link Constants#SW_WRONG_LENGTH} if either length
+     * prefix overruns the available data.
+     */
+    private void parseTwoLengthPrefixedFields(byte[] buffer, short dataOff, short dataLen) {
         short cursor = dataOff;
-        short pukLen = (short) (buffer[cursor++] & 0xFF);
-        short pukOff = cursor;
-        cursor += pukLen;
+        short len1 = (short) (buffer[cursor++] & 0xFF);
+        short off1 = cursor;
+        cursor += len1;
         if ((short) (cursor + 1) > (short) (dataOff + dataLen)) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        short newPinLen = (short) (buffer[cursor++] & 0xFF);
-        short newPinOff = cursor;
-        if ((short) (cursor + newPinLen) != (short) (dataOff + dataLen)) {
+        short len2 = (short) (buffer[cursor++] & 0xFF);
+        short off2 = cursor;
+        if ((short) (cursor + len2) != (short) (dataOff + dataLen)) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        pinManager.unblockPin(buffer, pukOff, pukLen, buffer, newPinOff, newPinLen);
-        return 0;
+        twoFieldDesc[0] = off1;
+        twoFieldDesc[1] = len1;
+        twoFieldDesc[2] = off2;
+        twoFieldDesc[3] = len2;
     }
 
     private short handleExportPkiPubkey(byte[] buffer) {
@@ -541,27 +540,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
      * Returns {@code [r(32), s(32)]} with {@code s} low-{@code s} normalised per BIP-62 / EIP-2.
      */
     private short handleSignEcdsaK1(byte[] buffer, short dataOff, short dataLen) {
-        state.require(LifecycleState.SEEDED);
-        requirePinVerified();
-        if (dataLen < (short) (1 + Constants.DIGEST_LEN)) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
-        }
-        short depth = (short) (buffer[dataOff] & 0xFF);
-        if (depth > Constants.HD_MAX_DEPTH
-                || (short) (1 + depth * Bip32.INDEX_LEN + Constants.DIGEST_LEN) != dataLen) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
-        }
-        short pathOff = (short) (dataOff + 1);
-        short digestOff = (short) (pathOff + depth * Bip32.INDEX_LEN);
-        // Stage the digest in innerScratch so the response (anchored at OFFSET_CDATA) cannot
-        // trample the input bytes mid-signature; try-finally wipe clears it even on exception.
-        Util.arrayCopyNonAtomic(buffer, digestOff, innerScratch, (short) 0, Constants.DIGEST_LEN);
-        try {
-            return ecdsaK1.signDigest(
-                    buffer, pathOff, depth, innerScratch, (short) 0, buffer, ISO7816.OFFSET_CDATA);
-        } finally {
-            Util.arrayFillNonAtomic(innerScratch, (short) 0, Constants.DIGEST_LEN, (byte) 0);
-        }
+        return signWithDigest(buffer, dataOff, dataLen, SIGNER_ECDSA_K1);
     }
 
     /**
@@ -570,6 +549,17 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
      * {@link Schnorr}; aux randomness from the on-card RNG makes the signature non-deterministic.
      */
     private short handleSignSchnorrK1(byte[] buffer, short dataOff, short dataLen) {
+        return signWithDigest(buffer, dataOff, dataLen, SIGNER_SCHNORR_K1);
+    }
+
+    /**
+     * Common backbone of {@code SIGN_ECDSA_K1} and {@code SIGN_SCHNORR_K1}: enforce lifecycle + PIN
+     * gating, validate the {@code [depth(1), path(4*depth), digest(32)]} envelope, stage the digest
+     * into {@link #innerScratch} (so the signature output anchored at {@code OFFSET_CDATA} cannot
+     * trample it mid-flight), dispatch to the selected primitive, and wipe the staged digest on
+     * every code path.
+     */
+    private short signWithDigest(byte[] buffer, short dataOff, short dataLen, byte signerKind) {
         state.require(LifecycleState.SEEDED);
         requirePinVerified();
         if (dataLen < (short) (1 + Constants.DIGEST_LEN)) {
@@ -582,10 +572,18 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         }
         short pathOff = (short) (dataOff + 1);
         short digestOff = (short) (pathOff + depth * Bip32.INDEX_LEN);
-        // Stage the digest in innerScratch so the response (anchored at OFFSET_CDATA) cannot
-        // trample the input bytes mid-signature; try-finally wipe clears it even on exception.
         Util.arrayCopyNonAtomic(buffer, digestOff, innerScratch, (short) 0, Constants.DIGEST_LEN);
         try {
+            if (signerKind == SIGNER_ECDSA_K1) {
+                return ecdsaK1.signDigest(
+                        buffer,
+                        pathOff,
+                        depth,
+                        innerScratch,
+                        (short) 0,
+                        buffer,
+                        ISO7816.OFFSET_CDATA);
+            }
             return schnorr.signDigest(
                     buffer, pathOff, depth, innerScratch, (short) 0, buffer, ISO7816.OFFSET_CDATA);
         } finally {
