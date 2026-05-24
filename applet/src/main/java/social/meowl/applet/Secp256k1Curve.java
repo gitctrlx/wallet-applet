@@ -297,6 +297,6 @@ public final class Secp256k1Curve {
         key.setB(PARAMS, OFFSET_B, SCALAR_LEN);
         key.setR(PARAMS, OFFSET_N, SCALAR_LEN);
         key.setG(PARAMS, OFFSET_G, POINT_UNCOMPRESSED_LEN);
-        key.setK((short) 1);
+        key.setK(COFACTOR);
     }
 }
