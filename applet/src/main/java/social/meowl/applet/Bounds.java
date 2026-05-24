@@ -19,7 +19,7 @@ final class Bounds {
 
     /**
      * Verifies that {@code dst[offset .. offset + needed]} is a valid sub-range. Raises {@link
-     * Constants#SW_WRONG_LENGTH} on any malformed input (null buffer, negative offset or length,
+     * Constants.Sw#WRONG_LENGTH} on any malformed input (null buffer, negative offset or length,
      * insufficient capacity).
      */
     static void requireCapacity(byte[] dst, short offset, short needed) {

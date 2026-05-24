@@ -25,7 +25,7 @@ import javacard.security.RandomData;
  *   <li>{@code P = d' · G}; {@code d ← (y(P) odd ? n − d' : d')}.
  *   <li>{@code aux ← RNG(32)}, {@code t ← bytes(d) ⊕ tagged_hash("BIP0340/aux", aux)}.
  *   <li>{@code rand ← tagged_hash("BIP0340/nonce", t ‖ bytes(P) ‖ m)}.
- *   <li>{@code k' ← int(rand) mod n}; if {@code k' == 0} raise {@link Constants#SW_INTERNAL_ERROR}.
+ *   <li>{@code k' ← int(rand) mod n}; if {@code k' == 0} raise {@link Constants.Sw#INTERNAL_ERROR}.
  *   <li>{@code R = k' · G}; {@code k ← (y(R) odd ? n − k' : k')}.
  *   <li>{@code e ← int(tagged_hash("BIP0340/challenge", bytes(R) ‖ bytes(P) ‖ m)) mod n}.
  *   <li>{@code s ← (k + e · d) mod n}; emit {@code bytes(R) ‖ s} (64 bytes).
@@ -146,7 +146,7 @@ public final class Schnorr {
      * pathBuf[pathOff..pathOff + 4·depth]} per BIP-340, writing {@code bytes(R) ‖ s} to {@code
      * outBuf}.
      *
-     * @return {@link Constants#SIG_LEN_R_S}
+     * @return {@link Constants.Ec#SIG_LEN_R_S}
      */
     public short signDigest(
             byte[] pathBuf,

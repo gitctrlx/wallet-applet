@@ -102,7 +102,7 @@ public final class EcPoint {
      * Computes {@code scalar · G} on this curve and writes the result as an uncompressed point
      * ({@code 0x04 ‖ X ‖ Y}) to {@code out[outOff..outOff + 65]}.
      *
-     * @return {@link #pointLen} on success; throws {@link Constants#SW_UNSUPPORTED_FEATURE} if the
+     * @return {@link #pointLen} on success; throws {@link Constants.Sw#UNSUPPORTED_FEATURE} if the
      *     hardware engine returns an unexpected length or prefix byte (defensive — JC native
      *     ECDH-XY always returns 65 with the {@code 0x04} prefix).
      */

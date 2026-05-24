@@ -13,7 +13,7 @@ import javacard.framework.Util;
  *
  * <p>Every method returns the offset immediately past the last byte written, so call sites can
  * chain writes without keeping a separate cursor. Misuse (oversized value, illegal offset,
- * source/destination overrun) raises {@link Constants#SW_WRONG_LENGTH}.
+ * source/destination overrun) raises {@link Constants.Sw#WRONG_LENGTH}.
  */
 public final class ApduTlv {
 
@@ -60,7 +60,7 @@ public final class ApduTlv {
      * Writes a TLV record carrying {@code length} bytes copied from {@code src} starting at {@code
      * srcOffset}.
      *
-     * <p>Raises {@link Constants#SW_WRONG_LENGTH} if {@code length} exceeds {@link #MAX_VALUE_LEN},
+     * <p>Raises {@link Constants.Sw#WRONG_LENGTH} if {@code length} exceeds {@link #MAX_VALUE_LEN},
      * if the source range is malformed, or if the destination cannot hold the record.
      *
      * @return the offset immediately after the written record
@@ -98,7 +98,7 @@ public final class ApduTlv {
      * Completes a record previously opened with {@link #reserve(byte[], short, byte)}.
      *
      * <p>The {@code header + value} range is bounds-checked against {@code dst} so a programmer
-     * error (value written past the buffer end) surfaces as {@link Constants#SW_WRONG_LENGTH}
+     * error (value written past the buffer end) surfaces as {@link Constants.Sw#WRONG_LENGTH}
      * rather than a {@code 6F00} from the runtime's {@link IndexOutOfBoundsException}.
      *
      * @param headerOffset the offset returned by the original {@code reserve} call, minus 2 — i.e.

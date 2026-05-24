@@ -52,7 +52,7 @@ public final class LifecycleState {
      * Advances to {@code target}, which must equal {@code current + 1}. Manages its own
      * transaction; use {@link #transitionToInTx} when the caller already holds an open one and
      * wants the lifecycle advance to commit atomically with sibling mutations. Throws {@link
-     * Constants#SW_LIFECYCLE_INVALID} if the move is illegal.
+     * Constants.Sw#LIFECYCLE_INVALID} if the move is illegal.
      */
     public void transitionTo(byte target) {
         if (!isLegalForward(current, target)) {
@@ -91,7 +91,7 @@ public final class LifecycleState {
     }
 
     /**
-     * Asserts {@code current == required}; throws {@link Constants#SW_LIFECYCLE_INVALID} otherwise.
+     * Asserts {@code current == required}; throws {@link Constants.Sw#LIFECYCLE_INVALID} otherwise.
      */
     public void require(byte required) {
         if (current != required) {
@@ -100,7 +100,7 @@ public final class LifecycleState {
     }
 
     /**
-     * Asserts {@code current >= minimum}; throws {@link Constants#SW_LIFECYCLE_INVALID} otherwise.
+     * Asserts {@code current >= minimum}; throws {@link Constants.Sw#LIFECYCLE_INVALID} otherwise.
      */
     public void requireAtLeast(byte minimum) {
         if (current < minimum) {

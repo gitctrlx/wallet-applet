@@ -23,7 +23,7 @@ import javacard.security.Signature;
  *       ECDSA-SHA-256-equivalent signature produced from the digest with the authentikey private
  *       key.
  *   <li><b>IMPORT_PKI_CERT</b> — manufacturer-issued certificate is uploaded in {@link
- *       Constants#PKI_CERT_CHUNK_MAX_LEN}-byte chunks. Three-step protocol:
+ *       Constants.Pki#CERT_CHUNK_MAX_LEN}-byte chunks. Three-step protocol:
  *       <ul>
  *         <li>{@code P1 = 0x00 (INIT)} — data = {@code totalSize (2 BE)}. Allocates EEPROM.
  *         <li>{@code P1 = 0x01 (WRITE)} — data = {@code offset (2 BE) ‖ chunk}.
@@ -38,7 +38,7 @@ import javacard.security.Signature;
  * </ol>
  *
  * <p>Storage: the certificate lives in EEPROM-backed {@link #cert}, sized at {@link
- * Constants#PKI_CERT_MAX_LEN}. Two book-keeping fields ({@link #importedLen}, {@link
+ * Constants.Pki#CERT_MAX_LEN}. Two book-keeping fields ({@link #importedLen}, {@link
  * #stagedTotalLen}) follow the chunked import protocol.
  */
 public final class PkiManager {

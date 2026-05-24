@@ -18,7 +18,7 @@ import javacard.framework.Util;
  *   c_i = I[32..64]
  * </pre>
  *
- * <p>A non-hardened index (top bit clear) raises {@link Constants#SW_CONDITIONS_NOT_SATISFIED} —
+ * <p>A non-hardened index (top bit clear) raises {@link Constants.Sw#CONDITIONS_NOT_SATISFIED} —
  * the safe reading of SLIP-10's "non-hardened derivation is not defined". The two derivation entry
  * points sitting on top of the shared walk are {@link #deriveChainCode} (chain code only) and
  * {@link #deriveLeafKey} (32-byte secret-key seed, used by {@code SIGN_ED25519} and the Ed25519

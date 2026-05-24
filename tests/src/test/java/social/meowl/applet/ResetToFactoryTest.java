@@ -25,7 +25,7 @@ import org.junit.jupiter.api.Test;
  * <ul>
  *   <li>countdown sequence and final wipe status word;
  *   <li>{@link ResetToFactory#rearm} restores the counter to {@link
- *       Constants#RESET_REQUIRED_INVOCATIONS};
+ *       Constants.Reset#REQUIRED_INVOCATIONS};
  *   <li>the counter is rearmed <em>before</em> {@link WipeTrigger#wipe} runs so an exception out of
  *       {@code wipe()} cannot leave {@code remaining[0] = 0} and emit a spurious {@code 0x6FFF} on
  *       the next invocation.

@@ -93,7 +93,7 @@ public final class EcdsaK1 {
      * pathBuf[pathOff..pathOff + 4·depth]}, writing {@code r(32) ‖ s(32)} with low-{@code s}
      * normalised.
      *
-     * @return {@link Constants#SIG_LEN_R_S}
+     * @return {@link Constants.Ec#SIG_LEN_R_S}
      */
     public short signDigest(
             byte[] pathBuf,
@@ -150,7 +150,7 @@ public final class EcdsaK1 {
      * bytes each.
      *
      * <p>Strict parser: anything outside the well-formed encoding produced by JC's native ECDSA
-     * raises {@link Constants#SW_UNSUPPORTED_FEATURE}, signalling a buggy silicon implementation.
+     * raises {@link Constants.Sw#UNSUPPORTED_FEATURE}, signalling a buggy silicon implementation.
      */
     private void parseDerSignature(byte[] der, short derOff, short derLen) {
         if (derLen < (short) (DER_INT_HEADER + 1 + DER_INT_HEADER + 1)
