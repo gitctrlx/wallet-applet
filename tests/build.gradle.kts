@@ -52,13 +52,19 @@ tasks.test {
     }
 }
 
-// Opt-in `realCardTest` task: runs the integration tests tagged `real-card`. Today
-// these still wire jcardsim's `CardSimulator` and therefore fail (the simulator
-// cannot satisfy the J3R180-only key types); the task is a placeholder for the
-// upcoming `CardClient` abstraction + `RealCardClient` PCSC backend epic. Once
-// that lands, run with `./gradlew :tests:realCardTest -Preader=ACR1552U-MF`.
+// Opt-in `realCardTest` task: runs the @Tag("real-card") suites against a physical
+// J3R180 via PCSC. Drives `RealCardClient` from `social.meowl.applet.cardclient`,
+// which talks to `javax.smartcardio` over whatever PCSC reader the environment
+// surfaces. The applet must already be installed on the card.
+//
+// Usage:
+//   ./gradlew :tests:realCardTest                     # first PCSC terminal found
+//   ./gradlew :tests:realCardTest -Preader=NAME       # explicit reader by name
+//   ./gradlew :tests:realCardTest -PuseSimulator      # force simulator backend
+//                                                     #   (most suites still fail
+//                                                     #    by design — see README)
 tasks.register<Test>("realCardTest") {
-    description = "Runs integration tests against a real card (currently a placeholder — see README)."
+    description = "Runs @Tag(\"real-card\") integration tests against a real J3R180 via PCSC."
     group = "verification"
     testClassesDirs = sourceSets["test"].output.classesDirs
     classpath = sourceSets["test"].runtimeClasspath
@@ -70,9 +76,14 @@ tasks.register<Test>("realCardTest") {
         showStandardStreams = true
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
+    // Default backend is `real`; opt-out via `-PuseSimulator` is provided so the
+    // task can also exercise the SimulatorCardClient path (e.g. for sanity-checking
+    // the CardClient framework itself once a J3R180-faithful simulator exists).
+    val backend = if (project.hasProperty("useSimulator")) "simulator" else "real"
+    systemProperty("cardBackend", backend)
     // Forward -Dbench=true to the forked test JVM so BenchmarkSuite (gated on the
     // system property *and* `real-card` tag) runs only when explicitly requested.
     System.getProperty("bench")?.let { systemProperty("bench", it) }
-    // Reserved hooks for the future real-card backend.
+    // Reader name flows through to RealCardClient.connect when set.
     project.findProperty("reader")?.let { systemProperty("cardReader", it.toString()) }
 }

@@ -8,28 +8,34 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.licel.jcardsim.smartcardio.CardSimulator;
-import com.licel.jcardsim.utils.AIDUtil;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import javacard.framework.AID;
 import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import social.meowl.applet.cardclient.CardClient;
+import social.meowl.applet.cardclient.CardClientFactory;
 
 /**
- * JCardSim-driven integration tests for the always-reachable outer-frame INS surface of the meowl
- * applet: {@code GET_INFO}, {@code GET_AUTHENTIKEY} and the multi-step {@code RESET_TO_FACTORY}
- * trigger.
+ * Integration tests for the always-reachable outer-frame INS surface of the meowl applet: {@code
+ * GET_INFO}, {@code GET_AUTHENTIKEY} and the multi-step {@code RESET_TO_FACTORY} trigger.
  *
- * <p>Every test starts from a freshly installed applet (see {@link #setUp()}), so each scenario is
- * fully isolated. Higher-level protocol behaviour (Secure Channel, PIN, signing) is covered by the
- * dedicated test classes for each subsystem.
+ * <p>Drives the applet through {@link CardClient}, so the same source runs on whichever backend the
+ * active Gradle task selects (simulator or PCSC). Today the simulator backend cannot install the
+ * post-Phase-1 applet, so this suite carries {@code @Tag("real-card")} and only the {@code
+ * :tests:realCardTest} task picks it up; once a J3R180-faithful simulator lands the tag can drop
+ * with no test-source change.
+ *
+ * <p>Each test starts from a freshly-selected applet — simulator backend reinstalls in
+ * {@code @BeforeEach}, real backend opens a fresh PCSC channel and disconnects with {@code reset =
+ * true} in {@link #tearDown} so the {@code CLEAR_ON_RESET} counter (and therefore the {@code
+ * RESET_TO_FACTORY} state machine) is restored between tests.
  */
 @Tag("real-card")
 class MeowlAppletTest {
@@ -49,14 +55,18 @@ class MeowlAppletTest {
     private static final int INS_SIGN_ED25519 = Constants.INS_SIGN_ED25519 & 0xFF;
     private static final int INS_IMPORT_SEED = Constants.INS_IMPORT_SEED & 0xFF;
 
-    private CardSimulator simulator;
+    private CardClient card;
 
     @BeforeEach
     void setUp() {
-        simulator = new CardSimulator();
-        AID aid = AIDUtil.create(APPLET_AID_BYTES);
-        simulator.installApplet(aid, MeowlApplet.class);
-        simulator.selectApplet(aid);
+        card = CardClientFactory.create(APPLET_AID_BYTES);
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (card != null) {
+            card.close();
+        }
     }
 
     @Nested
@@ -311,7 +321,7 @@ class MeowlAppletTest {
                 data == null
                         ? new CommandAPDU(cla, ins, p1, p2)
                         : new CommandAPDU(cla, ins, p1, p2, data);
-        return simulator.transmitCommand(cmd);
+        return card.transmit(cmd);
     }
 
     private static Map<Integer, byte[]> parseTlv(byte[] blob) {
