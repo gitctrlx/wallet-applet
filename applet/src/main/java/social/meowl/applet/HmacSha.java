@@ -7,19 +7,16 @@ package social.meowl.applet;
 import javacard.framework.JCSystem;
 import javacard.framework.Util;
 import javacard.security.CryptoException;
-import javacard.security.HMACKey;
-import javacard.security.KeyBuilder;
 import javacard.security.MessageDigest;
-import javacard.security.Signature;
 
 /**
- * HMAC-SHA-{256,512} engine that auto-selects between the JC platform's native implementation and
- * an RFC 2104 software fallback built on {@link MessageDigest}.
+ * HMAC-SHA-{256,512} engine, RFC 2104 software implementation built on {@link MessageDigest}.
  *
- * <p>Several JCOP-4 SECID configurations (notably {@code J3R180}) omit {@code
- * Signature.ALG_HMAC_SHA_*} and {@code TYPE_HMAC*} from the firmware catalogue. This class hides
- * the "try-native-then-fall-back-to-software" decision so every HMAC consumer ({@link Hkdf}, {@link
- * MasterSeed}, {@link Bip32}, {@link Slip10}, {@link SecureChannel}) stays agnostic.
+ * <p>The target silicon (NXP J3R180, JC 3.0.5 Classic) reports neither {@code
+ * Signature.ALG_HMAC_SHA_*} nor {@code TYPE_HMAC*} in its algorithm catalogue (see {@code
+ * 3rdparty/NXPJ3R180_NFC_1_ALGSUPPORT_*.csv}), so the only viable implementation is software. Every
+ * HMAC consumer ({@link Hkdf}, {@link MasterSeed}, {@link Bip32}, {@link Slip10}, {@link
+ * SecureChannel}) drives this engine.
  *
  * <p>Algorithm — RFC 2104:
  *
@@ -32,8 +29,8 @@ import javacard.security.Signature;
  * with {@code B = 64} for SHA-256, {@code B = 128} for SHA-512, {@code ipad = 0x36}, {@code opad =
  * 0x5C}. The padded key and inner-hash slots live in {@link JCSystem#CLEAR_ON_DESELECT} memory.
  *
- * <p>API — mirrors {@link Signature}'s {@code init → update* → sign} cycle. Each {@link #init} call
- * resets all internal state.
+ * <p>API — mirrors {@link javacard.security.Signature}'s {@code init → update* → sign} cycle. Each
+ * {@link #init} call resets all internal state.
  */
 public final class HmacSha {
 
@@ -50,20 +47,11 @@ public final class HmacSha {
     private final short blockSize;
     private final short hashSize;
 
-    /** Native HMAC primitive; {@code null} when the platform refused to instantiate it. */
-    private final Signature nativeSig;
+    /** Scratch holding {@code K'} (zero-padded to {@link #blockSize}). */
+    private final byte[] padded;
 
-    /** Native HMAC key holder; {@code null} on the software path. */
-    private final HMACKey nativeKey;
-
-    /**
-     * Software-path scratch holding {@code K'} (zero-padded to {@link #blockSize}). {@code null} on
-     * the native path so cards with working HMAC pay no RAM cost.
-     */
-    private final byte[] softKey;
-
-    /** Software-path scratch holding the inner hash {@code H((K' XOR ipad) || message)}. */
-    private final byte[] softInner;
+    /** Scratch holding the inner hash {@code H((K' XOR ipad) || message)}. */
+    private final byte[] inner;
 
     /**
      * Constructs an HMAC engine for {@code algorithm}, allocating its transient state.
@@ -73,32 +61,17 @@ public final class HmacSha {
      *     supported by the platform
      */
     public HmacSha(byte algorithm) {
-        this(algorithm, false);
-    }
-
-    /**
-     * Test-only factory forcing the software fallback path on platforms that do support native HMAC
-     * (jcardsim). Production code uses the public single-argument constructor.
-     */
-    static HmacSha forceSoftware(byte algorithm) {
-        return new HmacSha(algorithm, true);
-    }
-
-    private HmacSha(byte algorithm, boolean forceSoft) {
         byte mdAlg;
-        byte sigAlg;
         switch (algorithm) {
             case ALG_SHA_256:
                 this.blockSize = (short) 64;
                 this.hashSize = (short) 32;
                 mdAlg = MessageDigest.ALG_SHA_256;
-                sigAlg = Signature.ALG_HMAC_SHA_256;
                 break;
             case ALG_SHA_512:
                 this.blockSize = (short) 128;
                 this.hashSize = (short) 64;
                 mdAlg = MessageDigest.ALG_SHA_512;
-                sigAlg = Signature.ALG_HMAC_SHA_512;
                 break;
             default:
                 CryptoException.throwIt(CryptoException.ILLEGAL_VALUE);
@@ -106,37 +79,10 @@ public final class HmacSha {
         }
 
         this.digest = MessageDigest.getInstance(mdAlg, false);
-
-        Signature s = null;
-        HMACKey k = null;
-        if (!forceSoft) {
-            try {
-                s = Signature.getInstance(sigAlg, false);
-                k =
-                        (HMACKey)
-                                KeyBuilder.buildKey(
-                                        KeyBuilder.TYPE_HMAC_TRANSIENT_DESELECT,
-                                        (short) (blockSize * 8),
-                                        false);
-            } catch (CryptoException e) {
-                // Software fallback path: the platform does not implement HMAC natively.
-                s = null;
-                k = null;
-            }
-        }
-        this.nativeSig = s;
-        this.nativeKey = k;
-
-        // Software-path buffers only when needed, so cards with native HMAC pay no RAM cost.
         // CLEAR_ON_DESELECT (not CLEAR_ON_RESET) is required on cards (J3R180) whose install-time
         // CLEAR_ON_RESET pool is too small for both software engines (96 B + 192 B).
-        if (s == null) {
-            this.softKey = JCSystem.makeTransientByteArray(blockSize, JCSystem.CLEAR_ON_DESELECT);
-            this.softInner = JCSystem.makeTransientByteArray(hashSize, JCSystem.CLEAR_ON_DESELECT);
-        } else {
-            this.softKey = null;
-            this.softInner = null;
-        }
+        this.padded = JCSystem.makeTransientByteArray(blockSize, JCSystem.CLEAR_ON_DESELECT);
+        this.inner = JCSystem.makeTransientByteArray(hashSize, JCSystem.CLEAR_ON_DESELECT);
     }
 
     /**
@@ -144,32 +90,26 @@ public final class HmacSha {
      * pre-hashed, shorter keys are zero-padded.
      */
     public void init(byte[] keyBuf, short keyOff, short keyLen) {
-        if (nativeSig != null) {
-            nativeKey.setKey(keyBuf, keyOff, keyLen);
-            nativeSig.init(nativeKey, Signature.MODE_SIGN);
-            return;
-        }
-
-        // RFC 2104: build K' in softKey. Long-key (keyLen > blockSize) pre-hashes; short-key
+        // RFC 2104: build K' in padded. Long-key (keyLen > blockSize) pre-hashes; short-key
         // zero-pads. Guard the tail fill against keyLen == blockSize (zero-length fill rejected).
         if (keyLen > blockSize) {
             digest.reset();
-            digest.doFinal(keyBuf, keyOff, keyLen, softKey, (short) 0);
-            Util.arrayFillNonAtomic(softKey, hashSize, (short) (blockSize - hashSize), (byte) 0);
+            digest.doFinal(keyBuf, keyOff, keyLen, padded, (short) 0);
+            Util.arrayFillNonAtomic(padded, hashSize, (short) (blockSize - hashSize), (byte) 0);
         } else {
-            Util.arrayCopyNonAtomic(keyBuf, keyOff, softKey, (short) 0, keyLen);
+            Util.arrayCopyNonAtomic(keyBuf, keyOff, padded, (short) 0, keyLen);
             short tail = (short) (blockSize - keyLen);
             if (tail > 0) {
-                Util.arrayFillNonAtomic(softKey, keyLen, tail, (byte) 0);
+                Util.arrayFillNonAtomic(padded, keyLen, tail, (byte) 0);
             }
         }
 
-        // Prime the inner digest with (K' XOR ipad); mutate softKey in place, hash, then restore
+        // Prime the inner digest with (K' XOR ipad); mutate padded in place, hash, then restore
         // so the same buffer feeds the outer digest in doFinal without a second opadBlock copy.
-        xorBlock(softKey, IPAD);
+        xorBlock(padded, IPAD);
         digest.reset();
-        digest.update(softKey, (short) 0, blockSize);
-        xorBlock(softKey, IPAD);
+        digest.update(padded, (short) 0, blockSize);
+        xorBlock(padded, IPAD);
     }
 
     /**
@@ -177,11 +117,7 @@ public final class HmacSha {
      * calls accumulate into the same MAC; finalise with {@link #doFinal doFinal}.
      */
     public void update(byte[] inBuf, short inOff, short inLen) {
-        if (nativeSig != null) {
-            nativeSig.update(inBuf, inOff, inLen);
-        } else {
-            digest.update(inBuf, inOff, inLen);
-        }
+        digest.update(inBuf, inOff, inLen);
     }
 
     /**
@@ -192,22 +128,18 @@ public final class HmacSha {
      * @return tag length in bytes
      */
     public short doFinal(byte[] inBuf, short inOff, short inLen, byte[] outBuf, short outOff) {
-        if (nativeSig != null) {
-            return nativeSig.sign(inBuf, inOff, inLen, outBuf, outOff);
-        }
-
         // 1. inner = H((K' XOR ipad) || all_updates || inBuf[inOff..inOff+inLen])
-        digest.doFinal(inBuf, inOff, inLen, softInner, (short) 0);
+        digest.doFinal(inBuf, inOff, inLen, inner, (short) 0);
 
         // 2. outer = H((K' XOR opad) || inner)
-        xorBlock(softKey, OPAD);
+        xorBlock(padded, OPAD);
         digest.reset();
-        digest.update(softKey, (short) 0, blockSize);
-        digest.doFinal(softInner, (short) 0, hashSize, outBuf, outOff);
-        xorBlock(softKey, OPAD); // restore K' so reset() / re-init can wipe it cleanly
+        digest.update(padded, (short) 0, blockSize);
+        digest.doFinal(inner, (short) 0, hashSize, outBuf, outOff);
+        xorBlock(padded, OPAD); // restore K' so reset() / re-init can wipe it cleanly
 
         // Wipe inner defensively so a missed reset() can't leak yesterday's MAC.
-        Util.arrayFillNonAtomic(softInner, (short) 0, hashSize, (byte) 0);
+        Util.arrayFillNonAtomic(inner, (short) 0, hashSize, (byte) 0);
         return hashSize;
     }
 
@@ -229,15 +161,8 @@ public final class HmacSha {
 
     /** Wipes intermediate state and key material. Call at the end of any secret-touching flow. */
     public void reset() {
-        if (nativeKey != null) {
-            nativeKey.clearKey();
-        }
-        if (softKey != null) {
-            Util.arrayFillNonAtomic(softKey, (short) 0, blockSize, (byte) 0);
-        }
-        if (softInner != null) {
-            Util.arrayFillNonAtomic(softInner, (short) 0, hashSize, (byte) 0);
-        }
+        Util.arrayFillNonAtomic(padded, (short) 0, blockSize, (byte) 0);
+        Util.arrayFillNonAtomic(inner, (short) 0, hashSize, (byte) 0);
     }
 
     /** In-place XOR of {@code buf[0..blockSize]} with {@code mask}. */

@@ -28,8 +28,9 @@ import org.junit.jupiter.params.provider.MethodSource;
  *       size (which triggers the {@code K' = H(K)} pre-hash branch in RFC 2104 §2).
  * </ul>
  *
- * <p>Every case is verified against {@link javax.crypto.Mac} on both the native HMAC path that
- * jcardsim always supports and the {@link HmacSha#forceSoftware} path the runtime J3R180 takes.
+ * <p>Every case is verified against {@link javax.crypto.Mac}. {@link HmacSha} is the RFC 2104
+ * software implementation the runtime J3R180 takes (the chip exposes no {@code ALG_HMAC_SHA_*}
+ * primitive).
  */
 class HmacShaEdgeTest {
 
@@ -67,10 +68,10 @@ class HmacShaEdgeTest {
         return args.stream();
     }
 
-    @ParameterizedTest(name = "{0}: key={2} bytes, msg={3} bytes — native vs JDK")
+    @ParameterizedTest(name = "{0}: key={2} bytes, msg={3} bytes")
     @MethodSource("edgeCases")
-    @DisplayName("native HMAC matches JDK on every (keyLen, msgLen) boundary case")
-    void nativeMatchesJdk(String algName, String jdkAlg, int keyLen, int msgLen) throws Exception {
+    @DisplayName("HMAC matches JDK on every (keyLen, msgLen) boundary case")
+    void matchesJdk(String algName, String jdkAlg, int keyLen, int msgLen) throws Exception {
         byte alg = "SHA-256".equals(algName) ? HmacSha.ALG_SHA_256 : HmacSha.ALG_SHA_512;
         byte[] key = deterministicBytes(0x11, keyLen);
         byte[] msg = deterministicBytes(0x22, msgLen);
@@ -95,44 +96,7 @@ class HmacShaEdgeTest {
         assertArrayEquals(
                 expected,
                 got,
-                "native HMAC-"
-                        + algName
-                        + " disagrees with JDK at keyLen="
-                        + keyLen
-                        + ", msgLen="
-                        + msgLen);
-    }
-
-    @ParameterizedTest(name = "{0}: key={2} bytes, msg={3} bytes — software vs JDK")
-    @MethodSource("edgeCases")
-    @DisplayName("software HMAC fallback matches JDK on every (keyLen, msgLen) boundary case")
-    void softwareMatchesJdk(String algName, String jdkAlg, int keyLen, int msgLen)
-            throws Exception {
-        byte alg = "SHA-256".equals(algName) ? HmacSha.ALG_SHA_256 : HmacSha.ALG_SHA_512;
-        byte[] key = deterministicBytes(0x11, keyLen);
-        byte[] msg = deterministicBytes(0x22, msgLen);
-
-        Mac jdkMac = Mac.getInstance(jdkAlg);
-        jdkMac.init(new SecretKeySpec(key, jdkAlg));
-        byte[] expected = jdkMac.doFinal(msg);
-
-        HmacSha h = HmacSha.forceSoftware(alg);
-        byte[] got = new byte[expected.length];
-        short n =
-                h.sign(
-                        key,
-                        (short) 0,
-                        (short) key.length,
-                        msg,
-                        (short) 0,
-                        (short) msg.length,
-                        got,
-                        (short) 0);
-        assertEquals(expected.length, n);
-        assertArrayEquals(
-                expected,
-                got,
-                "software HMAC-"
+                "HMAC-"
                         + algName
                         + " disagrees with JDK at keyLen="
                         + keyLen

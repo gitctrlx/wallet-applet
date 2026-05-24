@@ -26,13 +26,9 @@ import org.junit.jupiter.params.provider.MethodSource;
  *       not in the RFC test set.
  * </ul>
  *
- * <p>Each scenario is exercised twice — once on the native HMAC path that jcardsim always supports,
- * and once on the {@link HmacSha#forceSoftware forceSoftware} path that mirrors the runtime J3R180
- * (and any other JC card without {@code Signature.ALG_HMAC_SHA_*}) takes. Both paths must produce
- * identical bytes for every input.
- *
- * <p>Note: this test runs in the same JVM as jcardsim's mock JC API, so {@link HmacSha} is
- * exercised as a plain Java class without an applet dispatch layer in front of it.
+ * <p>{@link HmacSha} is the RFC 2104 software implementation the runtime J3R180 takes (the chip
+ * exposes no {@code ALG_HMAC_SHA_*} primitive). This test runs in the same JVM as jcardsim's mock
+ * JC API, so {@link HmacSha} is exercised as a plain Java class without an applet dispatch layer.
  */
 class HmacShaTest {
 
@@ -125,10 +121,10 @@ class HmacShaTest {
         return args.stream();
     }
 
-    @ParameterizedTest(name = "RFC 4231 vector {0} - native HMAC-{1}")
+    @ParameterizedTest(name = "RFC 4231 vector {0} - HMAC-{1}")
     @MethodSource("rfcVectors")
-    @DisplayName("RFC 4231 vectors via native HMAC path")
-    void rfc4231Native(int idx, String algName, byte[] key, byte[] data, byte[] expected) {
+    @DisplayName("RFC 4231 vectors")
+    void rfc4231(int idx, String algName, byte[] key, byte[] data, byte[] expected) {
         HmacSha h =
                 new HmacSha("SHA-256".equals(algName) ? HmacSha.ALG_SHA_256 : HmacSha.ALG_SHA_512);
         byte[] out = new byte[expected.length];
@@ -143,31 +139,7 @@ class HmacShaTest {
                         out,
                         (short) 0);
         assertEquals(expected.length, n);
-        assertArrayEquals(
-                expected, out, "RFC 4231 vector " + idx + " mismatch (native " + algName + ")");
-    }
-
-    @ParameterizedTest(name = "RFC 4231 vector {0} - software HMAC-{1}")
-    @MethodSource("rfcVectors")
-    @DisplayName("RFC 4231 vectors via software fallback path")
-    void rfc4231Software(int idx, String algName, byte[] key, byte[] data, byte[] expected) {
-        HmacSha h =
-                HmacSha.forceSoftware(
-                        "SHA-256".equals(algName) ? HmacSha.ALG_SHA_256 : HmacSha.ALG_SHA_512);
-        byte[] out = new byte[expected.length];
-        short n =
-                h.sign(
-                        key,
-                        (short) 0,
-                        (short) key.length,
-                        data,
-                        (short) 0,
-                        (short) data.length,
-                        out,
-                        (short) 0);
-        assertEquals(expected.length, n);
-        assertArrayEquals(
-                expected, out, "RFC 4231 vector " + idx + " mismatch (software " + algName + ")");
+        assertArrayEquals(expected, out, "RFC 4231 vector " + idx + " mismatch (" + algName + ")");
     }
 
     /**
@@ -176,9 +148,9 @@ class HmacShaTest {
      * path: {@code |K| == 0}, {@code |K| < B}, {@code |K| == B}, {@code |K| > B}, and messages
      * shorter / equal / longer than the digest block.
      */
-    @ParameterizedTest(name = "software HMAC-{0} matches JDK on 200 random inputs")
+    @ParameterizedTest(name = "HMAC-{0} matches JDK on 200 random inputs")
     @org.junit.jupiter.params.provider.ValueSource(strings = {"SHA-256", "SHA-512"})
-    void softwareMatchesJdkOnRandomInputs(String algName) throws Exception {
+    void matchesJdkOnRandomInputs(String algName) throws Exception {
         String jdkAlg = "SHA-256".equals(algName) ? "HmacSHA256" : "HmacSHA512";
         byte alg = "SHA-256".equals(algName) ? HmacSha.ALG_SHA_256 : HmacSha.ALG_SHA_512;
         for (int seed = 0; seed < 200; seed++) {
@@ -197,7 +169,7 @@ class HmacShaTest {
             jdkMac.init(new SecretKeySpec(safeKey, jdkAlg));
             byte[] expected = jdkMac.doFinal(msg);
 
-            HmacSha h = HmacSha.forceSoftware(alg);
+            HmacSha h = new HmacSha(alg);
             byte[] out = new byte[expected.length];
             h.sign(
                     safeKey,
@@ -212,7 +184,7 @@ class HmacShaTest {
             assertArrayEquals(
                     expected,
                     out,
-                    "software HMAC-"
+                    "HMAC-"
                             + algName
                             + " disagrees with JDK on seed="
                             + seed
