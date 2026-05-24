@@ -37,8 +37,11 @@ public final class Hkdf {
     /** Length of an HMAC-SHA-256 output, and the maximum length of one HKDF expansion block. */
     public static final short HASH_LEN = MessageDigest.LENGTH_SHA_256;
 
-    /** Hard ceiling on a single HKDF expansion, per RFC 5869 §2.3. */
-    public static final short MAX_EXPAND_LEN = (short) (255 * HASH_LEN);
+    /**
+     * Hard ceiling on a single HKDF expansion, per RFC 5869 §2.3. Internal: only {@link #expand}
+     * checks against it; callers stage at most 80 bytes.
+     */
+    private static final short MAX_EXPAND_LEN = (short) (255 * HASH_LEN);
 
     private final HmacSha hmac;
     private final byte[] prk;

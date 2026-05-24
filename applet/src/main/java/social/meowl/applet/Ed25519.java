@@ -58,8 +58,11 @@ import javacard.security.MessageDigest;
  */
 public final class Ed25519 {
 
-    /** Length of the leaf private key (= SLIP-10 leaf {@code k_i}). */
-    public static final short PRIVATE_KEY_LEN = (short) 32;
+    /**
+     * Length of the leaf private key (= SLIP-10 leaf {@code k_i}). Internal: callers use {@link
+     * Constants#EC_SCALAR_LEN}.
+     */
+    private static final short PRIVATE_KEY_LEN = (short) 32;
 
     /** Length of the compressed Ed25519 public key (RFC 8032 §5.1.2 encoded form). */
     public static final short PUBLIC_KEY_LEN = (short) 32;

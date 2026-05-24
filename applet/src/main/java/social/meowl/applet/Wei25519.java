@@ -47,8 +47,8 @@ public final class Wei25519 {
     /** Length of an uncompressed Wei25519 point: {@code 0x04 ‖ X ‖ Y}. */
     public static final short POINT_UNCOMPRESSED_LEN = (short) 65;
 
-    /** Weierstrass {@code a}, 32 bytes big-endian. */
-    public static final byte[] A = {
+    /** Weierstrass {@code a}, 32 bytes big-endian. Internal: shared with the test-only oracle. */
+    static final byte[] A = {
         (byte) 0x2a, (byte) 0xaa, (byte) 0xaa, (byte) 0xaa,
         (byte) 0xaa, (byte) 0xaa, (byte) 0xaa, (byte) 0xaa,
         (byte) 0xaa, (byte) 0xaa, (byte) 0xaa, (byte) 0xaa,
@@ -59,8 +59,8 @@ public final class Wei25519 {
         (byte) 0x49, (byte) 0x14, (byte) 0xa1, (byte) 0x44,
     };
 
-    /** Weierstrass {@code b}, 32 bytes big-endian. */
-    public static final byte[] B = {
+    /** Weierstrass {@code b}, 32 bytes big-endian. Internal: shared with the test-only oracle. */
+    static final byte[] B = {
         (byte) 0x7b, (byte) 0x42, (byte) 0x5e, (byte) 0xd0,
         (byte) 0x97, (byte) 0xb4, (byte) 0x25, (byte) 0xed,
         (byte) 0x09, (byte) 0x7b, (byte) 0x42, (byte) 0x5e,

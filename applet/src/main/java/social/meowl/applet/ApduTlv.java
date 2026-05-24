@@ -17,16 +17,14 @@ import javacard.framework.Util;
  */
 public final class ApduTlv {
 
-    /**
-     * Maximum value length supported by the single-byte length form (inclusive {@code [0, 255]}).
-     */
-    public static final short MAX_VALUE_LEN = (short) 0xFF;
+    /** Maximum value length supported by the single-byte length form (inclusive [0, 255]). */
+    private static final short MAX_VALUE_LEN = (short) 0xFF;
 
     /** Fixed length of the value carried by {@link #putByte(byte[], short, byte, byte)}. */
-    public static final short BYTE_VALUE_LEN = (short) 1;
+    private static final short BYTE_VALUE_LEN = (short) 1;
 
     /** Fixed length of the value carried by {@link #putShort(byte[], short, byte, short)}. */
-    public static final short SHORT_VALUE_LEN = (short) 2;
+    private static final short SHORT_VALUE_LEN = (short) 2;
 
     private ApduTlv() {}
 
