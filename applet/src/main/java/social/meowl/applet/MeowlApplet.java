@@ -23,6 +23,15 @@ import javacard.framework.Util;
 public final class MeowlApplet extends Applet implements WipeTrigger {
 
     /**
+     * Size of the shared transient scratch buffer, sized to the largest of its four
+     * mutually-exclusive consumers (single-threaded APDU dispatch keeps them from overlapping):
+     * Ed25519 {@value Ed25519#SCRATCH_LEN}, Schnorr 354, SecureChannel handshake 259, EcdsaK1 168.
+     * Sharing one buffer saves ~970 bytes of transient RAM — the difference between fitting or not
+     * on cards with a ~3 KB user-RAM budget (notably J3R180).
+     */
+    private static final short SHARED_SCRATCH_LEN = Ed25519.SCRATCH_LEN;
+
+    /**
      * Per-session scratch used by inner handlers that need to stage their input before producing a
      * response that would overlap with the input region in the APDU buffer.
      */
@@ -41,15 +50,6 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     private final Schnorr schnorr;
     private final Ed25519 ed25519;
     private final byte[] innerScratch;
-
-    /**
-     * Size of the per-applet shared transient scratch buffer, sized to the largest of the four
-     * mutually-exclusive consumers (single-threaded APDU dispatch keeps them from overlapping):
-     * Ed25519 {@value Ed25519#SCRATCH_LEN}, Schnorr 354, SecureChannel handshake 259, EcdsaK1 168.
-     * Sharing one buffer cuts ~970 bytes of transient RAM — the difference between fitting or not
-     * on cards with a ~3 KB user-RAM budget (notably J3R180).
-     */
-    private static final short SHARED_SCRATCH_LEN = Ed25519.SCRATCH_LEN;
 
     private MeowlApplet() {
         HmacSha sharedHmac256 = new HmacSha(HmacSha.ALG_SHA_256);
@@ -508,6 +508,32 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         }
     }
 
+    /**
+     * Ed25519 branch of {@link #handleExportXpub}. Returns {@code [pubkey_LE(32), chain_code(32)]}
+     * with the pubkey derived on-card from the SLIP-10 leaf private key. The path is staged inside
+     * {@link #innerScratch} so we can write the pubkey to the APDU buffer before reading the path a
+     * second time to recover the chain code (the path lives in the same APDU buffer region we
+     * overwrite with the response).
+     */
+    private short handleExportXpubEd25519(byte[] buffer, short pathOff, short depth) {
+        short pathLen = (short) (depth * Bip32.INDEX_LEN);
+        Util.arrayCopyNonAtomic(buffer, pathOff, innerScratch, (short) 32, pathLen);
+        try {
+            slip10.deriveLeafKey(innerScratch, (short) 32, depth, innerScratch, (short) 0);
+            short pkLen = ed25519.publicKey(innerScratch, (short) 0, buffer, ISO7816.OFFSET_CDATA);
+            short ccLen =
+                    slip10.deriveChainCode(
+                            innerScratch,
+                            (short) 32,
+                            depth,
+                            buffer,
+                            (short) (ISO7816.OFFSET_CDATA + pkLen));
+            return (short) (pkLen + ccLen);
+        } finally {
+            Util.arrayFillNonAtomic(innerScratch, (short) 0, (short) (32 + pathLen), (byte) 0);
+        }
+    }
+
     /*  Signing handlers — secp256k1 ECDSA, BIP-340 Schnorr and Ed25519 EdDSA.  */
 
     /**
@@ -604,32 +630,6 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
             // overwrites it.
             return ed25519.sign(
                     innerScratch, (short) 0, buffer, msgOff, msgLen, buffer, ISO7816.OFFSET_CDATA);
-        } finally {
-            Util.arrayFillNonAtomic(innerScratch, (short) 0, (short) (32 + pathLen), (byte) 0);
-        }
-    }
-
-    /**
-     * Ed25519 branch of {@link #handleExportXpub}. Returns {@code [pubkey_LE(32), chain_code(32)]}
-     * with the pubkey derived on-card from the SLIP-10 leaf private key. The path is staged inside
-     * {@link #innerScratch} so we can write the pubkey to the APDU buffer before reading the path a
-     * second time to recover the chain code (the path lives in the same APDU buffer region we
-     * overwrite with the response).
-     */
-    private short handleExportXpubEd25519(byte[] buffer, short pathOff, short depth) {
-        short pathLen = (short) (depth * Bip32.INDEX_LEN);
-        Util.arrayCopyNonAtomic(buffer, pathOff, innerScratch, (short) 32, pathLen);
-        try {
-            slip10.deriveLeafKey(innerScratch, (short) 32, depth, innerScratch, (short) 0);
-            short pkLen = ed25519.publicKey(innerScratch, (short) 0, buffer, ISO7816.OFFSET_CDATA);
-            short ccLen =
-                    slip10.deriveChainCode(
-                            innerScratch,
-                            (short) 32,
-                            depth,
-                            buffer,
-                            (short) (ISO7816.OFFSET_CDATA + pkLen));
-            return (short) (pkLen + ccLen);
         } finally {
             Util.arrayFillNonAtomic(innerScratch, (short) 0, (short) (32 + pathLen), (byte) 0);
         }

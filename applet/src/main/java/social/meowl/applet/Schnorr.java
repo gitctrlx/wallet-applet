@@ -39,8 +39,24 @@ import javacard.security.RandomData;
  * <p>Tagged hashing follows BIP-340 §3.2: {@code SHA256(SHA256(tag) ‖ SHA256(tag) ‖ msg)}. The
  * three {@code SHA256(tag)} values are precomputed as {@link #HASH_OF_TAG_AUX} / {@link
  * #HASH_OF_TAG_NONCE} / {@link #HASH_OF_TAG_CHALLENGE} so they cost no SHA-256 invocation at sign
- * time. Every secret intermediate lives in a 354-byte CLEAR_ON_DESELECT scratch wiped by a {@code
- * finally} on every code path.
+ * time.
+ *
+ * <h2>Scratch layout</h2>
+ *
+ * <p>All state lives in a 354-byte slice of the shared {@code CLEAR_ON_DESELECT} pool owned by
+ * {@link MeowlApplet}, wiped by a {@code finally} on every code path.
+ *
+ * <pre>
+ *   [  0.. 32) D_OFF    — d'  (later d after parity flip)
+ *   [ 32.. 64) T_OFF    — t   = d ⊕ tagged_hash(aux)
+ *   [ 64..129) P_OFF    — P   uncompressed: 0x04 ‖ x ‖ y
+ *   [129..194) R_OFF    — R   uncompressed: 0x04 ‖ x ‖ y
+ *   [194..226) E_OFF    — e   challenge mod n
+ *   [226..258) K_OFF    — k'  (later k after parity flip)
+ *   [258..290) M_OFF    — m   digest copy (input may share buffer with output)
+ *   [290..354) WORK_OFF — 64-byte slot: e·d → k+e·d → (k+e·d) mod n. Leading 32 bytes hold the
+ *                        BIP-340 aux randomness before the multiply.
+ * </pre>
  */
 public final class Schnorr {
 
@@ -80,18 +96,6 @@ public final class Schnorr {
         (byte) 0x6D, (byte) 0x48, (byte) 0xD3, (byte) 0x7C,
     };
 
-    /*
-     * Scratch layout (354 bytes total):
-     *   D_OFF    [0,32)    d'  (later d after parity flip)
-     *   T_OFF    [32,64)   t   = d ⊕ tagged_hash(aux)
-     *   P_OFF    [64,129)  P   uncompressed: 0x04 ‖ x ‖ y
-     *   R_OFF    [129,194) R   uncompressed: 0x04 ‖ x ‖ y
-     *   E_OFF    [194,226) e   challenge mod n
-     *   K_OFF    [226,258) k'  (later k after parity flip)
-     *   M_OFF    [258,290) m   digest copy (input may share buffer with output)
-     *   WORK_OFF [290,354) 64-byte slot: e·d → k+e·d → (k+e·d) mod n. The leading 32 bytes
-     *                      temporarily hold the BIP-340 aux randomness before the multiply.
-     */
     private static final short D_OFF = 0;
     private static final short T_OFF = 32;
     private static final short P_OFF = 64;

@@ -26,27 +26,25 @@ import javacard.framework.Util;
  */
 public final class Slip10 {
 
+    /** SLIP-10 leaf private key length (≡ RFC 8032 secret-key seed length). */
+    public static final short SECRET_KEY_LEN = (short) 32;
+
     /** Hardened-bit mask of the top byte of a 32-bit big-endian index. */
     private static final byte HARDENED_MASK = (byte) 0x80;
 
     /** Constant prefix byte {@code 0x00} in the SLIP-10 HMAC data. */
     private static final byte[] ZERO_BYTE = {(byte) 0x00};
 
-    /** SLIP-10 leaf private key length (≡ RFC 8032 secret-key seed length). */
-    public static final short SECRET_KEY_LEN = (short) 32;
-
-    private static final short HASH_LEN = (short) 64;
-
-    private final MasterSeed masterSeed;
-    private final HmacSha hmac;
-
-    /** {@code k_cur(32) || c_cur(32) || I(64)} scratch. */
-    private final byte[] state;
-
     private static final short STATE_K_OFF = (short) 0;
     private static final short STATE_C_OFF = (short) 32;
     private static final short STATE_I_OFF = (short) 64;
     private static final short STATE_LEN = (short) 128;
+
+    private final MasterSeed masterSeed;
+    private final HmacSha hmac;
+
+    /** {@code k_cur(32) ‖ c_cur(32) ‖ I(64)} scratch. */
+    private final byte[] state;
 
     /**
      * @param sharedHmac512 same engine used by {@link MasterSeed} and {@link Bip32}; safe to share

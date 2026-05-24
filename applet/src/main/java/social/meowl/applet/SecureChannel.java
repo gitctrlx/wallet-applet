@@ -431,8 +431,8 @@ public final class SecureChannel {
     /**
      * Constant-time 16-byte big-endian three-way comparison: returns {@code > 0} iff {@code a > b},
      * {@code 0} on equality, {@code < 0} otherwise. Used solely for the inbound IV monotonicity
-     * check; mask-based to keep the channel speaking one defence-in-depth dialect with {@link
-     * ConstantTime#equals} and {@link Bignat#ctLessThan}.
+     * check; mask-based so the channel speaks one defence-in-depth dialect with {@link
+     * BigNat#ctEquals} and {@link BigNat#ctLessThan}.
      */
     static short compare16(byte[] a, short aOff, byte[] b, short bOff) {
         // gtMask / ltMask track "have we already proven a > b / a < b at a more significant

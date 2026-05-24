@@ -146,6 +146,11 @@ public final class Wei25519 {
         (byte) 0xd9,
     };
 
+    /**
+     * Precomputed {@code 8 · G} in uncompressed Wei25519 form, 65 bytes big-endian. {@link Ed25519}
+     * uses this to compute {@code s · G} as {@code (s/8) · (8G)} in one hardware scalar
+     * multiplication, since clamped Ed25519 scalars are always divisible by 8.
+     */
     public static final byte[] G8 = {
         (byte) 0x04,
         (byte) 0x52,
