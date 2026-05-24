@@ -62,18 +62,6 @@ public final class Fp25519Inv {
 
     private static final short SOFT_TMP_OFF = (short) 64;
 
-    /** {@code p − 2}, the Fermat exponent (canonical 32-byte big-endian). */
-    private static final byte[] P_MINUS_2 = {
-        (byte) 0x7F, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
-        (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
-        (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
-        (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
-        (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
-        (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
-        (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
-        (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xEB,
-    };
-
     /**
      * 64-byte zero-extended {@code p} (modulus value). Materialised as a literal because the JC CAP
      * converter rejects {@code invokestatic} from {@code <clinit>}: building the array via a helper
@@ -258,7 +246,10 @@ public final class Fp25519Inv {
         Fp25519.one(out, outOff);
 
         for (short byteIdx = 0; byteIdx < Fp25519.LEN; byteIdx++) {
-            short eByte = (short) (P_MINUS_2[byteIdx] & BigNat.DIGIT_MASK);
+            short eByte =
+                    (short)
+                            (P_MINUS_2_PADDED[(short) (PADDED_OFFSET + byteIdx)]
+                                    & BigNat.DIGIT_MASK);
             for (short bit = 7; bit >= 0; bit--) {
                 Fp25519.sqr(out, outOff, out, outOff, scratch, prodOff);
                 if (((eByte >> bit) & 1) != 0) {
