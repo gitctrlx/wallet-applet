@@ -107,8 +107,7 @@ public final class Ed25519 {
         try {
             this.sha512 = MessageDigest.getInstance(MessageDigest.ALG_SHA_512, false);
         } catch (Exception e) {
-            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
-            throw new RuntimeException(); // unreachable
+            throw Constants.fail(Constants.SW_UNSUPPORTED_FEATURE);
         }
         this.ec =
                 new EcPoint(

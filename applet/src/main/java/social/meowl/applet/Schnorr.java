@@ -136,8 +136,7 @@ public final class Schnorr {
             }
             this.rng = candidate;
         } catch (Exception e) {
-            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
-            throw new RuntimeException(); // unreachable
+            throw Constants.fail(Constants.SW_UNSUPPORTED_FEATURE);
         }
         this.scratch = sharedScratch;
     }

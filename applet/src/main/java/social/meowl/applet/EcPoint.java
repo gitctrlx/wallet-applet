@@ -91,8 +91,7 @@ public final class EcPoint {
         try {
             this.ka = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY, false);
         } catch (javacard.security.CryptoException e) {
-            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
-            throw new RuntimeException(); // unreachable
+            throw Constants.fail(Constants.SW_UNSUPPORTED_FEATURE);
         }
         this.curveParams = curveParams;
         this.generatorOff = generatorOff;

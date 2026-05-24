@@ -198,8 +198,7 @@ public final class MasterSeed {
         // Resample budget exhausted; wipe the partial master so a rollback can't leak it.
         Util.arrayFillNonAtomic(bip32Material, (short) 0, MASTER_LEN, (byte) 0);
         Util.arrayFillNonAtomic(outBuf, outOff, Constants.SEED_GENERATED_LEN, (byte) 0);
-        ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
-        return 0; // unreachable
+        throw Constants.fail(Constants.SW_CONDITIONS_NOT_SATISFIED);
     }
 
     /**

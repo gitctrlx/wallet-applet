@@ -83,8 +83,7 @@ public final class EcdsaK1 {
             }
             this.signKey = signKey;
         } catch (Exception e) {
-            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
-            throw new RuntimeException(); // unreachable
+            throw Constants.fail(Constants.SW_UNSUPPORTED_FEATURE);
         }
         this.scratch = sharedScratch;
     }

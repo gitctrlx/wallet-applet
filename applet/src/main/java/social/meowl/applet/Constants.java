@@ -4,6 +4,8 @@
  */
 package social.meowl.applet;
 
+import javacard.framework.ISOException;
+
 /**
  * Wire-level and policy constants for the meowl-applet.
  *
@@ -355,4 +357,20 @@ public final class Constants {
      * the wipe. See {@code docs/specs/meap-3.md}.
      */
     public static final byte RESET_REQUIRED_INVOCATIONS = (byte) 4;
+
+    /**
+     * Throws {@link ISOException} with the given status word and returns a {@link RuntimeException}
+     * that callers MUST {@code throw}. The trailing throw is unreachable at runtime — {@code
+     * ISOException.throwIt} never returns — but it tells the JC 3.0.5 verifier (which does not
+     * model {@code throwIt} as terminal) that control leaves the caller.
+     *
+     * <p>Usage at a callsite that would otherwise need a dummy {@code throw new RuntimeException()}
+     * or {@code return 0} after {@code ISOException.throwIt}:
+     *
+     * <pre>{@code throw Constants.fail(Constants.SW_UNSUPPORTED_FEATURE); }</pre>
+     */
+    public static RuntimeException fail(short sw) {
+        ISOException.throwIt(sw);
+        throw new RuntimeException();
+    }
 }
