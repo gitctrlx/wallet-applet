@@ -36,9 +36,6 @@ public final class Bip32 {
     /** Hardened-bit mask of the top byte of an index. */
     private static final byte HARDENED_MASK = (byte) 0x80;
 
-    /** HMAC-SHA-512 output length. */
-    private static final short HASH_LEN = (short) 64;
-
     /** Hardened derivation prefix byte ({@code 0x00}); static so HMAC does not re-allocate. */
     private static final byte[] HARDENED_PREFIX = {(byte) 0x00};
 
@@ -83,7 +80,7 @@ public final class Bip32 {
             byte[] pathBuf, short pathOff, short depth, byte[] outBuf, short outOff) {
         walkPathToLeaf(pathBuf, pathOff, depth);
 
-        short pubLen = computePubkey(state, STATE_K_OFF, state, STATE_PUB_OFF);
+        short pubLen = computeCompressedPubkey(state, STATE_K_OFF, state, STATE_PUB_OFF);
         Util.arrayCopyNonAtomic(state, STATE_PUB_OFF, outBuf, outOff, pubLen);
         Util.arrayCopyNonAtomic(
                 state, STATE_C_OFF, outBuf, (short) (outOff + pubLen), Constants.CHAIN_CODE_LEN);
@@ -105,15 +102,6 @@ public final class Bip32 {
         Util.arrayCopyNonAtomic(state, STATE_K_OFF, outBuf, outOff, Constants.EC_SCALAR_LEN);
         wipeTransientSecrets();
         return Constants.EC_SCALAR_LEN;
-    }
-
-    /**
-     * SEC 1 §2.3.3 compressed encoding of {@code scalar · G}.
-     *
-     * @return {@link Constants#EC_POINT_COMPRESSED_LEN}
-     */
-    public short computePubkey(byte[] scalar, short scalarOff, byte[] outBuf, short outOff) {
-        return computeCompressedPubkey(scalar, scalarOff, outBuf, outOff);
     }
 
     /**

@@ -43,6 +43,21 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     /** Selector for {@link #signWithDigest}: BIP-340 Schnorr signer. */
     private static final byte SIGNER_SCHNORR_K1 = (byte) 1;
 
+    /**
+     * Capability bitmask reported by {@code GET_INFO}. Compile-time constant so the {@code
+     * GET_INFO} hot path emits a single {@code sipush} rather than recomputing the OR every call.
+     */
+    private static final short ADVERTISED_CAPABILITIES =
+            (short)
+                    (Constants.CAP_RESET_TO_FACTORY
+                            | Constants.CAP_SC_CBC_HMAC
+                            | Constants.CAP_PKI
+                            | Constants.CAP_BIP32
+                            | Constants.CAP_SLIP10
+                            | Constants.CAP_K1_ECDSA
+                            | Constants.CAP_K1_SCHNORR
+                            | Constants.CAP_ED25519);
+
     private final LifecycleState state;
     private final Authentikey authentikey;
     private final ResetToFactory resetTrigger;
@@ -237,7 +252,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         offset = ApduTlv.putByte(buffer, offset, Constants.TAG_LIFECYCLE_STATE, state.current());
         offset =
                 ApduTlv.putShort(
-                        buffer, offset, Constants.TAG_CAPABILITIES, advertisedCapabilities());
+                        buffer, offset, Constants.TAG_CAPABILITIES, ADVERTISED_CAPABILITIES);
 
         short headerOffset = offset;
         short valueStart = ApduTlv.reserve(buffer, headerOffset, Constants.TAG_AUTHENTIKEY_PUBKEY);
@@ -651,17 +666,5 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         masterSeed.wipeInTx();
         state.resetInTx();
         JCSystem.commitTransaction();
-    }
-
-    private static short advertisedCapabilities() {
-        return (short)
-                (Constants.CAP_RESET_TO_FACTORY
-                        | Constants.CAP_SC_CBC_HMAC
-                        | Constants.CAP_PKI
-                        | Constants.CAP_BIP32
-                        | Constants.CAP_SLIP10
-                        | Constants.CAP_K1_ECDSA
-                        | Constants.CAP_K1_SCHNORR
-                        | Constants.CAP_ED25519);
     }
 }
