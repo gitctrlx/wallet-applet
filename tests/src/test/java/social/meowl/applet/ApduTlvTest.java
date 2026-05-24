@@ -50,7 +50,7 @@ class ApduTlvTest {
     @DisplayName("putByte: insufficient capacity raises SW_WRONG_LENGTH")
     void putByteCapacityFailure() {
         byte[] dst = new byte[2]; // need 3 bytes
-        assertSw(Constants.Sw.WRONG_LENGTH, () -> ApduTlv.putByte(dst, (short) 0, TAG, (byte) 0));
+        assertSw(Constants.SW_WRONG_LENGTH, () -> ApduTlv.putByte(dst, (short) 0, TAG, (byte) 0));
     }
 
     @Test
@@ -70,7 +70,7 @@ class ApduTlvTest {
     void putShortCapacityFailure() {
         byte[] dst = new byte[3]; // need 4 bytes
         assertSw(
-                Constants.Sw.WRONG_LENGTH,
+                Constants.SW_WRONG_LENGTH,
                 () -> ApduTlv.putShort(dst, (short) 0, TAG, (short) 0x1234));
     }
 
@@ -119,7 +119,7 @@ class ApduTlvTest {
         byte[] src = new byte[256];
         byte[] dst = new byte[260];
         assertSw(
-                Constants.Sw.WRONG_LENGTH,
+                Constants.SW_WRONG_LENGTH,
                 () -> ApduTlv.putBytes(dst, (short) 0, TAG, src, (short) 0, (short) 256));
     }
 
@@ -129,7 +129,7 @@ class ApduTlvTest {
         byte[] src = filled((byte) 0xAB, 10);
         byte[] dst = new byte[5]; // need 2 + 10 = 12 bytes
         assertSw(
-                Constants.Sw.WRONG_LENGTH,
+                Constants.SW_WRONG_LENGTH,
                 () -> ApduTlv.putBytes(dst, (short) 0, TAG, src, (short) 0, (short) 10));
     }
 
@@ -140,7 +140,7 @@ class ApduTlvTest {
         byte[] src = new byte[5];
         byte[] dst = new byte[20];
         assertSw(
-                Constants.Sw.WRONG_LENGTH,
+                Constants.SW_WRONG_LENGTH,
                 () -> ApduTlv.putBytes(dst, (short) 0, TAG, src, (short) 3, (short) 5));
     }
 
@@ -179,7 +179,7 @@ class ApduTlvTest {
         byte[] dst = new byte[16];
         ApduTlv.reserve(dst, (short) 0, TAG);
         assertSw(
-                Constants.Sw.WRONG_LENGTH,
+                Constants.SW_WRONG_LENGTH,
                 () -> ApduTlv.finishReserved(dst, (short) 0, (short) -1));
     }
 
@@ -189,7 +189,7 @@ class ApduTlvTest {
         byte[] dst = new byte[300];
         ApduTlv.reserve(dst, (short) 0, TAG);
         assertSw(
-                Constants.Sw.WRONG_LENGTH,
+                Constants.SW_WRONG_LENGTH,
                 () -> ApduTlv.finishReserved(dst, (short) 0, (short) 256));
     }
 
@@ -203,7 +203,7 @@ class ApduTlvTest {
         ApduTlv.reserve(dst, (short) 5, TAG); // value would start at offset 7
         // Claim 5 value bytes, but only 3 fit (10 - 5 - 2 = 3). Must reject with 6700.
         assertSw(
-                Constants.Sw.WRONG_LENGTH, () -> ApduTlv.finishReserved(dst, (short) 5, (short) 5));
+                Constants.SW_WRONG_LENGTH, () -> ApduTlv.finishReserved(dst, (short) 5, (short) 5));
     }
 
     @Test
@@ -221,7 +221,7 @@ class ApduTlvTest {
     @DisplayName("reserve: insufficient capacity for the 2-byte header raises SW_WRONG_LENGTH")
     void reserveCapacityFailure() {
         byte[] dst = new byte[1]; // need 2 bytes
-        assertSw(Constants.Sw.WRONG_LENGTH, () -> ApduTlv.reserve(dst, (short) 0, TAG));
+        assertSw(Constants.SW_WRONG_LENGTH, () -> ApduTlv.reserve(dst, (short) 0, TAG));
     }
 
     @Test

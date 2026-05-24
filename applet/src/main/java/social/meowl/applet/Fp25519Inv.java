@@ -194,7 +194,7 @@ public final class Fp25519Inv {
      */
     public void inv(byte[] a, short aOff, byte[] out, short outOff, byte[] scratch, short scOff) {
         if (BigNat.ctIsZero(a, aOff, Fp25519.LEN) != 0) {
-            ISOException.throwIt(Constants.Sw.INTERNAL_ERROR);
+            ISOException.throwIt(Constants.SW_INTERNAL_ERROR);
         }
         if (hardwareAvailable) {
             hardwareInv(a, aOff, out, outOff, scratch, scOff);

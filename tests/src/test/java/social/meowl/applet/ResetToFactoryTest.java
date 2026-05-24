@@ -69,31 +69,31 @@ class ResetToFactoryTest {
     @Test
     @DisplayName("fresh trigger reports the configured countdown threshold")
     void freshArmedCounter() {
-        assertEquals(Constants.Reset.REQUIRED_INVOCATIONS, trigger.remaining());
+        assertEquals(Constants.RESET_REQUIRED_INVOCATIONS, trigger.remaining());
     }
 
     @Test
     @DisplayName("countdown sequence: every step throws SW_RESET_COUNTDOWN_BASE + remaining")
     void countdownSequence() {
-        for (int expected = Constants.Reset.REQUIRED_INVOCATIONS - 1; expected > 0; expected--) {
+        for (int expected = Constants.RESET_REQUIRED_INVOCATIONS - 1; expected > 0; expected--) {
             ISOException ex =
                     assertThrows(ISOException.class, () -> trigger.recordInvocation(wipe));
-            assertEquals((short) (Constants.Sw.RESET_COUNTDOWN_BASE + expected), ex.getReason());
+            assertEquals((short) (Constants.SW_RESET_COUNTDOWN_BASE + expected), ex.getReason());
             assertEquals(0, wipe.callCount, "wipe must not run while counter > 0");
         }
         ISOException terminal =
                 assertThrows(ISOException.class, () -> trigger.recordInvocation(wipe));
-        assertEquals(Constants.Sw.RESET_COUNTDOWN_BASE, terminal.getReason());
+        assertEquals(Constants.SW_RESET_COUNTDOWN_BASE, terminal.getReason());
         assertEquals(1, wipe.callCount, "wipe must run exactly once on the terminal invocation");
     }
 
     @Test
     @DisplayName("after the terminal wipe the counter is rearmed for the next round")
     void terminalRearm() {
-        for (int i = 0; i < Constants.Reset.REQUIRED_INVOCATIONS; i++) {
+        for (int i = 0; i < Constants.RESET_REQUIRED_INVOCATIONS; i++) {
             assertThrows(ISOException.class, () -> trigger.recordInvocation(wipe));
         }
-        assertEquals(Constants.Reset.REQUIRED_INVOCATIONS, trigger.remaining());
+        assertEquals(Constants.RESET_REQUIRED_INVOCATIONS, trigger.remaining());
     }
 
     @Test
@@ -101,18 +101,18 @@ class ResetToFactoryTest {
     void rearmRestoresCounter() {
         assertThrows(ISOException.class, () -> trigger.recordInvocation(wipe));
         assertEquals(
-                (byte) (Constants.Reset.REQUIRED_INVOCATIONS - 1),
+                (byte) (Constants.RESET_REQUIRED_INVOCATIONS - 1),
                 trigger.remaining(),
                 "counter should have decremented once");
         trigger.rearm();
-        assertEquals(Constants.Reset.REQUIRED_INVOCATIONS, trigger.remaining());
+        assertEquals(Constants.RESET_REQUIRED_INVOCATIONS, trigger.remaining());
     }
 
     @Test
     @DisplayName("wipe() exception leaves counter rearmed, NOT at zero")
     void wipeExceptionDoesNotCorruptCounter() {
         wipe.shouldThrow = true;
-        for (int i = 0; i < Constants.Reset.REQUIRED_INVOCATIONS - 1; i++) {
+        for (int i = 0; i < Constants.RESET_REQUIRED_INVOCATIONS - 1; i++) {
             assertThrows(ISOException.class, () -> trigger.recordInvocation(wipe));
         }
         // The terminal invocation rearms the counter, then calls wipe() which throws. The
@@ -120,7 +120,7 @@ class ResetToFactoryTest {
         // the counter state after the throw.
         assertThrows(RuntimeException.class, () -> trigger.recordInvocation(wipe));
         assertEquals(
-                Constants.Reset.REQUIRED_INVOCATIONS,
+                Constants.RESET_REQUIRED_INVOCATIONS,
                 trigger.remaining(),
                 "counter must be rearmed BEFORE wipe() to prevent 0x6FFF on the next"
                         + " invocation");

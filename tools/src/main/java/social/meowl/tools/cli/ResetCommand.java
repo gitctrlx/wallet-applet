@@ -40,7 +40,7 @@ public final class ResetCommand implements Callable<Integer> {
     private static final byte CLA_MEOWL = (byte) 0x80;
 
     /**
-     * Mirrors {@code Constants.Reset.REQUIRED_INVOCATIONS}; bumping this on the card requires
+     * Mirrors {@code Constants.RESET_REQUIRED_INVOCATIONS}; bumping this on the card requires
      * bumping it here too.
      */
     private static final int REQUIRED_INVOCATIONS = 4;

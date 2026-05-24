@@ -99,33 +99,33 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         byte cla = buffer[ISO7816.OFFSET_CLA];
         byte ins = buffer[ISO7816.OFFSET_INS];
 
-        if (cla != Constants.Wire.CLA) {
-            ISOException.throwIt(Constants.Sw.CLA_NOT_SUPPORTED);
+        if (cla != Constants.CLA_MEOWL) {
+            ISOException.throwIt(Constants.SW_CLA_NOT_SUPPORTED);
         }
 
-        if (ins != Constants.Wire.INS_RESET_TO_FACTORY) {
+        if (ins != Constants.INS_RESET_TO_FACTORY) {
             resetTrigger.rearm();
         }
 
         short responseLen;
         switch (ins) {
-            case Constants.Wire.INS_GET_INFO:
+            case Constants.INS_GET_INFO:
                 responseLen = handleGetInfo(buffer);
                 break;
-            case Constants.Wire.INS_GET_AUTHENTIKEY:
+            case Constants.INS_GET_AUTHENTIKEY:
                 responseLen = handleGetAuthentikey(buffer);
                 break;
-            case Constants.Wire.INS_RESET_TO_FACTORY:
+            case Constants.INS_RESET_TO_FACTORY:
                 resetTrigger.recordInvocation(this);
                 return;
-            case Constants.Wire.INS_INIT_SECURE_CHANNEL:
+            case Constants.INS_INIT_SECURE_CHANNEL:
                 responseLen = handleInitSecureChannel(apdu, buffer);
                 break;
-            case Constants.Wire.INS_OPEN_SECURE_CHANNEL:
+            case Constants.INS_OPEN_SECURE_CHANNEL:
                 responseLen = handleOpenSecureChannel(apdu, buffer);
                 break;
             default:
-                ISOException.throwIt(Constants.Sw.INS_NOT_SUPPORTED);
+                ISOException.throwIt(Constants.SW_INS_NOT_SUPPORTED);
                 return;
         }
         apdu.setOutgoingAndSend((short) 0, responseLen);
@@ -152,7 +152,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         short lc = apdu.setIncomingAndReceive();
         short plainLen = secureChannel.unwrap(buffer, ISO7816.OFFSET_CDATA, lc);
         if (plainLen < 5) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         short innerOff = ISO7816.OFFSET_CDATA;
         byte innerCla = buffer[innerOff];
@@ -161,10 +161,10 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         byte innerP2 = buffer[(short) (innerOff + 3)];
         short innerLc = (short) (buffer[(short) (innerOff + 4)] & 0xFF);
         if ((short) (5 + innerLc) != plainLen) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        if (innerCla != Constants.Wire.CLA) {
-            ISOException.throwIt(Constants.Sw.CLA_NOT_SUPPORTED);
+        if (innerCla != Constants.CLA_MEOWL) {
+            ISOException.throwIt(Constants.SW_CLA_NOT_SUPPORTED);
         }
         short innerDataOff = (short) (innerOff + 5);
         short respLen = dispatchInner(buffer, innerIns, innerP1, innerP2, innerDataOff, innerLc);
@@ -174,40 +174,40 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     private short dispatchInner(
             byte[] buffer, byte ins, byte p1, byte p2, short dataOff, short dataLen) {
         switch (ins) {
-            case Constants.Wire.INS_SETUP:
+            case Constants.INS_SETUP:
                 return handleSetup(buffer, dataOff, dataLen);
-            case Constants.Wire.INS_VERIFY_PIN:
+            case Constants.INS_VERIFY_PIN:
                 return handleVerifyPin(buffer, dataOff, dataLen);
-            case Constants.Wire.INS_CHANGE_PIN:
+            case Constants.INS_CHANGE_PIN:
                 return handleChangePin(buffer, dataOff, dataLen);
-            case Constants.Wire.INS_CHANGE_PUK:
+            case Constants.INS_CHANGE_PUK:
                 return handleChangePuk(buffer, dataOff, dataLen);
-            case Constants.Wire.INS_UNBLOCK_PIN:
+            case Constants.INS_UNBLOCK_PIN:
                 return handleUnblockPin(buffer, dataOff, dataLen);
-            case Constants.Wire.INS_EXPORT_PKI_PUBKEY:
+            case Constants.INS_EXPORT_PKI_PUBKEY:
                 return handleExportPkiPubkey(buffer);
-            case Constants.Wire.INS_SIGN_PKI_CSR:
+            case Constants.INS_SIGN_PKI_CSR:
                 return handleSignPkiCsr(buffer, dataOff, dataLen);
-            case Constants.Wire.INS_IMPORT_PKI_CERT:
+            case Constants.INS_IMPORT_PKI_CERT:
                 return handleImportPkiCert(buffer, p1, dataOff, dataLen);
-            case Constants.Wire.INS_EXPORT_PKI_CERT:
+            case Constants.INS_EXPORT_PKI_CERT:
                 return handleExportPkiCert(buffer, dataOff, dataLen);
-            case Constants.Wire.INS_LOCK_PKI:
+            case Constants.INS_LOCK_PKI:
                 return handleLockPki();
-            case Constants.Wire.INS_IMPORT_SEED:
+            case Constants.INS_IMPORT_SEED:
                 return handleImportSeed(buffer, dataOff, dataLen);
-            case Constants.Wire.INS_GENERATE_SEED:
+            case Constants.INS_GENERATE_SEED:
                 return handleGenerateSeed(buffer, dataLen);
-            case Constants.Wire.INS_EXPORT_XPUB:
+            case Constants.INS_EXPORT_XPUB:
                 return handleExportXpub(buffer, dataOff, dataLen);
-            case Constants.Wire.INS_SIGN_ECDSA_K1:
+            case Constants.INS_SIGN_ECDSA_K1:
                 return handleSignEcdsaK1(buffer, dataOff, dataLen);
-            case Constants.Wire.INS_SIGN_SCHNORR_K1:
+            case Constants.INS_SIGN_SCHNORR_K1:
                 return handleSignSchnorrK1(buffer, dataOff, dataLen);
-            case Constants.Wire.INS_SIGN_ED25519:
+            case Constants.INS_SIGN_ED25519:
                 return handleSignEd25519(buffer, dataOff, dataLen);
             default:
-                ISOException.throwIt(Constants.Sw.INS_NOT_SUPPORTED);
+                ISOException.throwIt(Constants.SW_INS_NOT_SUPPORTED);
                 return 0;
         }
     }
@@ -216,26 +216,17 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         short offset = 0;
         offset =
                 ApduTlv.putShort(
-                        buffer,
-                        offset,
-                        Constants.Wire.TAG_PROTOCOL_VERSION,
-                        Constants.Version.PROTOCOL);
+                        buffer, offset, Constants.TAG_PROTOCOL_VERSION, Constants.PROTOCOL_VERSION);
         offset =
                 ApduTlv.putShort(
-                        buffer,
-                        offset,
-                        Constants.Wire.TAG_APPLET_VERSION,
-                        Constants.Version.APPLET);
-        offset =
-                ApduTlv.putByte(
-                        buffer, offset, Constants.Wire.TAG_LIFECYCLE_STATE, state.current());
+                        buffer, offset, Constants.TAG_APPLET_VERSION, Constants.APPLET_VERSION);
+        offset = ApduTlv.putByte(buffer, offset, Constants.TAG_LIFECYCLE_STATE, state.current());
         offset =
                 ApduTlv.putShort(
-                        buffer, offset, Constants.Wire.TAG_CAPABILITIES, advertisedCapabilities());
+                        buffer, offset, Constants.TAG_CAPABILITIES, advertisedCapabilities());
 
         short headerOffset = offset;
-        short valueStart =
-                ApduTlv.reserve(buffer, headerOffset, Constants.Wire.TAG_AUTHENTIKEY_PUBKEY);
+        short valueStart = ApduTlv.reserve(buffer, headerOffset, Constants.TAG_AUTHENTIKEY_PUBKEY);
         short pkLen = authentikey.writeCompressedPubkeyTo(buffer, valueStart);
         ApduTlv.finishReserved(buffer, headerOffset, pkLen);
         return (short) (valueStart + pkLen);
@@ -251,7 +242,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
      */
     private void requirePinVerified() {
         if (!pinManager.isPinVerified()) {
-            ISOException.throwIt(Constants.Sw.SECURITY_STATUS_NOT_SATISFIED);
+            ISOException.throwIt(Constants.SW_SECURITY_STATUS_NOT_SATISFIED);
         }
     }
 
@@ -260,20 +251,20 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     /** {@code SETUP} inner data layout: {@code [pinLen(1), PIN, pukLen(1), PUK]}. */
     private short handleSetup(byte[] buffer, short dataOff, short dataLen) {
         state.require(LifecycleState.PERSONALIZED);
-        if (dataLen < (short) (1 + Constants.Pin.MIN_LEN + 1 + Constants.Pin.PUK_MIN_LEN)) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+        if (dataLen < (short) (1 + Constants.PIN_MIN_LEN + 1 + Constants.PUK_MIN_LEN)) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         short cursor = dataOff;
         short pinLen = (short) (buffer[cursor++] & 0xFF);
         short pinDataOff = cursor;
         cursor += pinLen;
         if ((short) (cursor + 1) > (short) (dataOff + dataLen)) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         short pukLen = (short) (buffer[cursor++] & 0xFF);
         short pukDataOff = cursor;
         if ((short) (cursor + pukLen) != (short) (dataOff + dataLen)) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         // PIN, PUK, provisioned flag and lifecycle advance commit atomically: a power loss between
         // them would brick the card (VERIFY_PIN gated out by the FSM, SETUP rejected by the
@@ -299,12 +290,12 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         short oldOff = cursor;
         cursor += oldLen;
         if ((short) (cursor + 1) > (short) (dataOff + dataLen)) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         short newLen = (short) (buffer[cursor++] & 0xFF);
         short newOff = cursor;
         if ((short) (cursor + newLen) != (short) (dataOff + dataLen)) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         pinManager.changePin(buffer, oldOff, oldLen, buffer, newOff, newLen);
         return 0;
@@ -323,12 +314,12 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         short oldOff = cursor;
         cursor += oldLen;
         if ((short) (cursor + 1) > (short) (dataOff + dataLen)) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         short newLen = (short) (buffer[cursor++] & 0xFF);
         short newOff = cursor;
         if ((short) (cursor + newLen) != (short) (dataOff + dataLen)) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         pinManager.changePuk(buffer, oldOff, oldLen, buffer, newOff, newLen);
         return 0;
@@ -342,12 +333,12 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         short pukOff = cursor;
         cursor += pukLen;
         if ((short) (cursor + 1) > (short) (dataOff + dataLen)) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         short newPinLen = (short) (buffer[cursor++] & 0xFF);
         short newPinOff = cursor;
         if ((short) (cursor + newPinLen) != (short) (dataOff + dataLen)) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         pinManager.unblockPin(buffer, pukOff, pukLen, buffer, newPinOff, newPinLen);
         return 0;
@@ -361,16 +352,16 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     /** {@code SIGN_PKI_CSR} inner data layout: {@code [hash(32)]}. */
     private short handleSignPkiCsr(byte[] buffer, short dataOff, short dataLen) {
         state.require(LifecycleState.UNINITIALIZED);
-        if (dataLen != Constants.Ec.SCALAR_LEN) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+        if (dataLen != Constants.EC_SCALAR_LEN) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         // Stage the digest in innerScratch: the signature output overlaps the input region. The
         // try-finally wipe clears the staged digest even on ISOException out of signCsr.
-        Util.arrayCopyNonAtomic(buffer, dataOff, innerScratch, (short) 0, Constants.Ec.SCALAR_LEN);
+        Util.arrayCopyNonAtomic(buffer, dataOff, innerScratch, (short) 0, Constants.EC_SCALAR_LEN);
         try {
             return pkiManager.signCsr(innerScratch, (short) 0, buffer, ISO7816.OFFSET_CDATA);
         } finally {
-            Util.arrayFillNonAtomic(innerScratch, (short) 0, Constants.Ec.SCALAR_LEN, (byte) 0);
+            Util.arrayFillNonAtomic(innerScratch, (short) 0, Constants.EC_SCALAR_LEN, (byte) 0);
         }
     }
 
@@ -386,28 +377,28 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     private short handleImportPkiCert(byte[] buffer, byte p1, short dataOff, short dataLen) {
         state.require(LifecycleState.UNINITIALIZED);
         switch (p1) {
-            case Constants.Pki.IMPORT_P1_INIT:
+            case Constants.PKI_IMPORT_P1_INIT:
                 if (dataLen != 2) {
-                    ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+                    ISOException.throwIt(Constants.SW_WRONG_LENGTH);
                 }
                 pkiManager.importInit(Util.getShort(buffer, dataOff));
                 return 0;
-            case Constants.Pki.IMPORT_P1_WRITE:
+            case Constants.PKI_IMPORT_P1_WRITE:
                 if (dataLen < 3) {
-                    ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+                    ISOException.throwIt(Constants.SW_WRONG_LENGTH);
                 }
                 short writeOff = Util.getShort(buffer, dataOff);
                 short chunkLen = (short) (dataLen - 2);
                 pkiManager.importWrite(writeOff, buffer, (short) (dataOff + 2), chunkLen);
                 return 0;
-            case Constants.Pki.IMPORT_P1_FINALIZE:
+            case Constants.PKI_IMPORT_P1_FINALIZE:
                 if (dataLen != 0) {
-                    ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+                    ISOException.throwIt(Constants.SW_WRONG_LENGTH);
                 }
                 pkiManager.importFinalize();
                 return 0;
             default:
-                ISOException.throwIt(Constants.Sw.INCORRECT_P1P2);
+                ISOException.throwIt(Constants.SW_INCORRECT_P1P2);
                 return 0;
         }
     }
@@ -421,7 +412,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         // Allow export at any post-personalisation state — host needs the cert to verify the
         // card before unlocking the user PIN flow.
         if (dataLen != 4) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         short offset = Util.getShort(buffer, dataOff);
         short requested = Util.getShort(buffer, (short) (dataOff + 2));
@@ -438,7 +429,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     private short handleLockPki() {
         state.require(LifecycleState.UNINITIALIZED);
         if (!pkiManager.hasCert()) {
-            ISOException.throwIt(Constants.Sw.CONDITIONS_NOT_SATISFIED);
+            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
         }
         state.transitionTo(LifecycleState.PERSONALIZED);
         return 0;
@@ -454,11 +445,11 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         state.require(LifecycleState.SETUP_DONE);
         requirePinVerified();
         if (dataLen < 1) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         short seedLen = (short) (buffer[dataOff] & 0xFF);
         if ((short) (1 + seedLen) != dataLen) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         JCSystem.beginTransaction();
         masterSeed.importSeed(buffer, (short) (dataOff + 1), seedLen);
@@ -478,7 +469,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         state.require(LifecycleState.SETUP_DONE);
         requirePinVerified();
         if (dataLen != 0) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         // Generate into ISO7816.OFFSET_CDATA so the response is in place when wrap() runs.
         JCSystem.beginTransaction();
@@ -498,21 +489,21 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         state.require(LifecycleState.SEEDED);
         requirePinVerified();
         if (dataLen < 2) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         byte curve = buffer[dataOff];
         short depth = (short) (buffer[(short) (dataOff + 1)] & 0xFF);
-        if (depth > Constants.Hd.MAX_DEPTH || (short) (2 + depth * Bip32.INDEX_LEN) != dataLen) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+        if (depth > Constants.HD_MAX_DEPTH || (short) (2 + depth * Bip32.INDEX_LEN) != dataLen) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         short pathOff = (short) (dataOff + 2);
         switch (curve) {
-            case Constants.Hd.CURVE_SECP256K1:
+            case Constants.CURVE_SECP256K1:
                 return bip32.derivePath(buffer, pathOff, depth, buffer, ISO7816.OFFSET_CDATA);
-            case Constants.Hd.CURVE_ED25519:
+            case Constants.CURVE_ED25519:
                 return handleExportXpubEd25519(buffer, pathOff, depth);
             default:
-                ISOException.throwIt(Constants.Sw.INCORRECT_P1P2);
+                ISOException.throwIt(Constants.SW_INCORRECT_P1P2);
                 return 0;
         }
     }
@@ -552,25 +543,24 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     private short handleSignEcdsaK1(byte[] buffer, short dataOff, short dataLen) {
         state.require(LifecycleState.SEEDED);
         requirePinVerified();
-        if (dataLen < (short) (1 + Constants.Ec.DIGEST_LEN)) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+        if (dataLen < (short) (1 + Constants.DIGEST_LEN)) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         short depth = (short) (buffer[dataOff] & 0xFF);
-        if (depth > Constants.Hd.MAX_DEPTH
-                || (short) (1 + depth * Bip32.INDEX_LEN + Constants.Ec.DIGEST_LEN) != dataLen) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+        if (depth > Constants.HD_MAX_DEPTH
+                || (short) (1 + depth * Bip32.INDEX_LEN + Constants.DIGEST_LEN) != dataLen) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         short pathOff = (short) (dataOff + 1);
         short digestOff = (short) (pathOff + depth * Bip32.INDEX_LEN);
         // Stage the digest in innerScratch so the response (anchored at OFFSET_CDATA) cannot
         // trample the input bytes mid-signature; try-finally wipe clears it even on exception.
-        Util.arrayCopyNonAtomic(
-                buffer, digestOff, innerScratch, (short) 0, Constants.Ec.DIGEST_LEN);
+        Util.arrayCopyNonAtomic(buffer, digestOff, innerScratch, (short) 0, Constants.DIGEST_LEN);
         try {
             return ecdsaK1.signDigest(
                     buffer, pathOff, depth, innerScratch, (short) 0, buffer, ISO7816.OFFSET_CDATA);
         } finally {
-            Util.arrayFillNonAtomic(innerScratch, (short) 0, Constants.Ec.DIGEST_LEN, (byte) 0);
+            Util.arrayFillNonAtomic(innerScratch, (short) 0, Constants.DIGEST_LEN, (byte) 0);
         }
     }
 
@@ -582,25 +572,24 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     private short handleSignSchnorrK1(byte[] buffer, short dataOff, short dataLen) {
         state.require(LifecycleState.SEEDED);
         requirePinVerified();
-        if (dataLen < (short) (1 + Constants.Ec.DIGEST_LEN)) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+        if (dataLen < (short) (1 + Constants.DIGEST_LEN)) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         short depth = (short) (buffer[dataOff] & 0xFF);
-        if (depth > Constants.Hd.MAX_DEPTH
-                || (short) (1 + depth * Bip32.INDEX_LEN + Constants.Ec.DIGEST_LEN) != dataLen) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+        if (depth > Constants.HD_MAX_DEPTH
+                || (short) (1 + depth * Bip32.INDEX_LEN + Constants.DIGEST_LEN) != dataLen) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         short pathOff = (short) (dataOff + 1);
         short digestOff = (short) (pathOff + depth * Bip32.INDEX_LEN);
         // Stage the digest in innerScratch so the response (anchored at OFFSET_CDATA) cannot
         // trample the input bytes mid-signature; try-finally wipe clears it even on exception.
-        Util.arrayCopyNonAtomic(
-                buffer, digestOff, innerScratch, (short) 0, Constants.Ec.DIGEST_LEN);
+        Util.arrayCopyNonAtomic(buffer, digestOff, innerScratch, (short) 0, Constants.DIGEST_LEN);
         try {
             return schnorr.signDigest(
                     buffer, pathOff, depth, innerScratch, (short) 0, buffer, ISO7816.OFFSET_CDATA);
         } finally {
-            Util.arrayFillNonAtomic(innerScratch, (short) 0, Constants.Ec.DIGEST_LEN, (byte) 0);
+            Util.arrayFillNonAtomic(innerScratch, (short) 0, Constants.DIGEST_LEN, (byte) 0);
         }
     }
 
@@ -616,15 +605,15 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         state.require(LifecycleState.SEEDED);
         requirePinVerified();
         if (dataLen < (short) 1) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         short depth = (short) (buffer[dataOff] & 0xFF);
-        if (depth > Constants.Hd.MAX_DEPTH) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+        if (depth > Constants.HD_MAX_DEPTH) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         short pathLen = (short) (depth * Bip32.INDEX_LEN);
         if ((short) (1 + pathLen) > dataLen) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         short pathOff = (short) (dataOff + 1);
         short msgOff = (short) (pathOff + pathLen);
@@ -668,13 +657,13 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
 
     private static short advertisedCapabilities() {
         return (short)
-                (Constants.Wire.CAP_RESET_TO_FACTORY
-                        | Constants.Wire.CAP_SC_CBC_HMAC
-                        | Constants.Wire.CAP_PKI
-                        | Constants.Wire.CAP_BIP32
-                        | Constants.Wire.CAP_SLIP10
-                        | Constants.Wire.CAP_K1_ECDSA
-                        | Constants.Wire.CAP_K1_SCHNORR
-                        | Constants.Wire.CAP_ED25519);
+                (Constants.CAP_RESET_TO_FACTORY
+                        | Constants.CAP_SC_CBC_HMAC
+                        | Constants.CAP_PKI
+                        | Constants.CAP_BIP32
+                        | Constants.CAP_SLIP10
+                        | Constants.CAP_K1_ECDSA
+                        | Constants.CAP_K1_SCHNORR
+                        | Constants.CAP_ED25519);
     }
 }

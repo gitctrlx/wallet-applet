@@ -46,10 +46,10 @@ public final class EcdsaK1 {
     private final byte[] scratch;
 
     private static final short SCALAR_OFF = (short) 0;
-    private static final short DER_OFF = (short) (SCALAR_OFF + Constants.Ec.SCALAR_LEN);
-    private static final short R_OFF = (short) (DER_OFF + Constants.Ec.ECDSA_DER_MAX_LEN);
-    private static final short S_OFF = (short) (R_OFF + Constants.Ec.SCALAR_LEN);
-    private static final short SCRATCH_LEN = (short) (S_OFF + Constants.Ec.SCALAR_LEN);
+    private static final short DER_OFF = (short) (SCALAR_OFF + Constants.EC_SCALAR_LEN);
+    private static final short R_OFF = (short) (DER_OFF + Constants.ECDSA_DER_MAX_LEN);
+    private static final short S_OFF = (short) (R_OFF + Constants.EC_SCALAR_LEN);
+    private static final short SCRATCH_LEN = (short) (S_OFF + Constants.EC_SCALAR_LEN);
 
     /**
      * @param sharedScratch singleton transient scratch (≥ {@link #SCRATCH_LEN} bytes) allocated by
@@ -58,7 +58,7 @@ public final class EcdsaK1 {
      */
     public EcdsaK1(Bip32 bip32, byte[] sharedScratch) {
         if ((short) sharedScratch.length < SCRATCH_LEN) {
-            ISOException.throwIt(Constants.Sw.UNSUPPORTED_FEATURE);
+            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
         this.bip32 = bip32;
         try {
@@ -83,7 +83,7 @@ public final class EcdsaK1 {
             }
             this.signKey = signKey;
         } catch (Exception e) {
-            throw Constants.fail(Constants.Sw.UNSUPPORTED_FEATURE);
+            throw Constants.fail(Constants.SW_UNSUPPORTED_FEATURE);
         }
         this.scratch = sharedScratch;
     }
@@ -106,12 +106,12 @@ public final class EcdsaK1 {
         try {
             bip32.deriveLeafScalar(pathBuf, pathOff, depth, scratch, SCALAR_OFF);
             Secp256k1Curve.setCurveParameters(signKey);
-            signKey.setS(scratch, SCALAR_OFF, Constants.Ec.SCALAR_LEN);
+            signKey.setS(scratch, SCALAR_OFF, Constants.EC_SCALAR_LEN);
             ecdsa.init(signKey, Signature.MODE_SIGN);
 
             short derLen =
                     ecdsa.signPreComputedHash(
-                            digestBuf, digestOff, Constants.Ec.DIGEST_LEN, scratch, DER_OFF);
+                            digestBuf, digestOff, Constants.DIGEST_LEN, scratch, DER_OFF);
 
             parseDerSignature(scratch, DER_OFF, derLen);
 
@@ -125,19 +125,19 @@ public final class EcdsaK1 {
                             (short) 0,
                             scratch,
                             S_OFF,
-                            Constants.Ec.SCALAR_LEN);
+                            Constants.EC_SCALAR_LEN);
             BigNat.ctSelectNeg(
-                    scratch, S_OFF, Secp256k1Curve.N, (short) 0, Constants.Ec.SCALAR_LEN, flipMask);
+                    scratch, S_OFF, Secp256k1Curve.N, (short) 0, Constants.EC_SCALAR_LEN, flipMask);
 
-            Util.arrayCopyNonAtomic(scratch, R_OFF, outBuf, outOff, Constants.Ec.SCALAR_LEN);
+            Util.arrayCopyNonAtomic(scratch, R_OFF, outBuf, outOff, Constants.EC_SCALAR_LEN);
             Util.arrayCopyNonAtomic(
                     scratch,
                     S_OFF,
                     outBuf,
-                    (short) (outOff + Constants.Ec.SCALAR_LEN),
-                    Constants.Ec.SCALAR_LEN);
+                    (short) (outOff + Constants.EC_SCALAR_LEN),
+                    Constants.EC_SCALAR_LEN);
 
-            return Constants.Ec.SIG_LEN_R_S;
+            return Constants.SIG_LEN_R_S;
         } finally {
             Util.arrayFillNonAtomic(scratch, (short) 0, SCRATCH_LEN, (byte) 0);
             signKey.clearKey();
@@ -154,22 +154,22 @@ public final class EcdsaK1 {
      */
     private void parseDerSignature(byte[] der, short derOff, short derLen) {
         if (derLen < (short) (DER_INT_HEADER + 1 + DER_INT_HEADER + 1)
-                || derLen > Constants.Ec.ECDSA_DER_MAX_LEN
+                || derLen > Constants.ECDSA_DER_MAX_LEN
                 || der[derOff] != DER_TAG_SEQUENCE) {
-            ISOException.throwIt(Constants.Sw.UNSUPPORTED_FEATURE);
+            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
         short cursor = (short) (derOff + 1);
         short seqLen = (short) (der[cursor++] & 0xFF);
         if ((seqLen & 0x80) != 0) {
-            ISOException.throwIt(Constants.Sw.UNSUPPORTED_FEATURE);
+            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
         if ((short) (cursor + seqLen) != (short) (derOff + derLen)) {
-            ISOException.throwIt(Constants.Sw.UNSUPPORTED_FEATURE);
+            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
         cursor = copyDerInteger(der, cursor, scratch, R_OFF);
         cursor = copyDerInteger(der, cursor, scratch, S_OFF);
         if (cursor != (short) (derOff + derLen)) {
-            ISOException.throwIt(Constants.Sw.UNSUPPORTED_FEATURE);
+            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
     }
 
@@ -183,35 +183,35 @@ public final class EcdsaK1 {
      */
     private static short copyDerInteger(byte[] der, short cursor, byte[] out, short outOff) {
         if (der[cursor++] != DER_TAG_INTEGER) {
-            ISOException.throwIt(Constants.Sw.UNSUPPORTED_FEATURE);
+            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
         short rawLen = (short) (der[cursor++] & 0xFF);
         if ((rawLen & 0x80) != 0) {
-            ISOException.throwIt(Constants.Sw.UNSUPPORTED_FEATURE);
+            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
         short valStart = cursor;
         short nextCursor = (short) (cursor + rawLen);
         short copyLen = rawLen;
         if (rawLen == 33 && der[valStart] == 0) {
             if ((der[(short) (valStart + 1)] & 0x80) == 0) {
-                ISOException.throwIt(Constants.Sw.UNSUPPORTED_FEATURE);
+                ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
             }
             valStart++;
             copyLen--;
         } else if (rawLen > 1 && der[valStart] == 0) {
-            ISOException.throwIt(Constants.Sw.UNSUPPORTED_FEATURE);
+            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
-        if (copyLen <= 0 || copyLen > Constants.Ec.SCALAR_LEN) {
-            ISOException.throwIt(Constants.Sw.UNSUPPORTED_FEATURE);
+        if (copyLen <= 0 || copyLen > Constants.EC_SCALAR_LEN) {
+            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
         short orAll = 0;
         for (short i = 0; i < copyLen; i++) {
             orAll |= (short) (der[(short) (valStart + i)] & 0xFF);
         }
         if (orAll == 0) {
-            ISOException.throwIt(Constants.Sw.UNSUPPORTED_FEATURE);
+            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
         }
-        short padLen = (short) (Constants.Ec.SCALAR_LEN - copyLen);
+        short padLen = (short) (Constants.EC_SCALAR_LEN - copyLen);
         Util.arrayFillNonAtomic(out, outOff, padLen, (byte) 0);
         Util.arrayCopyNonAtomic(der, valStart, out, (short) (outOff + padLen), copyLen);
         return nextCursor;

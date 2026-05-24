@@ -28,7 +28,7 @@ final class Bounds {
                 || needed < 0
                 || offset > (short) dst.length
                 || needed > (short) (dst.length - offset)) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
     }
 
@@ -42,7 +42,7 @@ final class Bounds {
                 || length < 0
                 || offset > (short) src.length
                 || length > (short) (src.length - offset)) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
     }
 }

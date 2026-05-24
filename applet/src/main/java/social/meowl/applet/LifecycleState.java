@@ -56,7 +56,7 @@ public final class LifecycleState {
      */
     public void transitionTo(byte target) {
         if (!isLegalForward(current, target)) {
-            ISOException.throwIt(Constants.Sw.LIFECYCLE_INVALID);
+            ISOException.throwIt(Constants.SW_LIFECYCLE_INVALID);
         }
         JCSystem.beginTransaction();
         current = target;
@@ -69,7 +69,7 @@ public final class LifecycleState {
      */
     public void transitionToInTx(byte target) {
         if (!isLegalForward(current, target)) {
-            ISOException.throwIt(Constants.Sw.LIFECYCLE_INVALID);
+            ISOException.throwIt(Constants.SW_LIFECYCLE_INVALID);
         }
         current = target;
     }
@@ -95,7 +95,7 @@ public final class LifecycleState {
      */
     public void require(byte required) {
         if (current != required) {
-            ISOException.throwIt(Constants.Sw.LIFECYCLE_INVALID);
+            ISOException.throwIt(Constants.SW_LIFECYCLE_INVALID);
         }
     }
 
@@ -104,7 +104,7 @@ public final class LifecycleState {
      */
     public void requireAtLeast(byte minimum) {
         if (current < minimum) {
-            ISOException.throwIt(Constants.Sw.LIFECYCLE_INVALID);
+            ISOException.throwIt(Constants.SW_LIFECYCLE_INVALID);
         }
     }
 

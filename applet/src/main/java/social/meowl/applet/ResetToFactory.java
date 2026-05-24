@@ -27,12 +27,12 @@ public final class ResetToFactory {
     /** Constructs a fresh trigger with the counter armed to the configured threshold. */
     public ResetToFactory() {
         this.remaining = JCSystem.makeTransientByteArray((short) 1, JCSystem.CLEAR_ON_RESET);
-        this.remaining[0] = Constants.Reset.REQUIRED_INVOCATIONS;
+        this.remaining[0] = Constants.RESET_REQUIRED_INVOCATIONS;
     }
 
     /** Rearms the counter. Invoked whenever a non-{@code RESET_TO_FACTORY} APDU arrives. */
     public void rearm() {
-        remaining[0] = Constants.Reset.REQUIRED_INVOCATIONS;
+        remaining[0] = Constants.RESET_REQUIRED_INVOCATIONS;
     }
 
     /**
@@ -45,11 +45,11 @@ public final class ResetToFactory {
         if (step == 0) {
             // Re-arm BEFORE wipe() so a wipe() throw doesn't leave remaining[0] = 0; otherwise
             // the next invocation would compute step = -1 = 0xFF and emit 0x6FFF.
-            remaining[0] = Constants.Reset.REQUIRED_INVOCATIONS;
+            remaining[0] = Constants.RESET_REQUIRED_INVOCATIONS;
             trigger.wipe();
-            ISOException.throwIt(Constants.Sw.RESET_COUNTDOWN_BASE);
+            ISOException.throwIt(Constants.SW_RESET_COUNTDOWN_BASE);
         }
-        ISOException.throwIt((short) (Constants.Sw.RESET_COUNTDOWN_BASE + (step & 0xFF)));
+        ISOException.throwIt((short) (Constants.SW_RESET_COUNTDOWN_BASE + (step & 0xFF)));
     }
 
     /** Returns the current countdown value; primarily for unit-test assertions. */

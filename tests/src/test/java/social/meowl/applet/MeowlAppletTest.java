@@ -36,16 +36,16 @@ class MeowlAppletTest {
         (byte) 0xF0, 0x6D, 0x65, 0x6F, 0x77, 0x6C, 0x01
     };
 
-    private static final int CLA = Constants.Wire.CLA & 0xFF;
-    private static final int INS_GET_INFO = Constants.Wire.INS_GET_INFO & 0xFF;
-    private static final int INS_GET_AUTHENTIKEY = Constants.Wire.INS_GET_AUTHENTIKEY & 0xFF;
-    private static final int INS_RESET_TO_FACTORY = Constants.Wire.INS_RESET_TO_FACTORY & 0xFF;
-    private static final int INS_OPEN_SC = Constants.Wire.INS_OPEN_SECURE_CHANNEL & 0xFF;
-    private static final int INS_SETUP = Constants.Wire.INS_SETUP & 0xFF;
-    private static final int INS_SIGN_ECDSA_K1 = Constants.Wire.INS_SIGN_ECDSA_K1 & 0xFF;
-    private static final int INS_SIGN_SCHNORR_K1 = Constants.Wire.INS_SIGN_SCHNORR_K1 & 0xFF;
-    private static final int INS_SIGN_ED25519 = Constants.Wire.INS_SIGN_ED25519 & 0xFF;
-    private static final int INS_IMPORT_SEED = Constants.Wire.INS_IMPORT_SEED & 0xFF;
+    private static final int CLA = Constants.CLA_MEOWL & 0xFF;
+    private static final int INS_GET_INFO = Constants.INS_GET_INFO & 0xFF;
+    private static final int INS_GET_AUTHENTIKEY = Constants.INS_GET_AUTHENTIKEY & 0xFF;
+    private static final int INS_RESET_TO_FACTORY = Constants.INS_RESET_TO_FACTORY & 0xFF;
+    private static final int INS_OPEN_SC = Constants.INS_OPEN_SECURE_CHANNEL & 0xFF;
+    private static final int INS_SETUP = Constants.INS_SETUP & 0xFF;
+    private static final int INS_SIGN_ECDSA_K1 = Constants.INS_SIGN_ECDSA_K1 & 0xFF;
+    private static final int INS_SIGN_SCHNORR_K1 = Constants.INS_SIGN_SCHNORR_K1 & 0xFF;
+    private static final int INS_SIGN_ED25519 = Constants.INS_SIGN_ED25519 & 0xFF;
+    private static final int INS_IMPORT_SEED = Constants.INS_IMPORT_SEED & 0xFF;
 
     private CardSimulator simulator;
 
@@ -126,19 +126,18 @@ class MeowlAppletTest {
             assertEquals(0x9000, resp.getSW());
             Map<Integer, byte[]> tlv = parseTlv(resp.getData());
             assertTrue(
-                    tlv.containsKey(Constants.Wire.TAG_PROTOCOL_VERSION & 0xFF),
+                    tlv.containsKey(Constants.TAG_PROTOCOL_VERSION & 0xFF),
                     "protocol version TLV missing");
             assertTrue(
-                    tlv.containsKey(Constants.Wire.TAG_APPLET_VERSION & 0xFF),
+                    tlv.containsKey(Constants.TAG_APPLET_VERSION & 0xFF),
                     "applet version TLV missing");
             assertTrue(
-                    tlv.containsKey(Constants.Wire.TAG_LIFECYCLE_STATE & 0xFF),
+                    tlv.containsKey(Constants.TAG_LIFECYCLE_STATE & 0xFF),
                     "lifecycle state TLV missing");
             assertTrue(
-                    tlv.containsKey(Constants.Wire.TAG_CAPABILITIES & 0xFF),
-                    "capabilities TLV missing");
+                    tlv.containsKey(Constants.TAG_CAPABILITIES & 0xFF), "capabilities TLV missing");
             assertTrue(
-                    tlv.containsKey(Constants.Wire.TAG_AUTHENTIKEY_PUBKEY & 0xFF),
+                    tlv.containsKey(Constants.TAG_AUTHENTIKEY_PUBKEY & 0xFF),
                     "authentikey pubkey TLV missing");
         }
 
@@ -147,10 +146,10 @@ class MeowlAppletTest {
         void protocolVersionMatches() {
             Map<Integer, byte[]> tlv =
                     parseTlv(send(CLA, INS_GET_INFO, 0x00, 0x00, null).getData());
-            byte[] version = tlv.get(Constants.Wire.TAG_PROTOCOL_VERSION & 0xFF);
+            byte[] version = tlv.get(Constants.TAG_PROTOCOL_VERSION & 0xFF);
             assertEquals(2, version.length);
             short encoded = (short) (((version[0] & 0xFF) << 8) | (version[1] & 0xFF));
-            assertEquals(Constants.Version.PROTOCOL, encoded);
+            assertEquals(Constants.PROTOCOL_VERSION, encoded);
         }
 
         @Test
@@ -158,7 +157,7 @@ class MeowlAppletTest {
         void freshLifecycleIsUninitialized() {
             Map<Integer, byte[]> tlv =
                     parseTlv(send(CLA, INS_GET_INFO, 0x00, 0x00, null).getData());
-            byte[] state = tlv.get(Constants.Wire.TAG_LIFECYCLE_STATE & 0xFF);
+            byte[] state = tlv.get(Constants.TAG_LIFECYCLE_STATE & 0xFF);
             assertEquals(1, state.length);
             assertEquals(LifecycleState.UNINITIALIZED, state[0]);
         }
@@ -168,11 +167,11 @@ class MeowlAppletTest {
         void capabilitiesAdvertiseReset() {
             Map<Integer, byte[]> tlv =
                     parseTlv(send(CLA, INS_GET_INFO, 0x00, 0x00, null).getData());
-            byte[] caps = tlv.get(Constants.Wire.TAG_CAPABILITIES & 0xFF);
+            byte[] caps = tlv.get(Constants.TAG_CAPABILITIES & 0xFF);
             assertEquals(2, caps.length);
             int capsValue = ((caps[0] & 0xFF) << 8) | (caps[1] & 0xFF);
             assertTrue(
-                    (capsValue & Constants.Wire.CAP_RESET_TO_FACTORY) != 0,
+                    (capsValue & Constants.CAP_RESET_TO_FACTORY) != 0,
                     "CAP_RESET_TO_FACTORY bit must be set");
         }
 
@@ -181,8 +180,8 @@ class MeowlAppletTest {
         void authentikeyIsCompressed() {
             Map<Integer, byte[]> tlv =
                     parseTlv(send(CLA, INS_GET_INFO, 0x00, 0x00, null).getData());
-            byte[] pk = tlv.get(Constants.Wire.TAG_AUTHENTIKEY_PUBKEY & 0xFF);
-            assertEquals(Constants.Ec.POINT_COMPRESSED_LEN, pk.length);
+            byte[] pk = tlv.get(Constants.TAG_AUTHENTIKEY_PUBKEY & 0xFF);
+            assertEquals(Constants.EC_POINT_COMPRESSED_LEN, pk.length);
             assertTrue(pk[0] == 0x02 || pk[0] == 0x03, "first byte must be 0x02 or 0x03");
         }
     }
@@ -197,7 +196,7 @@ class MeowlAppletTest {
             byte[] direct = send(CLA, INS_GET_AUTHENTIKEY, 0x00, 0x00, null).getData();
             byte[] fromTlv =
                     parseTlv(send(CLA, INS_GET_INFO, 0x00, 0x00, null).getData())
-                            .get(Constants.Wire.TAG_AUTHENTIKEY_PUBKEY & 0xFF);
+                            .get(Constants.TAG_AUTHENTIKEY_PUBKEY & 0xFF);
             assertArrayEquals(fromTlv, direct);
         }
 
@@ -279,7 +278,7 @@ class MeowlAppletTest {
             }
             Map<Integer, byte[]> tlv =
                     parseTlv(send(CLA, INS_GET_INFO, 0x00, 0x00, null).getData());
-            byte[] state = tlv.get(Constants.Wire.TAG_LIFECYCLE_STATE & 0xFF);
+            byte[] state = tlv.get(Constants.TAG_LIFECYCLE_STATE & 0xFF);
             assertEquals(1, state.length);
             assertEquals(LifecycleState.UNINITIALIZED, state[0]);
         }

@@ -68,7 +68,7 @@ public final class ApduTlv {
     public static short putBytes(
             byte[] dst, short offset, byte tag, byte[] src, short srcOffset, short length) {
         if (length > MAX_VALUE_LEN) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         Bounds.requireRange(src, srcOffset, length);
         Bounds.requireCapacity(dst, offset, (short) (2 + length));
@@ -107,7 +107,7 @@ public final class ApduTlv {
      */
     public static void finishReserved(byte[] dst, short headerOffset, short valueLen) {
         if (valueLen < 0 || valueLen > MAX_VALUE_LEN) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         Bounds.requireCapacity(dst, headerOffset, (short) (2 + valueLen));
         dst[(short) (headerOffset + 1)] = (byte) valueLen;

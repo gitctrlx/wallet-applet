@@ -104,13 +104,13 @@ public final class MasterSeed {
         // Runtime guard for the "caller holds a JC transaction" contract: a half-mutated
         // MasterSeed surviving a torn power-off would brick the card.
         if (JCSystem.getTransactionDepth() == 0) {
-            ISOException.throwIt(Constants.Sw.CONDITIONS_NOT_SATISFIED);
+            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
         }
         if (seededFlag[0] != 0) {
-            ISOException.throwIt(Constants.Sw.CONDITIONS_NOT_SATISFIED);
+            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
         }
-        if (seedLen < Constants.Hd.SEED_MIN_LEN || seedLen > Constants.Hd.SEED_MAX_LEN) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+        if (seedLen < Constants.SEED_MIN_LEN || seedLen > Constants.SEED_MAX_LEN) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         hmacInto(
                 HMAC_LABEL_BIP32,
@@ -142,15 +142,15 @@ public final class MasterSeed {
     public short generateSeed(byte[] outBuf, short outOff) {
         // Same transaction-depth contract as importSeed.
         if (JCSystem.getTransactionDepth() == 0) {
-            ISOException.throwIt(Constants.Sw.CONDITIONS_NOT_SATISFIED);
+            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
         }
         if (seededFlag[0] != 0) {
-            ISOException.throwIt(Constants.Sw.CONDITIONS_NOT_SATISFIED);
+            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
         }
         if (outBuf == null
                 || outOff < 0
-                || (short) (outOff + Constants.Hd.SEED_GENERATED_LEN) > (short) outBuf.length) {
-            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
+                || (short) (outOff + Constants.SEED_GENERATED_LEN) > (short) outBuf.length) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
         // MEAP-5 §GENERATE_SEED: ALG_KEYGENERATION first (universal on JC 3.0.4+, designed for
         // key material); ALG_TRNG fallback for cards that restrict the keygen class.
@@ -166,13 +166,13 @@ public final class MasterSeed {
         // Resample until the BIP-32 master k passes parse256(I_L) ∈ (0, n). Failure probability
         // per draw is below 2⁻¹²⁷; the 8-attempt cap is purely defensive.
         for (short attempt = 0; attempt < (short) 8; attempt++) {
-            random.nextBytes(outBuf, outOff, Constants.Hd.SEED_GENERATED_LEN);
+            random.nextBytes(outBuf, outOff, Constants.SEED_GENERATED_LEN);
             hmacInto(
                     HMAC_LABEL_BIP32,
                     (short) HMAC_LABEL_BIP32.length,
                     outBuf,
                     outOff,
-                    Constants.Hd.SEED_GENERATED_LEN,
+                    Constants.SEED_GENERATED_LEN,
                     bip32Material,
                     (short) 0);
             if (BigNat.ctLessThan(
@@ -180,25 +180,25 @@ public final class MasterSeed {
                                     (short) 0,
                                     Secp256k1Curve.N,
                                     (short) 0,
-                                    Constants.Ec.SCALAR_LEN)
+                                    Constants.EC_SCALAR_LEN)
                             != 0
-                    && BigNat.ctIsZero(bip32Material, (short) 0, Constants.Ec.SCALAR_LEN) == 0) {
+                    && BigNat.ctIsZero(bip32Material, (short) 0, Constants.EC_SCALAR_LEN) == 0) {
                 hmacInto(
                         HMAC_LABEL_SLIP10,
                         (short) HMAC_LABEL_SLIP10.length,
                         outBuf,
                         outOff,
-                        Constants.Hd.SEED_GENERATED_LEN,
+                        Constants.SEED_GENERATED_LEN,
                         slip10Material,
                         (short) 0);
                 seededFlag[0] = 1;
-                return Constants.Hd.SEED_GENERATED_LEN;
+                return Constants.SEED_GENERATED_LEN;
             }
         }
         // Resample budget exhausted; wipe the partial master so a rollback can't leak it.
         Util.arrayFillNonAtomic(bip32Material, (short) 0, MASTER_LEN, (byte) 0);
-        Util.arrayFillNonAtomic(outBuf, outOff, Constants.Hd.SEED_GENERATED_LEN, (byte) 0);
-        throw Constants.fail(Constants.Sw.CONDITIONS_NOT_SATISFIED);
+        Util.arrayFillNonAtomic(outBuf, outOff, Constants.SEED_GENERATED_LEN, (byte) 0);
+        throw Constants.fail(Constants.SW_CONDITIONS_NOT_SATISFIED);
     }
 
     /**
@@ -207,17 +207,17 @@ public final class MasterSeed {
      * retry with a fresh seed.
      */
     private void requireValidBip32MasterKey() {
-        if (BigNat.ctIsZero(bip32Material, (short) 0, Constants.Ec.SCALAR_LEN) != 0
+        if (BigNat.ctIsZero(bip32Material, (short) 0, Constants.EC_SCALAR_LEN) != 0
                 || BigNat.ctLessThan(
                                 bip32Material,
                                 (short) 0,
                                 Secp256k1Curve.N,
                                 (short) 0,
-                                Constants.Ec.SCALAR_LEN)
+                                Constants.EC_SCALAR_LEN)
                         == 0) {
             // Wipe the partial master so a future commit can't expose a structurally invalid key.
             Util.arrayFillNonAtomic(bip32Material, (short) 0, MASTER_LEN, (byte) 0);
-            ISOException.throwIt(Constants.Sw.CONDITIONS_NOT_SATISFIED);
+            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
         }
     }
 
@@ -277,7 +277,7 @@ public final class MasterSeed {
 
     private void requireSeeded() {
         if (seededFlag[0] == 0) {
-            ISOException.throwIt(Constants.Sw.LIFECYCLE_INVALID);
+            ISOException.throwIt(Constants.SW_LIFECYCLE_INVALID);
         }
     }
 }

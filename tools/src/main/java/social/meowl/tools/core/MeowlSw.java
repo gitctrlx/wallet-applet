@@ -47,11 +47,11 @@ public enum MeowlSw {
 
     /**
      * Base for the {@code 6FAn} reset-countdown family — see {@code
-     * Constants.Sw.RESET_COUNTDOWN_BASE}.
+     * Constants.SW_RESET_COUNTDOWN_BASE}.
      */
     public static final int RESET_COUNTDOWN_BASE = 0x6FA0;
 
-    /** Base for the {@code 63Cn} PIN retries family — see {@code Constants.Sw.PIN_RETRIES_BASE}. */
+    /** Base for the {@code 63Cn} PIN retries family — see {@code Constants.SW_PIN_RETRIES_BASE}. */
     public static final int PIN_RETRIES_BASE = 0x63C0;
 
     private static final Map<Short, MeowlSw> BY_VALUE =

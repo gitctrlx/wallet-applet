@@ -43,10 +43,10 @@ class SecureChannelTest {
         (byte) 0xF0, 0x6D, 0x65, 0x6F, 0x77, 0x6C, 0x01
     };
 
-    private static final int CLA = Constants.Wire.CLA & 0xFF;
-    private static final int INS_INIT_SC = Constants.Wire.INS_INIT_SECURE_CHANNEL & 0xFF;
-    private static final int INS_OPEN_SC = Constants.Wire.INS_OPEN_SECURE_CHANNEL & 0xFF;
-    private static final int INS_GET_AUTHENTIKEY = Constants.Wire.INS_GET_AUTHENTIKEY & 0xFF;
+    private static final int CLA = Constants.CLA_MEOWL & 0xFF;
+    private static final int INS_INIT_SC = Constants.INS_INIT_SECURE_CHANNEL & 0xFF;
+    private static final int INS_OPEN_SC = Constants.INS_OPEN_SECURE_CHANNEL & 0xFF;
+    private static final int INS_GET_AUTHENTIKEY = Constants.INS_GET_AUTHENTIKEY & 0xFF;
 
     private static final X9ECParameters SECP256K1 = CustomNamedCurves.getByName("secp256k1");
     private static final byte[] HKDF_INFO = "meowl-sc-v1".getBytes();
@@ -74,7 +74,7 @@ class SecureChannelTest {
     @DisplayName("handshake returns card ephemeral pubkey + authentikey-signed payload")
     void handshakeShape() {
         Session session = openSession();
-        assertEquals(Constants.Ec.POINT_UNCOMPRESSED_LEN, session.cardEphPub.length);
+        assertEquals(Constants.EC_POINT_UNCOMPRESSED_LEN, session.cardEphPub.length);
         assertEquals(0x04, session.cardEphPub[0] & 0xFF);
         assertTrue(session.signature.length > 0, "signature must be non-empty DER");
     }
@@ -98,8 +98,8 @@ class SecureChannelTest {
         // Inner APDU: CLA INS P1 P2 LC = MEOWL EXPORT_PKI_PUBKEY 0 0 0 (no data).
         byte[] innerApdu =
                 bytes(
-                        Constants.Wire.CLA & 0xFF,
-                        Constants.Wire.INS_EXPORT_PKI_PUBKEY & 0xFF,
+                        Constants.CLA_MEOWL & 0xFF,
+                        Constants.INS_EXPORT_PKI_PUBKEY & 0xFF,
                         0x00,
                         0x00,
                         0x00);
@@ -119,8 +119,8 @@ class SecureChannelTest {
         Session session = openSession();
         byte[] innerApdu =
                 bytes(
-                        Constants.Wire.CLA & 0xFF,
-                        Constants.Wire.INS_EXPORT_PKI_PUBKEY & 0xFF,
+                        Constants.CLA_MEOWL & 0xFF,
+                        Constants.INS_EXPORT_PKI_PUBKEY & 0xFF,
                         0x00,
                         0x00,
                         0x00);
@@ -128,7 +128,7 @@ class SecureChannelTest {
         assertEquals(0x9000, transmit(INS_OPEN_SC, 0x00, 0x00, envelope).getSW());
         // Same IV → must trip the strictly-increasing check.
         ResponseAPDU replay = transmit(INS_OPEN_SC, 0x00, 0x00, envelope);
-        assertEquals(Constants.Sw.SECURE_CHANNEL_FAILED & 0xFFFF, replay.getSW());
+        assertEquals(Constants.SW_SECURE_CHANNEL_FAILED & 0xFFFF, replay.getSW());
     }
 
     @Test
@@ -143,8 +143,8 @@ class SecureChannelTest {
         Session session = openSession();
         byte[] innerApdu =
                 bytes(
-                        Constants.Wire.CLA & 0xFF,
-                        Constants.Wire.INS_EXPORT_PKI_PUBKEY & 0xFF,
+                        Constants.CLA_MEOWL & 0xFF,
+                        Constants.INS_EXPORT_PKI_PUBKEY & 0xFF,
                         0x00,
                         0x00,
                         0x00);
@@ -154,7 +154,7 @@ class SecureChannelTest {
 
         // 2. Replay the same envelope — must fail with 6FB2 (stale IV).
         ResponseAPDU replay = transmit(INS_OPEN_SC, 0x00, 0x00, env1);
-        assertEquals(Constants.Sw.SECURE_CHANNEL_FAILED & 0xFFFF, replay.getSW());
+        assertEquals(Constants.SW_SECURE_CHANNEL_FAILED & 0xFFFF, replay.getSW());
 
         // 3. Build a fresh envelope under the SAME session keys — must succeed. If the replay
         //    above had reset the card-side keys, the MAC of this fresh envelope would not match
@@ -170,16 +170,16 @@ class SecureChannelTest {
         Session session = openSession();
         byte[] innerApdu =
                 bytes(
-                        Constants.Wire.CLA & 0xFF,
-                        Constants.Wire.INS_EXPORT_PKI_PUBKEY & 0xFF,
+                        Constants.CLA_MEOWL & 0xFF,
+                        Constants.INS_EXPORT_PKI_PUBKEY & 0xFF,
                         0x00,
                         0x00,
                         0x00);
         byte[] envelope = session.encryptForCard(innerApdu);
         // Flip a bit somewhere in the ciphertext (not IV, not MAC).
-        envelope[Constants.Sc.BLOCK_LEN + 1] ^= (byte) 0x01;
+        envelope[Constants.SC_BLOCK_LEN + 1] ^= (byte) 0x01;
         ResponseAPDU resp = transmit(INS_OPEN_SC, 0x00, 0x00, envelope);
-        assertEquals(Constants.Sw.SECURE_CHANNEL_FAILED & 0xFFFF, resp.getSW());
+        assertEquals(Constants.SW_SECURE_CHANNEL_FAILED & 0xFFFF, resp.getSW());
     }
 
     @Test
@@ -187,9 +187,9 @@ class SecureChannelTest {
     void envelopeBeforeHandshake() {
         // We construct a clearly-invalid envelope; what matters is the card refuses to look at it.
         byte[] garbage =
-                new byte[Constants.Sc.BLOCK_LEN + Constants.Sc.BLOCK_LEN + Constants.Sc.MAC_LEN];
+                new byte[Constants.SC_BLOCK_LEN + Constants.SC_BLOCK_LEN + Constants.SC_MAC_LEN];
         ResponseAPDU resp = transmit(INS_OPEN_SC, 0x00, 0x00, garbage);
-        assertEquals(Constants.Sw.SECURE_CHANNEL_REQUIRED & 0xFFFF, resp.getSW());
+        assertEquals(Constants.SW_SECURE_CHANNEL_REQUIRED & 0xFFFF, resp.getSW());
     }
 
     @Test
@@ -199,10 +199,10 @@ class SecureChannelTest {
         // must be reported as a cryptographic check failure (6FB2), not as a length error
         // (6700), since the length itself is well-formed and only the cryptographic structure
         // is wrong.
-        byte[] body = new byte[Constants.Ec.POINT_UNCOMPRESSED_LEN];
+        byte[] body = new byte[Constants.EC_POINT_UNCOMPRESSED_LEN];
         body[0] = (byte) 0x02; // wrong prefix
         ResponseAPDU resp = transmit(INS_INIT_SC, 0x00, 0x00, body);
-        assertEquals(Constants.Sw.SECURE_CHANNEL_FAILED & 0xFFFF, resp.getSW());
+        assertEquals(Constants.SW_SECURE_CHANNEL_FAILED & 0xFFFF, resp.getSW());
     }
 
     @Test
@@ -212,7 +212,7 @@ class SecureChannelTest {
         // distinct from the crypto-failure path above.
         byte[] body = new byte[60];
         ResponseAPDU resp = transmit(INS_INIT_SC, 0x00, 0x00, body);
-        assertEquals(Constants.Sw.WRONG_LENGTH & 0xFFFF, resp.getSW());
+        assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, resp.getSW());
     }
 
     @Test
@@ -221,8 +221,8 @@ class SecureChannelTest {
         Session session = openSession();
         byte[] innerApdu =
                 bytes(
-                        Constants.Wire.CLA & 0xFF,
-                        Constants.Wire.INS_EXPORT_PKI_PUBKEY & 0xFF,
+                        Constants.CLA_MEOWL & 0xFF,
+                        Constants.INS_EXPORT_PKI_PUBKEY & 0xFF,
                         0x00,
                         0x00,
                         0x00);
@@ -230,14 +230,14 @@ class SecureChannelTest {
                 0x9000,
                 transmit(INS_OPEN_SC, 0x00, 0x00, session.encryptForCard(innerApdu)).getSW());
 
-        byte[] invalidPoint = new byte[Constants.Ec.POINT_UNCOMPRESSED_LEN];
+        byte[] invalidPoint = new byte[Constants.EC_POINT_UNCOMPRESSED_LEN];
         invalidPoint[0] = (byte) 0x04;
         ResponseAPDU failed = transmit(INS_INIT_SC, 0x00, 0x00, invalidPoint);
-        assertEquals(Constants.Sw.SECURE_CHANNEL_FAILED & 0xFFFF, failed.getSW());
+        assertEquals(Constants.SW_SECURE_CHANNEL_FAILED & 0xFFFF, failed.getSW());
 
         ResponseAPDU oldSession =
                 transmit(INS_OPEN_SC, 0x00, 0x00, session.encryptForCard(innerApdu));
-        assertEquals(Constants.Sw.SECURE_CHANNEL_REQUIRED & 0xFFFF, oldSession.getSW());
+        assertEquals(Constants.SW_SECURE_CHANNEL_REQUIRED & 0xFFFF, oldSession.getSW());
 
         Session fresh = openSession();
         ResponseAPDU resp = transmit(INS_OPEN_SC, 0x00, 0x00, fresh.encryptForCard(innerApdu));
@@ -252,8 +252,8 @@ class SecureChannelTest {
         Session session = openSession();
         byte[] innerApdu =
                 bytes(
-                        Constants.Wire.CLA & 0xFF,
-                        Constants.Wire.INS_EXPORT_PKI_PUBKEY & 0xFF,
+                        Constants.CLA_MEOWL & 0xFF,
+                        Constants.INS_EXPORT_PKI_PUBKEY & 0xFF,
                         0x00,
                         0x00,
                         0x00);
@@ -265,7 +265,7 @@ class SecureChannelTest {
         // it ever touches HMAC, so the bogus MAC is irrelevant — the SW must still be 6FB2.
         envelope[envelope.length - 1] ^= (byte) 0xAA;
         ResponseAPDU resp = transmit(INS_OPEN_SC, 0x00, 0x00, envelope);
-        assertEquals(Constants.Sw.SECURE_CHANNEL_FAILED & 0xFFFF, resp.getSW());
+        assertEquals(Constants.SW_SECURE_CHANNEL_FAILED & 0xFFFF, resp.getSW());
     }
 
     @Test
@@ -302,8 +302,8 @@ class SecureChannelTest {
         Session session = openSession();
         byte[] innerApdu =
                 bytes(
-                        Constants.Wire.CLA & 0xFF,
-                        Constants.Wire.INS_EXPORT_PKI_PUBKEY & 0xFF,
+                        Constants.CLA_MEOWL & 0xFF,
+                        Constants.INS_EXPORT_PKI_PUBKEY & 0xFF,
                         0x00,
                         0x00,
                         0x00);
@@ -312,8 +312,8 @@ class SecureChannelTest {
         assertEquals(0x9000, first.getSW());
         assertEquals(0x9000, second.getSW());
         // Sanity: outbound IVs from the card must differ between the two responses.
-        byte[] iv1 = Arrays.copyOfRange(first.getData(), 0, Constants.Sc.BLOCK_LEN);
-        byte[] iv2 = Arrays.copyOfRange(second.getData(), 0, Constants.Sc.BLOCK_LEN);
+        byte[] iv1 = Arrays.copyOfRange(first.getData(), 0, Constants.SC_BLOCK_LEN);
+        byte[] iv2 = Arrays.copyOfRange(second.getData(), 0, Constants.SC_BLOCK_LEN);
         assertNotEquals(hex(iv1), hex(iv2));
     }
 
@@ -339,16 +339,16 @@ class SecureChannelTest {
         ResponseAPDU resp = transmit(INS_INIT_SC, 0x00, 0x00, clientPubEnc);
         assertEquals(0x9000, resp.getSW(), "handshake must succeed");
         byte[] body = resp.getData();
-        byte[] cardEphPub = Arrays.copyOfRange(body, 0, Constants.Ec.POINT_UNCOMPRESSED_LEN);
+        byte[] cardEphPub = Arrays.copyOfRange(body, 0, Constants.EC_POINT_UNCOMPRESSED_LEN);
         short sigLen =
                 (short)
-                        (((body[Constants.Ec.POINT_UNCOMPRESSED_LEN] & 0xFF) << 8)
-                                | (body[Constants.Ec.POINT_UNCOMPRESSED_LEN + 1] & 0xFF));
+                        (((body[Constants.EC_POINT_UNCOMPRESSED_LEN] & 0xFF) << 8)
+                                | (body[Constants.EC_POINT_UNCOMPRESSED_LEN + 1] & 0xFF));
         byte[] signature =
                 Arrays.copyOfRange(
                         body,
-                        Constants.Ec.POINT_UNCOMPRESSED_LEN + 2,
-                        Constants.Ec.POINT_UNCOMPRESSED_LEN + 2 + sigLen);
+                        Constants.EC_POINT_UNCOMPRESSED_LEN + 2,
+                        Constants.EC_POINT_UNCOMPRESSED_LEN + 2 + sigLen);
 
         // 3. Derive shared secret on the host side.
         ECPoint cardPub = SECP256K1.getCurve().decodePoint(cardEphPub).normalize();
@@ -455,7 +455,7 @@ class SecureChannelTest {
             byte[] ct = cipher.doFinal(padded);
 
             // MAC = HMAC-SHA256(K_mac, [CLA INS P1 P2 LC] ‖ IV ‖ ct)[0..16].
-            int lc = iv.length + ct.length + Constants.Sc.MAC_LEN;
+            int lc = iv.length + ct.length + Constants.SC_MAC_LEN;
             byte[] header = {(byte) CLA, (byte) INS_OPEN_SC, 0x00, 0x00, (byte) lc};
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(kMac, "HmacSHA256"));
@@ -463,21 +463,21 @@ class SecureChannelTest {
             mac.update(iv);
             mac.update(ct);
             byte[] fullTag = mac.doFinal();
-            byte[] tag = Arrays.copyOf(fullTag, Constants.Sc.MAC_LEN);
+            byte[] tag = Arrays.copyOf(fullTag, Constants.SC_MAC_LEN);
 
             return concat(concat(iv, ct), tag);
         }
 
         byte[] decryptFromCard(byte[] envelope) throws Exception {
-            byte[] iv = Arrays.copyOfRange(envelope, 0, Constants.Sc.BLOCK_LEN);
+            byte[] iv = Arrays.copyOfRange(envelope, 0, Constants.SC_BLOCK_LEN);
             byte[] ct =
                     Arrays.copyOfRange(
                             envelope,
-                            Constants.Sc.BLOCK_LEN,
-                            envelope.length - Constants.Sc.MAC_LEN);
+                            Constants.SC_BLOCK_LEN,
+                            envelope.length - Constants.SC_MAC_LEN);
             byte[] tag =
                     Arrays.copyOfRange(
-                            envelope, envelope.length - Constants.Sc.MAC_LEN, envelope.length);
+                            envelope, envelope.length - Constants.SC_MAC_LEN, envelope.length);
 
             // Verify MAC = HMAC-SHA256(K_mac, 0xFF ‖ IV ‖ ct)[0..16].
             Mac mac = Mac.getInstance("HmacSHA256");
@@ -485,7 +485,7 @@ class SecureChannelTest {
             mac.update((byte) 0xFF);
             mac.update(iv);
             mac.update(ct);
-            byte[] expected = Arrays.copyOf(mac.doFinal(), Constants.Sc.MAC_LEN);
+            byte[] expected = Arrays.copyOf(mac.doFinal(), Constants.SC_MAC_LEN);
             if (!Arrays.equals(expected, tag)) {
                 throw new IllegalStateException("response MAC mismatch");
             }
@@ -498,19 +498,19 @@ class SecureChannelTest {
         }
 
         private byte[] ivFromCounter(long counter) {
-            byte[] iv = new byte[Constants.Sc.BLOCK_LEN];
+            byte[] iv = new byte[Constants.SC_BLOCK_LEN];
             // Big-endian counter into the last 8 bytes; first 8 zero. The card's
             // strictly-increasing
             // check operates on the full 16-byte buffer.
             for (int i = 0; i < 8; i++) {
-                iv[Constants.Sc.BLOCK_LEN - 1 - i] = (byte) ((counter >>> (8 * i)) & 0xFF);
+                iv[Constants.SC_BLOCK_LEN - 1 - i] = (byte) ((counter >>> (8 * i)) & 0xFF);
             }
             return iv;
         }
 
         private static byte[] pkcs5Pad(byte[] in) {
-            int rem = in.length % Constants.Sc.BLOCK_LEN;
-            int padLen = Constants.Sc.BLOCK_LEN - rem;
+            int rem = in.length % Constants.SC_BLOCK_LEN;
+            int padLen = Constants.SC_BLOCK_LEN - rem;
             byte[] out = new byte[in.length + padLen];
             System.arraycopy(in, 0, out, 0, in.length);
             for (int i = in.length; i < out.length; i++) {
