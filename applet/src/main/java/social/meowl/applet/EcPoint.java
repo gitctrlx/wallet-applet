@@ -75,29 +75,23 @@ public final class EcPoint {
             short generatorOff,
             short pointLen,
             short keyBitLength) {
-        ECPrivateKey key;
+        // J3R180 natively supports both TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT and
+        // ALG_EC_SVDP_DH_PLAIN_XY; failure of either lookup means the deployment is on a card we
+        // do not support, so surface SW_UNSUPPORTED_FEATURE at install time rather than silently
+        // demoting the scalar slot to persistent EEPROM (which leaves clearKey() unable to
+        // guarantee a wipe).
         try {
-            // Prefer RAM-backed transient on J3R180 (target silicon supports it natively); the
-            // fallback to TYPE_EC_FP_PRIVATE exists for jcardsim, which omits transient EC key
-            // types from its KeyBuilder catalogue.
-            key =
+            this.scalarKey =
                     (ECPrivateKey)
                             KeyBuilder.buildKey(
                                     KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT,
                                     keyBitLength,
                                     false);
-        } catch (javacard.security.CryptoException e) {
-            key =
-                    (ECPrivateKey)
-                            KeyBuilder.buildKey(KeyBuilder.TYPE_EC_FP_PRIVATE, keyBitLength, false);
-        }
-        this.scalarKey = key;
-        this.curveKind = curveKind;
-        try {
             this.ka = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY, false);
         } catch (javacard.security.CryptoException e) {
             throw Constants.fail(Constants.SW_UNSUPPORTED_FEATURE);
         }
+        this.curveKind = curveKind;
         this.curveParams = curveParams;
         this.generatorOff = generatorOff;
         this.pointLen = pointLen;

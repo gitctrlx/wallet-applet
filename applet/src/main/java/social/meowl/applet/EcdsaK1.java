@@ -63,26 +63,14 @@ public final class EcdsaK1 {
         this.bip32 = bip32;
         try {
             this.ecdsa = Signature.getInstance(Signature.ALG_ECDSA_SHA_256, false);
-            // Prefer RAM-backed transient so the leaf scalar never lands in EEPROM; clearKey()
-            // alone does not necessarily wipe EEPROM cells. Persistent only as a fallback for
-            // jcardsim, which omits transient EC key types from its KeyBuilder catalogue.
-            ECPrivateKey signKey;
-            try {
-                signKey =
-                        (ECPrivateKey)
-                                KeyBuilder.buildKey(
-                                        KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT,
-                                        KeyBuilder.LENGTH_EC_FP_256,
-                                        false);
-            } catch (javacard.security.CryptoException e) {
-                signKey =
-                        (ECPrivateKey)
-                                KeyBuilder.buildKey(
-                                        KeyBuilder.TYPE_EC_FP_PRIVATE,
-                                        KeyBuilder.LENGTH_EC_FP_256,
-                                        false);
-            }
-            this.signKey = signKey;
+            // RAM-backed transient: the leaf scalar never lands in EEPROM, so clearKey() can
+            // genuinely wipe it. J3R180 natively supports this key type; no persistent fallback.
+            this.signKey =
+                    (ECPrivateKey)
+                            KeyBuilder.buildKey(
+                                    KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT,
+                                    KeyBuilder.LENGTH_EC_FP_256,
+                                    false);
         } catch (Exception e) {
             throw Constants.fail(Constants.SW_UNSUPPORTED_FEATURE);
         }
