@@ -56,57 +56,15 @@ public final class Fp25519 {
         Util.arrayCopyNonAtomic(src, srcOff, dst, dstOff, LEN);
     }
 
-    /** {@code dst[..] ← 0} (32 bytes). */
-    public static void zero(byte[] dst, short dstOff) {
-        Util.arrayFillNonAtomic(dst, dstOff, LEN, (byte) 0);
-    }
-
     /** {@code dst[..] ← 1} (canonical 32-byte big-endian one). */
     public static void one(byte[] dst, short dstOff) {
         Util.arrayFillNonAtomic(dst, dstOff, LEN, (byte) 0);
         dst[(short) (dstOff + LEN - 1)] = (byte) 0x01;
     }
 
-    /** Returns {@code true} iff {@code a == 0} in canonical form. Constant-time. */
-    public static boolean isZero(byte[] a, short aOff) {
-        return BigNat.ctIsZero(a, aOff, LEN) != 0;
-    }
-
-    /** Returns {@code true} iff bit 0 of canonical {@code a} is set. */
-    public static boolean isOdd(byte[] a, short aOff) {
-        return (a[(short) (aOff + LEN - 1)] & 0x01) != 0;
-    }
-
-    /** Constant-time equality of two canonical field elements. */
-    public static boolean equals(byte[] a, short aOff, byte[] b, short bOff) {
-        return BigNat.ctEquals(a, aOff, b, bOff, LEN);
-    }
-
-    /** {@code out ← (a + b) mod p}. Output may alias either input. Constant-time. */
-    public static void add(byte[] a, short aOff, byte[] b, short bOff, byte[] out, short outOff) {
-        BigNat.modAdd(a, aOff, b, bOff, P, (short) 0, out, outOff, LEN);
-    }
-
     /** {@code out ← (a − b) mod p}. Output may alias either input. Constant-time. */
     public static void sub(byte[] a, short aOff, byte[] b, short bOff, byte[] out, short outOff) {
         BigNat.modSub(a, aOff, b, bOff, P, (short) 0, out, outOff, LEN);
-    }
-
-    /**
-     * {@code out ← (−a) mod p}. Output may alias {@code a}. Constant-time: always runs {@code p −
-     * a}; the {@code a == 0} corner case is masked back to {@code 0}.
-     */
-    public static void neg(byte[] a, short aOff, byte[] out, short outOff) {
-        short borrow = 0;
-        for (short i = (short) (LEN - 1); i >= 0; i--) {
-            short pi = (short) (P[i] & BigNat.DIGIT_MASK);
-            short ai = (short) (a[(short) (aOff + i)] & BigNat.DIGIT_MASK);
-            short d = (short) (pi - ai - borrow);
-            out[(short) (outOff + i)] = (byte) d;
-            borrow = (short) ((d >>> 15) & 1);
-        }
-        short zeroMask = BigNat.ctIsZero(a, aOff, LEN);
-        BigNat.ctSelectSub(out, outOff, P, (short) 0, LEN, zeroMask);
     }
 
     /**

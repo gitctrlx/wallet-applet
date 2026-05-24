@@ -138,12 +138,12 @@ class LifecycleStateTest {
         }
 
         @Test
-        @DisplayName("reset() collapses any state back to UNINITIALIZED")
+        @DisplayName("resetInTx() collapses any state back to UNINITIALIZED")
         void resetCollapses() {
             LifecycleState s = newInstance();
             s.transitionTo(LifecycleState.PERSONALIZED);
             s.transitionTo(LifecycleState.SETUP_DONE);
-            s.reset();
+            s.resetInTx();
             assertEquals(LifecycleState.UNINITIALIZED, s.current());
         }
     }

@@ -180,7 +180,7 @@ public final class SecureChannel {
     }
 
     /** Whether a Secure Channel session is currently open. */
-    public boolean isOpen() {
+    private boolean isOpen() {
         return openFlag[0] != 0;
     }
 

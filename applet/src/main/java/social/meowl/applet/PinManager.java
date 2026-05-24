@@ -48,8 +48,8 @@ public final class PinManager {
                 JCSystem.makeTransientByteArray(Constants.PUK_MAX_LEN, JCSystem.CLEAR_ON_DESELECT);
     }
 
-    /** Returns {@code true} once {@link #setup} has been called successfully. */
-    public boolean isProvisioned() {
+    /** Returns {@code true} once {@link #setupInTx} has been called successfully. */
+    private boolean isProvisioned() {
         return provisioned[0] != 0;
     }
 
@@ -189,16 +189,6 @@ public final class PinManager {
         this.pin = new OwnerPIN(Constants.PIN_RETRY_LIMIT, Constants.PIN_MAX_LEN);
         this.puk = new OwnerPIN(Constants.PUK_RETRY_LIMIT, Constants.PUK_MAX_LEN);
         this.provisioned[0] = 0;
-    }
-
-    /** Returns the current PIN try counter; useful for inclusion in {@code GET_INFO}. */
-    public byte pinTriesRemaining() {
-        return isProvisioned() ? pin.getTriesRemaining() : Constants.PIN_RETRY_LIMIT;
-    }
-
-    /** Returns the current PUK try counter. */
-    public byte pukTriesRemaining() {
-        return isProvisioned() ? puk.getTriesRemaining() : Constants.PUK_RETRY_LIMIT;
     }
 
     /**

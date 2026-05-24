@@ -44,12 +44,6 @@ import javacard.security.ECKey;
  */
 public final class Wei25519 {
 
-    /** Cofactor of the underlying curve25519 group (= 8). */
-    public static final short COFACTOR = 8;
-
-    /** Length of every Wei25519 coordinate / scalar / Ed25519 encoded element, in bytes. */
-    public static final short COORD_LEN = (short) 32;
-
     /** Length of an uncompressed Wei25519 point: {@code 0x04 ‖ X ‖ Y}. */
     public static final short POINT_UNCOMPRESSED_LEN = (short) 65;
 

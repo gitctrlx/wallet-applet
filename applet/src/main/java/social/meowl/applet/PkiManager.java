@@ -188,17 +188,10 @@ public final class PkiManager {
     /**
      * Reset-to-factory hook. Per {@code docs/specs/meap-4.md} the authentikey is preserved; the
      * manufacturer-issued certificate is wiped so a re-personalised card can install a fresh one.
-     */
-    public void wipe() {
-        JCSystem.beginTransaction();
-        wipeInTx();
-        JCSystem.commitTransaction();
-    }
-
-    /**
-     * Transaction-less wipe variant. Caller MUST hold a {@link JCSystem#beginTransaction()} block;
-     * used by {@link MeowlApplet#wipe()} to bundle the cert wipe into the single atomic
-     * reset-to-factory commit.
+     *
+     * <p>Caller MUST hold a {@link JCSystem#beginTransaction()} block; bundled with PIN, master
+     * seed and lifecycle wipes into the single atomic reset-to-factory commit driven by {@link
+     * MeowlApplet#wipe()}.
      */
     public void wipeInTx() {
         Util.arrayFillNonAtomic(cert, (short) 0, Constants.PKI_CERT_MAX_LEN, (byte) 0);

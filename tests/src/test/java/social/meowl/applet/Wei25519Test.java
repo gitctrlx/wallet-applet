@@ -37,7 +37,7 @@ class Wei25519Test {
         BigInteger a = new BigInteger(1, Wei25519.A);
         BigInteger b = new BigInteger(1, Wei25519.B);
         BigInteger l = new BigInteger(1, Wei25519.L);
-        ECCurve.Fp curve = new ECCurve.Fp(p, a, b, l, BigInteger.valueOf(Wei25519.COFACTOR));
+        ECCurve.Fp curve = new ECCurve.Fp(p, a, b, l, BigInteger.valueOf(8));
         // Sanity check: G must lie on the curve we just built.
         ECPoint g = curve.decodePoint(Wei25519.G).normalize();
         if (!g.isValid()) {

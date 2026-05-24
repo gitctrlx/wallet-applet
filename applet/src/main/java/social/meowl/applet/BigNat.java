@@ -50,11 +50,6 @@ public final class BigNat {
         Util.arrayCopyNonAtomic(src, srcOff, dst, dstOff, size);
     }
 
-    /** {@code dst[..] ← 0} for {@code size} bytes. */
-    public static void zero(byte[] dst, short dstOff, short size) {
-        Util.arrayFillNonAtomic(dst, dstOff, size, (byte) 0);
-    }
-
     /**
      * In-place unsigned addition: {@code x += y}; both operands are {@code size} bytes big-endian.
      * Destination may alias the source.
@@ -167,36 +162,6 @@ public final class BigNat {
             short k = (short) (zOff + i);
             z[k] = (byte) ((z[k] & DIGIT_MASK) + carry);
         }
-    }
-
-    /**
-     * Strict less-than comparison of two equal-size big-endian unsigned integers.
-     *
-     * <p><b>Variable-time</b>: exits on the first differing byte. MUST NOT be used on secret-
-     * derived inputs; use {@link #ctLessThan} for those.
-     */
-    public static boolean lessThan(byte[] x, short xOff, byte[] y, short yOff, short size) {
-        for (short i = 0; i < size; i++) {
-            short xs = (short) (x[(short) (xOff + i)] & DIGIT_MASK);
-            short ys = (short) (y[(short) (yOff + i)] & DIGIT_MASK);
-            if (xs < ys) {
-                return true;
-            }
-            if (xs > ys) {
-                return false;
-            }
-        }
-        return false;
-    }
-
-    /** Variable-time {@code x == 0}. Use {@link #ctIsZero} for secret-derived operands. */
-    public static boolean isZero(byte[] x, short xOff, short size) {
-        for (short i = 0; i < size; i++) {
-            if (x[(short) (xOff + i)] != 0) {
-                return false;
-            }
-        }
-        return true;
     }
 
     /**

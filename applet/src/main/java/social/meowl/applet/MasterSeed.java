@@ -246,17 +246,10 @@ public final class MasterSeed {
         Util.arrayCopyNonAtomic(slip10Material, (short) 0, dst, dstOff, MASTER_LEN);
     }
 
-    /** Reset-to-factory hook: wipe both master fields and the seeded flag. */
-    public void wipe() {
-        JCSystem.beginTransaction();
-        wipeInTx();
-        JCSystem.commitTransaction();
-    }
-
     /**
-     * Transaction-less wipe variant. Caller MUST hold a {@link JCSystem#beginTransaction()} block;
-     * used by {@link MeowlApplet#wipe()} to bundle the master-seed wipe into the single atomic
-     * reset-to-factory commit alongside PIN/PUK, PKI cert and lifecycle state.
+     * Reset-to-factory hook: wipe both master fields and the seeded flag. Caller MUST hold a {@link
+     * JCSystem#beginTransaction()} block; bundled with PIN/PUK, PKI cert and lifecycle wipes into
+     * the single atomic reset-to-factory commit driven by {@link MeowlApplet#wipe()}.
      */
     public void wipeInTx() {
         Util.arrayFillNonAtomic(bip32Material, (short) 0, MASTER_LEN, (byte) 0);

@@ -74,15 +74,6 @@ public final class Bip32 {
     }
 
     /**
-     * Exposes the shared secp256k1 scalar-mult engine. {@link Schnorr} reuses this so the applet
-     * keeps a single {@link javacard.security.ECPrivateKey} slot for every secp256k1 scalar
-     * operation.
-     */
-    public EcPoint secp256k1() {
-        return secp256k1Ec;
-    }
-
-    /**
      * Derives the BIP-32 child at the given path and writes {@code [compressed_pubkey(33) ‖
      * chain_code(32)]}. {@code depth == 0} returns the master xpub itself.
      *

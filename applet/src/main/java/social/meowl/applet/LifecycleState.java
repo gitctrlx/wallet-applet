@@ -74,17 +74,10 @@ public final class LifecycleState {
         current = target;
     }
 
-    /** Force-resets to {@link #UNINITIALIZED}. Reserved for the reset-to-factory flow. */
-    public void reset() {
-        JCSystem.beginTransaction();
-        resetInTx();
-        JCSystem.commitTransaction();
-    }
-
     /**
-     * Transaction-less reset variant. Caller MUST hold a {@link JCSystem#beginTransaction()} block;
-     * used by {@link MeowlApplet#wipe()} to bundle the lifecycle reset into the single atomic
-     * reset-to-factory commit.
+     * Force-resets to {@link #UNINITIALIZED}. Caller MUST hold a {@link
+     * JCSystem#beginTransaction()} block; bundled with PIN/PUK, PKI cert and master-seed wipes into
+     * the single atomic reset-to-factory commit driven by {@link MeowlApplet#wipe()}.
      */
     public void resetInTx() {
         current = UNINITIALIZED;

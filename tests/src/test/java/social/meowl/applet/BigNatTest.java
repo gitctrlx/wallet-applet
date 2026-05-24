@@ -164,15 +164,13 @@ class BigNatTest {
         }
 
         @Test
-        @DisplayName("ctIsZero / isZero / ctEquals agree on canonical inputs")
+        @DisplayName("ctIsZero / ctEquals agree on canonical inputs")
         void ctZero() {
             byte[] zero = new byte[LEN];
             byte[] one = new byte[LEN];
             one[LEN - 1] = 1;
             assertEquals((short) -1, BigNat.ctIsZero(zero, (short) 0, LEN));
             assertEquals((short) 0, BigNat.ctIsZero(one, (short) 0, LEN));
-            assertTrue(BigNat.isZero(zero, (short) 0, LEN));
-            assertFalse(BigNat.isZero(one, (short) 0, LEN));
             assertTrue(BigNat.ctEquals(zero, (short) 0, zero, (short) 0, LEN));
             assertFalse(BigNat.ctEquals(zero, (short) 0, one, (short) 0, LEN));
         }

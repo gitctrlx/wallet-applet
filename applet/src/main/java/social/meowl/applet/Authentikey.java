@@ -68,9 +68,4 @@ public final class Authentikey {
     ECPrivateKey privateKey() {
         return privateKey;
     }
-
-    /** Package-private access for the PKI CSR signer. */
-    ECPublicKey publicKey() {
-        return publicKey;
-    }
 }

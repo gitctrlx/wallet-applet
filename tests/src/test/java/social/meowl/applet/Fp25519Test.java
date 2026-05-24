@@ -5,7 +5,6 @@
 package social.meowl.applet;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigInteger;
 import java.util.Random;
@@ -44,18 +43,14 @@ class Fp25519Test {
     class Additive {
 
         @Test
-        @DisplayName("add / sub / neg over 100 random pairs")
-        void addSubNeg() {
+        @DisplayName("sub over 100 random pairs")
+        void sub() {
             byte[] out = new byte[Fp25519.LEN];
             for (int i = 0; i < 100; i++) {
                 BigInteger a = randomFieldElement();
                 BigInteger b = randomFieldElement();
-                Fp25519.add(beBytes(a), (short) 0, beBytes(b), (short) 0, out, (short) 0);
-                assertArrayEquals(beBytes(a.add(b).mod(P)), out);
                 Fp25519.sub(beBytes(a), (short) 0, beBytes(b), (short) 0, out, (short) 0);
                 assertArrayEquals(beBytes(a.subtract(b).mod(P)), out);
-                Fp25519.neg(beBytes(a), (short) 0, out, (short) 0);
-                assertArrayEquals(beBytes(a.negate().mod(P)), out);
             }
         }
 
@@ -130,21 +125,6 @@ class Fp25519Test {
                 one[Fp25519.LEN - 1] = 1;
                 assertArrayEquals(one, product, "inv(a) · a must be canonical 1");
             }
-        }
-    }
-
-    @Nested
-    @DisplayName("canonical predicates")
-    class Predicates {
-
-        @Test
-        @DisplayName("isZero / isOdd recognise the canonical representatives")
-        void canonical() {
-            byte[] zero = new byte[Fp25519.LEN];
-            byte[] one = new byte[Fp25519.LEN];
-            one[Fp25519.LEN - 1] = 1;
-            assertTrue(Fp25519.isZero(zero, (short) 0));
-            assertTrue(Fp25519.isOdd(one, (short) 0));
         }
     }
 }

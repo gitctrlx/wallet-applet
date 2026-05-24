@@ -139,11 +139,6 @@ public final class HmacSha {
         }
     }
 
-    /** Returns the output length in bytes (32 for SHA-256, 64 for SHA-512). */
-    public short getLength() {
-        return hashSize;
-    }
-
     /**
      * Initialises the engine with a fresh key. Per RFC 2104 §2 keys longer than the block size are
      * pre-hashed, shorter keys are zero-padded.
@@ -191,9 +186,10 @@ public final class HmacSha {
 
     /**
      * Consumes the final {@code inLen} bytes, finishes the inner hash, runs the outer hash, and
-     * writes the {@link #getLength()}-byte HMAC into {@code outBuf} at {@code outOff}.
+     * writes the HMAC tag (32 bytes for SHA-256, 64 for SHA-512) into {@code outBuf} at {@code
+     * outOff}.
      *
-     * @return {@link #getLength()}
+     * @return tag length in bytes
      */
     public short doFinal(byte[] inBuf, short inOff, short inLen, byte[] outBuf, short outOff) {
         if (nativeSig != null) {
