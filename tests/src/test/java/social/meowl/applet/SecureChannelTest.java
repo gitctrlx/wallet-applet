@@ -37,8 +37,8 @@ import social.meowl.applet.sc.KdfCmacHost;
 /**
  * End-to-end Secure Channel tests driving MeowlApplet through {@link CardClient}.
  *
- * <p>Verifies the entire handshake (ECDH + HKDF-SHA-256 + authentikey ECDSA signature) and the
- * envelope round-trip (encrypt, MAC, IV monotonicity, replay defense). Tagged {@code real-card}
+ * <p>Verifies the entire handshake (ECDH + AES-CMAC-128 KBKDF + authentikey ECDSA signature) and
+ * the envelope round-trip (encrypt, MAC, IV monotonicity, replay defense). Tagged {@code real-card}
  * because the simulator backend cannot install the post-Phase-1 applet.
  */
 @Tag("real-card")

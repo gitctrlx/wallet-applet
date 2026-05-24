@@ -107,7 +107,7 @@ Future MEAPs MAY add tags `0x06` and above; conforming hosts MUST tolerate unkno
 | 0 | `0x0001` | `CAP_K1_ECDSA` — secp256k1 ECDSA signing per [MEAP-6 §SIGN_ECDSA_K1](./meap-6.md). |
 | 1 | `0x0002` | `CAP_K1_SCHNORR` — BIP-340 Schnorr signing per [MEAP-6 §SIGN_SCHNORR_K1](./meap-6.md). |
 | 2 | `0x0004` | `CAP_ED25519` — RFC 8032 Ed25519 signing per [MEAP-6 §SIGN_ED25519](./meap-6.md). |
-| 4 | `0x0010` | `CAP_SC_CBC_HMAC` — AES-256-CBC + HMAC-SHA-256 Secure Channel per [MEAP-2](./meap-2.md). |
+| 4 | `0x0010` | `CAP_SC_CBC_HMAC` — AES-256-CBC + AES-CMAC-128 Secure Channel per [MEAP-2](./meap-2.md). The bit name is retained for backwards-compatible capability parsing on hosts; the underlying suite migrated from HMAC-SHA-256 to AES-CMAC-128 in MEAP-2's 2026-05-24 revision. |
 | 5 | `0x0020` | `CAP_PKI` — Manufacturer PKI personalisation flow per [MEAP-4 §PKI](./meap-4.md). |
 | 6 | `0x0040` | `CAP_RESET_TO_FACTORY` — Multi-step factory reset per [MEAP-3 §Reset-to-Factory](./meap-3.md). |
 | 7 | `0x0080` | `CAP_BIP32` — secp256k1 BIP-32 derivation per [MEAP-5 §BIP-32](./meap-5.md). |

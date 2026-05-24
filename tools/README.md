@@ -181,7 +181,7 @@ tools/src/main/java/social/meowl/tools/
 ├── Main.java                     ── one-line entry: System.exit(MeowlCli.commandLine().execute(args))
 ├── core/                         ── pure helpers (Hex, Tlv, MeowlInsn, MeowlSw, MeowlAid)
 ├── transport/                    ── apdu4j BIBO stack + ReaderPreferences + visitor wrapper
-├── proto/                        ── MEAP-2 host client (HkdfSha256, HostCrypto, SecureChannelClient)
+├── proto/                        ── MEAP-2 host client (KdfCmac, HostCrypto, SecureChannelClient)
 ├── gp/                           ── in-process GlobalPlatformPro (GpFacade)
 ├── shell/                        ── stateful REPL engine (ShellSession)
 └── cli/                          ── picocli command tree (MeowlCli + 13 subcommands)

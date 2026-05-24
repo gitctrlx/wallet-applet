@@ -40,9 +40,9 @@ import social.meowl.applet.sc.KdfCmacHost;
  * opens a session first and dispatches inner APDUs via {@code OPEN_SECURE_CHANNEL}.
  *
  * <p>The {@link Session} helper is a self-contained client-side mirror of the meowl Secure Channel
- * protocol — ECDH on secp256k1, HKDF-SHA-256 KDF, AES-256-CBC, HMAC-SHA-256 — built on BouncyCastle
- * and the standard JCE. It lives inside this test file because we only need it here; once a real
- * host SDK exists in {@code tools/} it will subsume this scaffolding.
+ * protocol — ECDH on secp256k1, AES-CMAC-128 KBKDF, AES-256-CBC, AES-CMAC-128 record MAC — built on
+ * BouncyCastle and the standard JCE. It lives inside this test file because we only need it here;
+ * once a real host SDK exists in {@code tools/} it will subsume this scaffolding.
  */
 @Tag("real-card")
 class PersonalisationTest {

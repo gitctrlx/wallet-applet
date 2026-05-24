@@ -213,7 +213,12 @@ public final class Constants {
 
     // Bit 3 reserved for future AES-GCM Secure Channel.
 
-    /** Bit 4 — card exposes a Secure Channel using AES-CBC + HMAC-SHA-256. */
+    /**
+     * Bit 4 — card exposes a Secure Channel using AES-256-CBC + AES-CMAC-128 (per MEAP-2's
+     * 2026-05-24 revision). The constant name is retained for backwards-compatible capability
+     * parsing on hosts; the underlying primitive migrated off HMAC-SHA-256 to match the J3R180
+     * native algorithm matrix.
+     */
     public static final short CAP_SC_CBC_HMAC = (short) 0x0010;
 
     /** Bit 5 — card exposes the PKI personalisation flow. */
