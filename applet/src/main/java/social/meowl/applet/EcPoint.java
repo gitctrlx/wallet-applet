@@ -77,6 +77,9 @@ public final class EcPoint {
             short keyBitLength) {
         ECPrivateKey key;
         try {
+            // Prefer RAM-backed transient on J3R180 (target silicon supports it natively); the
+            // fallback to TYPE_EC_FP_PRIVATE exists for jcardsim, which omits transient EC key
+            // types from its KeyBuilder catalogue.
             key =
                     (ECPrivateKey)
                             KeyBuilder.buildKey(

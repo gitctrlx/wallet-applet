@@ -64,7 +64,8 @@ public final class EcdsaK1 {
         try {
             this.ecdsa = Signature.getInstance(Signature.ALG_ECDSA_SHA_256, false);
             // Prefer RAM-backed transient so the leaf scalar never lands in EEPROM; clearKey()
-            // alone does not necessarily wipe EEPROM cells. Persistent only as a fallback.
+            // alone does not necessarily wipe EEPROM cells. Persistent only as a fallback for
+            // jcardsim, which omits transient EC key types from its KeyBuilder catalogue.
             ECPrivateKey signKey;
             try {
                 signKey =
