@@ -56,7 +56,7 @@ class SecureChannelStripPkcs5Test {
         ISOException ex =
                 assertThrows(
                         ISOException.class, () -> SecureChannel.stripPkcs5(buf, (short) 0, BLOCK));
-        assertEquals(Constants.SW_SECURE_CHANNEL_FAILED, ex.getReason());
+        assertEquals(Constants.Sw.SECURE_CHANNEL_FAILED, ex.getReason());
     }
 
     @Test
@@ -70,7 +70,7 @@ class SecureChannelStripPkcs5Test {
         ISOException ex =
                 assertThrows(
                         ISOException.class, () -> SecureChannel.stripPkcs5(buf, (short) 0, BLOCK));
-        assertEquals(Constants.SW_SECURE_CHANNEL_FAILED, ex.getReason());
+        assertEquals(Constants.Sw.SECURE_CHANNEL_FAILED, ex.getReason());
     }
 
     @Test
@@ -89,7 +89,7 @@ class SecureChannelStripPkcs5Test {
                             ISOException.class,
                             () -> SecureChannel.stripPkcs5(frozen, (short) 0, BLOCK),
                             "single-byte tamper at pos " + tamperPos + " must trip the mask");
-            assertEquals(Constants.SW_SECURE_CHANNEL_FAILED, ex.getReason());
+            assertEquals(Constants.Sw.SECURE_CHANNEL_FAILED, ex.getReason());
         }
     }
 
@@ -101,7 +101,7 @@ class SecureChannelStripPkcs5Test {
                 assertThrows(
                         ISOException.class,
                         () -> SecureChannel.stripPkcs5(buf, (short) 0, (short) 15));
-        assertEquals(Constants.SW_SECURE_CHANNEL_FAILED, ex.getReason());
+        assertEquals(Constants.Sw.SECURE_CHANNEL_FAILED, ex.getReason());
     }
 
     @Test
@@ -112,7 +112,7 @@ class SecureChannelStripPkcs5Test {
                 assertThrows(
                         ISOException.class,
                         () -> SecureChannel.stripPkcs5(buf, (short) 0, (short) 0));
-        assertEquals(Constants.SW_SECURE_CHANNEL_FAILED, ex.getReason());
+        assertEquals(Constants.Sw.SECURE_CHANNEL_FAILED, ex.getReason());
     }
 
     @Test

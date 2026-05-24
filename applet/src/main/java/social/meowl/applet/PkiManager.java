@@ -69,7 +69,7 @@ public final class PkiManager {
     public PkiManager(Authentikey authentikey) {
         this.authentikey = authentikey;
         this.ecdsa = Signature.getInstance(Signature.ALG_ECDSA_SHA_256, false);
-        this.cert = new byte[Constants.PKI_CERT_MAX_LEN];
+        this.cert = new byte[Constants.Pki.CERT_MAX_LEN];
         this.importedLen = 0;
         this.stagedTotalLen = 0;
         this.importState = IMPORT_STATE_IDLE;
@@ -97,13 +97,13 @@ public final class PkiManager {
      */
     public short signCsr(byte[] digest, short digestOffset, byte[] out, short outOffset) {
         if (digestOffset < 0
-                || (short) ((short) digest.length - digestOffset) < Constants.EC_SCALAR_LEN) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+                || (short) ((short) digest.length - digestOffset) < Constants.Ec.SCALAR_LEN) {
+            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
         }
         // signPreComputedHash() lets us sign an already-computed digest without re-hashing.
         ecdsa.init(authentikey.privateKey(), Signature.MODE_SIGN);
         return ecdsa.signPreComputedHash(
-                digest, digestOffset, Constants.EC_SCALAR_LEN, out, outOffset);
+                digest, digestOffset, Constants.Ec.SCALAR_LEN, out, outOffset);
     }
 
     /**
@@ -112,15 +112,15 @@ public final class PkiManager {
      * zero" holds at the buffer level, irrespective of how the buffer is later read.
      */
     public void importInit(short totalLen) {
-        if (totalLen <= 0 || totalLen > Constants.PKI_CERT_MAX_LEN) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        if (totalLen <= 0 || totalLen > Constants.Pki.CERT_MAX_LEN) {
+            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
         }
         JCSystem.beginTransaction();
         importState = IMPORT_STATE_STAGED;
         stagedTotalLen = totalLen;
         // Importing a new cert invalidates the previously committed one.
         importedLen = 0;
-        Util.arrayFillNonAtomic(cert, (short) 0, Constants.PKI_CERT_MAX_LEN, (byte) 0);
+        Util.arrayFillNonAtomic(cert, (short) 0, Constants.Pki.CERT_MAX_LEN, (byte) 0);
         JCSystem.commitTransaction();
     }
 
@@ -130,14 +130,14 @@ public final class PkiManager {
      */
     public void importWrite(short offset, byte[] chunk, short chunkOffset, short chunkLen) {
         if (importState != IMPORT_STATE_STAGED) {
-            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
+            ISOException.throwIt(Constants.Sw.CONDITIONS_NOT_SATISFIED);
         }
         if (offset < 0
                 || offset > stagedTotalLen
                 || chunkLen <= 0
                 || chunkLen > (short) (stagedTotalLen - offset)
-                || chunkLen > Constants.PKI_CERT_CHUNK_MAX_LEN) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+                || chunkLen > Constants.Pki.CERT_CHUNK_MAX_LEN) {
+            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
         }
         Bounds.requireRange(chunk, chunkOffset, chunkLen);
         // Util.arrayCopy is the transactional variant.
@@ -152,7 +152,7 @@ public final class PkiManager {
      */
     public void importFinalize() {
         if (importState != IMPORT_STATE_STAGED || stagedTotalLen == 0) {
-            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
+            ISOException.throwIt(Constants.Sw.CONDITIONS_NOT_SATISFIED);
         }
         JCSystem.beginTransaction();
         importedLen = stagedTotalLen;
@@ -169,10 +169,10 @@ public final class PkiManager {
      */
     public short exportCert(short offset, short requestedLen, byte[] dst, short dstOffset) {
         if (!hasCert()) {
-            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
+            ISOException.throwIt(Constants.Sw.CONDITIONS_NOT_SATISFIED);
         }
         if (offset < 0 || offset > importedLen || requestedLen < 0) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
         }
         short available = (short) (importedLen - offset);
         short take = requestedLen < available ? requestedLen : available;
@@ -201,7 +201,7 @@ public final class PkiManager {
      * reset-to-factory commit.
      */
     public void wipeInTx() {
-        Util.arrayFillNonAtomic(cert, (short) 0, Constants.PKI_CERT_MAX_LEN, (byte) 0);
+        Util.arrayFillNonAtomic(cert, (short) 0, Constants.Pki.CERT_MAX_LEN, (byte) 0);
         importedLen = 0;
         stagedTotalLen = 0;
         importState = IMPORT_STATE_IDLE;

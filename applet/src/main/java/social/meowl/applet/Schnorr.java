@@ -122,7 +122,7 @@ public final class Schnorr {
      */
     public Schnorr(Bip32 bip32, byte[] sharedScratch) {
         if ((short) sharedScratch.length < SCRATCH_LEN) {
-            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
+            ISOException.throwIt(Constants.Sw.UNSUPPORTED_FEATURE);
         }
         this.bip32 = bip32;
         this.barrettN = new Barrett(Secp256k1Curve.N, (short) 0, Secp256k1Curve.MU_N, (short) 0);
@@ -136,7 +136,7 @@ public final class Schnorr {
             }
             this.rng = candidate;
         } catch (Exception e) {
-            throw Constants.fail(Constants.SW_UNSUPPORTED_FEATURE);
+            throw Constants.fail(Constants.Sw.UNSUPPORTED_FEATURE);
         }
         this.scratch = sharedScratch;
     }
@@ -169,7 +169,7 @@ public final class Schnorr {
             //    y(P) parity is public (P appears in tagged_hash(challenge, …) and is recoverable
             //    from the signature); the mask-driven flip stays here purely for code-uniformity
             //    with the y(R) path below so both call sites are structurally identical.
-            byte pyLastByte = scratch[(short) (P_OFF + Constants.EC_POINT_UNCOMPRESSED_LEN - 1)];
+            byte pyLastByte = scratch[(short) (P_OFF + Constants.Ec.POINT_UNCOMPRESSED_LEN - 1)];
             short pParityMask = (short) -((pyLastByte & 0x01));
             BigNat.ctSelectNeg(scratch, D_OFF, Secp256k1Curve.N, (short) 0, COORD_LEN, pParityMask);
 
@@ -195,7 +195,7 @@ public final class Schnorr {
             BigNat.ctSelectSub(
                     scratch, K_OFF, Secp256k1Curve.N, (short) 0, COORD_LEN, (short) ~kLessN);
             if (BigNat.ctIsZero(scratch, K_OFF, COORD_LEN) != 0) {
-                ISOException.throwIt(Constants.SW_INTERNAL_ERROR);
+                ISOException.throwIt(Constants.Sw.INTERNAL_ERROR);
             }
 
             // 6. R = k' · G; k = (y(R) odd ? n − k' : k').
@@ -203,7 +203,7 @@ public final class Schnorr {
             //    Mask-driven ctSelectNeg avoids the 1-bit per-signature timing oracle that a
             //    branchful flip would expose.
             bip32.scalarMultG(scratch, K_OFF, scratch, R_OFF);
-            byte ryLastByte = scratch[(short) (R_OFF + Constants.EC_POINT_UNCOMPRESSED_LEN - 1)];
+            byte ryLastByte = scratch[(short) (R_OFF + Constants.Ec.POINT_UNCOMPRESSED_LEN - 1)];
             short rParityMask = (short) -((ryLastByte & 0x01));
             BigNat.ctSelectNeg(scratch, K_OFF, Secp256k1Curve.N, (short) 0, COORD_LEN, rParityMask);
 
@@ -244,7 +244,7 @@ public final class Schnorr {
                     (short) (outOff + COORD_LEN),
                     COORD_LEN);
 
-            return Constants.SIG_LEN_R_S;
+            return Constants.Ec.SIG_LEN_R_S;
         } finally {
             Util.arrayFillNonAtomic(scratch, (short) 0, SCRATCH_LEN, (byte) 0);
         }

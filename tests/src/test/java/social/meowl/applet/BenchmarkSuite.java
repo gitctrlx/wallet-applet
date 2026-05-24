@@ -59,9 +59,9 @@ class BenchmarkSuite {
     private static final byte[] APPLET_AID_BYTES = {
         (byte) 0xF0, 0x6D, 0x65, 0x6F, 0x77, 0x6C, 0x01
     };
-    private static final int CLA = Constants.CLA_MEOWL & 0xFF;
-    private static final int INS_INIT_SC = Constants.INS_INIT_SECURE_CHANNEL & 0xFF;
-    private static final int INS_OPEN_SC = Constants.INS_OPEN_SECURE_CHANNEL & 0xFF;
+    private static final int CLA = Constants.Wire.CLA & 0xFF;
+    private static final int INS_INIT_SC = Constants.Wire.INS_INIT_SECURE_CHANNEL & 0xFF;
+    private static final int INS_OPEN_SC = Constants.Wire.INS_OPEN_SECURE_CHANNEL & 0xFF;
 
     private static final X9ECParameters SECP256K1 = CustomNamedCurves.getByName("secp256k1");
     private static final byte[] HKDF_INFO = "meowl-sc-v1".getBytes();
@@ -96,12 +96,15 @@ class BenchmarkSuite {
         // 1. Import a synthetic PKI cert and LOCK_PKI to reach PERSONALIZED state.
         byte[] cert = synthesiseCert(80);
         importCert(cert);
-        sendInnerExpectOk(Constants.INS_LOCK_PKI, (byte) 0, (byte) 0, new byte[0]);
+        sendInnerExpectOk(Constants.Wire.INS_LOCK_PKI, (byte) 0, (byte) 0, new byte[0]);
         // 2. SETUP -> SETUP_DONE.
         sendInnerExpectOk(
-                Constants.INS_SETUP, (byte) 0, (byte) 0, encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
+                Constants.Wire.INS_SETUP,
+                (byte) 0,
+                (byte) 0,
+                encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
         // 3. VERIFY_PIN inside the session.
-        ResponseAPDU vp = sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, DEFAULT_PIN);
+        ResponseAPDU vp = sendInner(Constants.Wire.INS_VERIFY_PIN, (byte) 0, (byte) 0, DEFAULT_PIN);
         if (vp.getSW() != 0x9000) {
             throw new IllegalStateException(
                     "verify PIN failed: " + Integer.toHexString(vp.getSW()));
@@ -110,7 +113,7 @@ class BenchmarkSuite {
         byte[] seedPayload = new byte[1 + DEFAULT_SEED.length];
         seedPayload[0] = (byte) DEFAULT_SEED.length;
         System.arraycopy(DEFAULT_SEED, 0, seedPayload, 1, DEFAULT_SEED.length);
-        sendInnerExpectOk(Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, seedPayload);
+        sendInnerExpectOk(Constants.Wire.INS_IMPORT_SEED, (byte) 0, (byte) 0, seedPayload);
     }
 
     private static byte[] synthesiseCert(int size) {
@@ -123,27 +126,27 @@ class BenchmarkSuite {
 
     private void importCert(byte[] cert) {
         sendInnerExpectOk(
-                Constants.INS_IMPORT_PKI_CERT,
-                Constants.PKI_IMPORT_P1_INIT,
+                Constants.Wire.INS_IMPORT_PKI_CERT,
+                Constants.Pki.IMPORT_P1_INIT,
                 (byte) 0,
                 shortBE((short) cert.length));
         int written = 0;
         while (written < cert.length) {
-            int chunkLen = Math.min(Constants.PKI_CERT_CHUNK_MAX_LEN, cert.length - written);
+            int chunkLen = Math.min(Constants.Pki.CERT_CHUNK_MAX_LEN, cert.length - written);
             byte[] payload = new byte[2 + chunkLen];
             payload[0] = (byte) (written >> 8);
             payload[1] = (byte) (written & 0xFF);
             System.arraycopy(cert, written, payload, 2, chunkLen);
             sendInnerExpectOk(
-                    Constants.INS_IMPORT_PKI_CERT,
-                    Constants.PKI_IMPORT_P1_WRITE,
+                    Constants.Wire.INS_IMPORT_PKI_CERT,
+                    Constants.Pki.IMPORT_P1_WRITE,
                     (byte) 0,
                     payload);
             written += chunkLen;
         }
         sendInnerExpectOk(
-                Constants.INS_IMPORT_PKI_CERT,
-                Constants.PKI_IMPORT_P1_FINALIZE,
+                Constants.Wire.INS_IMPORT_PKI_CERT,
+                Constants.Pki.IMPORT_P1_FINALIZE,
                 (byte) 0,
                 new byte[0]);
     }
@@ -158,7 +161,9 @@ class BenchmarkSuite {
         byte[] payload = signPayloadK1();
         runBench(
                 "SIGN_ECDSA_K1",
-                () -> sendInnerExpectOk(Constants.INS_SIGN_ECDSA_K1, (byte) 0, (byte) 0, payload));
+                () ->
+                        sendInnerExpectOk(
+                                Constants.Wire.INS_SIGN_ECDSA_K1, (byte) 0, (byte) 0, payload));
     }
 
     @Test
@@ -169,7 +174,7 @@ class BenchmarkSuite {
                 "SIGN_SCHNORR_K1",
                 () ->
                         sendInnerExpectOk(
-                                Constants.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, payload));
+                                Constants.Wire.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, payload));
     }
 
     @Test
@@ -178,7 +183,9 @@ class BenchmarkSuite {
         byte[] payload = signPayloadEd25519();
         runBench(
                 "SIGN_ED25519",
-                () -> sendInnerExpectOk(Constants.INS_SIGN_ED25519, (byte) 0, (byte) 0, payload));
+                () ->
+                        sendInnerExpectOk(
+                                Constants.Wire.INS_SIGN_ED25519, (byte) 0, (byte) 0, payload));
     }
 
     @Test
@@ -186,11 +193,13 @@ class BenchmarkSuite {
     void benchExportXpubK1() {
         byte[] payload =
                 exportXpubPayload(
-                        Constants.CURVE_SECP256K1,
+                        Constants.Hd.CURVE_SECP256K1,
                         new int[] {0x8000002C, 0x80000000, 0x80000000, 0, 0});
         runBench(
                 "EXPORT_XPUB_K1",
-                () -> sendInnerExpectOk(Constants.INS_EXPORT_XPUB, (byte) 0, (byte) 0, payload));
+                () ->
+                        sendInnerExpectOk(
+                                Constants.Wire.INS_EXPORT_XPUB, (byte) 0, (byte) 0, payload));
     }
 
     @Test
@@ -198,11 +207,13 @@ class BenchmarkSuite {
     void benchExportXpubEd25519() {
         byte[] payload =
                 exportXpubPayload(
-                        Constants.CURVE_ED25519,
+                        Constants.Hd.CURVE_ED25519,
                         new int[] {0x8000002C, 0x800001F5, 0x80000000, 0x80000000});
         runBench(
                 "EXPORT_XPUB_ED25519",
-                () -> sendInnerExpectOk(Constants.INS_EXPORT_XPUB, (byte) 0, (byte) 0, payload));
+                () ->
+                        sendInnerExpectOk(
+                                Constants.Wire.INS_EXPORT_XPUB, (byte) 0, (byte) 0, payload));
     }
 
     @Test
@@ -359,7 +370,7 @@ class BenchmarkSuite {
 
     private static byte[] innerApdu(byte ins, byte p1, byte p2, byte[] data) {
         byte[] out = new byte[5 + data.length];
-        out[0] = Constants.CLA_MEOWL;
+        out[0] = Constants.Wire.CLA;
         out[1] = ins;
         out[2] = p1;
         out[3] = p2;
@@ -393,7 +404,7 @@ class BenchmarkSuite {
             throw new IllegalStateException("handshake SW=" + Integer.toHexString(resp.getSW()));
         }
         byte[] body = resp.getData();
-        byte[] cardEphPub = Arrays.copyOfRange(body, 0, Constants.EC_POINT_UNCOMPRESSED_LEN);
+        byte[] cardEphPub = Arrays.copyOfRange(body, 0, Constants.Ec.POINT_UNCOMPRESSED_LEN);
 
         ECPoint cardPub = SECP256K1.getCurve().decodePoint(cardEphPub).normalize();
         ECPoint sharedPoint = cardPub.multiply(clientPriv).normalize();
@@ -448,23 +459,23 @@ class BenchmarkSuite {
 
         byte[] encryptForCard(byte[] plaintext) throws Exception {
             counter++;
-            byte[] iv = new byte[Constants.SC_BLOCK_LEN];
+            byte[] iv = new byte[Constants.Sc.BLOCK_LEN];
             for (int i = 0; i < 8; i++) {
-                iv[Constants.SC_BLOCK_LEN - 1 - i] = (byte) ((counter >>> (8 * i)) & 0xFF);
+                iv[Constants.Sc.BLOCK_LEN - 1 - i] = (byte) ((counter >>> (8 * i)) & 0xFF);
             }
             byte[] padded = pkcs5Pad(plaintext);
             Cipher c = Cipher.getInstance("AES/CBC/NoPadding");
             c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(kEnc, "AES"), new IvParameterSpec(iv));
             byte[] ct = c.doFinal(padded);
 
-            int lc = iv.length + ct.length + Constants.SC_MAC_LEN;
+            int lc = iv.length + ct.length + Constants.Sc.MAC_LEN;
             byte[] header = {(byte) CLA, (byte) INS_OPEN_SC, 0x00, 0x00, (byte) lc};
             Mac m = Mac.getInstance("HmacSHA256");
             m.init(new SecretKeySpec(kMac, "HmacSHA256"));
             m.update(header);
             m.update(iv);
             m.update(ct);
-            byte[] tag = Arrays.copyOf(m.doFinal(), Constants.SC_MAC_LEN);
+            byte[] tag = Arrays.copyOf(m.doFinal(), Constants.Sc.MAC_LEN);
 
             byte[] out = new byte[lc];
             System.arraycopy(iv, 0, out, 0, iv.length);
@@ -474,22 +485,22 @@ class BenchmarkSuite {
         }
 
         byte[] decryptFromCard(byte[] envelope) throws Exception {
-            byte[] iv = Arrays.copyOfRange(envelope, 0, Constants.SC_BLOCK_LEN);
+            byte[] iv = Arrays.copyOfRange(envelope, 0, Constants.Sc.BLOCK_LEN);
             byte[] ct =
                     Arrays.copyOfRange(
                             envelope,
-                            Constants.SC_BLOCK_LEN,
-                            envelope.length - Constants.SC_MAC_LEN);
+                            Constants.Sc.BLOCK_LEN,
+                            envelope.length - Constants.Sc.MAC_LEN);
             byte[] tag =
                     Arrays.copyOfRange(
-                            envelope, envelope.length - Constants.SC_MAC_LEN, envelope.length);
+                            envelope, envelope.length - Constants.Sc.MAC_LEN, envelope.length);
 
             Mac m = Mac.getInstance("HmacSHA256");
             m.init(new SecretKeySpec(kMac, "HmacSHA256"));
             m.update((byte) 0xFF);
             m.update(iv);
             m.update(ct);
-            byte[] expected = Arrays.copyOf(m.doFinal(), Constants.SC_MAC_LEN);
+            byte[] expected = Arrays.copyOf(m.doFinal(), Constants.Sc.MAC_LEN);
             if (!Arrays.equals(expected, tag)) {
                 throw new IllegalStateException("outbound MAC mismatch");
             }
@@ -501,8 +512,8 @@ class BenchmarkSuite {
         }
 
         private static byte[] pkcs5Pad(byte[] in) {
-            int rem = in.length % Constants.SC_BLOCK_LEN;
-            int pad = Constants.SC_BLOCK_LEN - rem;
+            int rem = in.length % Constants.Sc.BLOCK_LEN;
+            int pad = Constants.Sc.BLOCK_LEN - rem;
             byte[] out = new byte[in.length + pad];
             System.arraycopy(in, 0, out, 0, in.length);
             for (int i = in.length; i < out.length; i++) out[i] = (byte) pad;

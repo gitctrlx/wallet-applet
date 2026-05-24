@@ -60,9 +60,9 @@ class Ed25519SigningTest {
         (byte) 0xF0, 0x6D, 0x65, 0x6F, 0x77, 0x6C, 0x01
     };
 
-    private static final int CLA = Constants.CLA_MEOWL & 0xFF;
-    private static final int INS_INIT_SC = Constants.INS_INIT_SECURE_CHANNEL & 0xFF;
-    private static final int INS_OPEN_SC = Constants.INS_OPEN_SECURE_CHANNEL & 0xFF;
+    private static final int CLA = Constants.Wire.CLA & 0xFF;
+    private static final int INS_INIT_SC = Constants.Wire.INS_INIT_SECURE_CHANNEL & 0xFF;
+    private static final int INS_OPEN_SC = Constants.Wire.INS_OPEN_SECURE_CHANNEL & 0xFF;
 
     private static final X9ECParameters SECP256K1 = CustomNamedCurves.getByName("secp256k1");
     private static final byte[] HKDF_INFO = "meowl-sc-v1".getBytes();
@@ -113,7 +113,10 @@ class Ed25519SigningTest {
         session = openSession();
         bringToSetupDoneAndVerifyPin();
         sendInnerExpectOk(
-                Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(SLIP10_VECTOR_1_SEED));
+                Constants.Wire.INS_IMPORT_SEED,
+                (byte) 0,
+                (byte) 0,
+                prefixLen(SLIP10_VECTOR_1_SEED));
     }
 
     @Nested
@@ -277,17 +280,18 @@ class Ed25519SigningTest {
         @Test
         @DisplayName("depth > HD_MAX_DEPTH is rejected with SW_WRONG_LENGTH")
         void depthTooDeep() {
-            int[] tooDeep = new int[Constants.HD_MAX_DEPTH + 1];
+            int[] tooDeep = new int[Constants.Hd.MAX_DEPTH + 1];
             for (int i = 0; i < tooDeep.length; i++) tooDeep[i] = 0x80000000 | i;
             ResponseAPDU r = signEd25519Resp(tooDeep, SAMPLE_MESSAGE);
-            assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, r.getSW());
+            assertEquals(Constants.Sw.WRONG_LENGTH & 0xFFFF, r.getSW());
         }
 
         @Test
         @DisplayName("Empty request body is rejected with SW_WRONG_LENGTH")
         void emptyRequest() {
-            ResponseAPDU r = sendInner(Constants.INS_SIGN_ED25519, (byte) 0, (byte) 0, new byte[0]);
-            assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, r.getSW());
+            ResponseAPDU r =
+                    sendInner(Constants.Wire.INS_SIGN_ED25519, (byte) 0, (byte) 0, new byte[0]);
+            assertEquals(Constants.Sw.WRONG_LENGTH & 0xFFFF, r.getSW());
         }
 
         @Test
@@ -296,8 +300,8 @@ class Ed25519SigningTest {
             // depth byte claims 2 levels but we only supply a 4-byte path slice.
             byte[] req = new byte[1 + 4];
             req[0] = 2;
-            ResponseAPDU r = sendInner(Constants.INS_SIGN_ED25519, (byte) 0, (byte) 0, req);
-            assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, r.getSW());
+            ResponseAPDU r = sendInner(Constants.Wire.INS_SIGN_ED25519, (byte) 0, (byte) 0, req);
+            assertEquals(Constants.Sw.WRONG_LENGTH & 0xFFFF, r.getSW());
         }
 
         @Test
@@ -309,7 +313,7 @@ class Ed25519SigningTest {
             // (incorrect P1/P2) is reserved for malformed APDU headers, not for policy
             // violations carried inside the inner data field.
             ResponseAPDU r = signEd25519Resp(new int[] {0}, SAMPLE_MESSAGE);
-            assertEquals(Constants.SW_CONDITIONS_NOT_SATISFIED & 0xFFFF, r.getSW());
+            assertEquals(Constants.Sw.CONDITIONS_NOT_SATISFIED & 0xFFFF, r.getSW());
         }
     }
 
@@ -328,7 +332,7 @@ class Ed25519SigningTest {
             session = openSession();
             bringToSetupDoneAndVerifyPin();
             ResponseAPDU r = signEd25519Resp(new int[] {0x80000000}, SAMPLE_MESSAGE);
-            assertEquals(Constants.SW_LIFECYCLE_INVALID & 0xFFFF, r.getSW());
+            assertEquals(Constants.Sw.LIFECYCLE_INVALID & 0xFFFF, r.getSW());
         }
 
         @Test
@@ -336,7 +340,7 @@ class Ed25519SigningTest {
         void signWithoutPin() throws Exception {
             session = openSession();
             ResponseAPDU r = signEd25519Resp(new int[] {0x80000000}, SAMPLE_MESSAGE);
-            assertEquals(Constants.SW_SECURITY_STATUS_NOT_SATISFIED & 0xFFFF, r.getSW());
+            assertEquals(Constants.Sw.SECURITY_STATUS_NOT_SATISFIED & 0xFFFF, r.getSW());
         }
     }
 
@@ -392,11 +396,11 @@ class Ed25519SigningTest {
         @Test
         @DisplayName("CAP_ED25519 bit is advertised in GET_INFO")
         void capEd25519IsAdvertised() throws Exception {
-            byte[] tlv = transmit(Constants.INS_GET_INFO & 0xFF, 0, 0, null).getData();
+            byte[] tlv = transmit(Constants.Wire.INS_GET_INFO & 0xFF, 0, 0, null).getData();
             short caps = readCapabilities(tlv);
             assertNotEquals(
                     (short) 0,
-                    (short) (caps & Constants.CAP_ED25519),
+                    (short) (caps & Constants.Wire.CAP_ED25519),
                     "CAP_ED25519 must be advertised");
         }
     }
@@ -404,20 +408,20 @@ class Ed25519SigningTest {
     /*  Ed25519-specific helpers.  */
 
     private byte[] ed25519Pubkey(int[] path) {
-        byte[] req = encodeXpubRequest(Constants.CURVE_ED25519, path);
-        byte[] resp = sendInnerExpectOk(Constants.INS_EXPORT_XPUB, (byte) 0, (byte) 0, req);
+        byte[] req = encodeXpubRequest(Constants.Hd.CURVE_ED25519, path);
+        byte[] resp = sendInnerExpectOk(Constants.Wire.INS_EXPORT_XPUB, (byte) 0, (byte) 0, req);
         // Response: pubkey(32) || chain_code(32). We only need the pubkey for verification.
         return Arrays.copyOfRange(resp, 0, Ed25519.PUBLIC_KEY_LEN);
     }
 
     private byte[] signEd25519(int[] path, byte[] msg) {
         byte[] req = encodeSignRequest(path, msg);
-        return sendInnerExpectOk(Constants.INS_SIGN_ED25519, (byte) 0, (byte) 0, req);
+        return sendInnerExpectOk(Constants.Wire.INS_SIGN_ED25519, (byte) 0, (byte) 0, req);
     }
 
     private ResponseAPDU signEd25519Resp(int[] path, byte[] msg) {
         byte[] req = encodeSignRequest(path, msg);
-        return sendInner(Constants.INS_SIGN_ED25519, (byte) 0, (byte) 0, req);
+        return sendInner(Constants.Wire.INS_SIGN_ED25519, (byte) 0, (byte) 0, req);
     }
 
     private static byte[] encodeSignRequest(int[] path, byte[] msg) {
@@ -522,7 +526,7 @@ class Ed25519SigningTest {
         while (i < tlv.length) {
             int tag = tlv[i++] & 0xFF;
             int len = tlv[i++] & 0xFF;
-            if (tag == (Constants.TAG_CAPABILITIES & 0xFF)) {
+            if (tag == (Constants.Wire.TAG_CAPABILITIES & 0xFF)) {
                 return (short) (((tlv[i] & 0xFF) << 8) | (tlv[i + 1] & 0xFF));
             }
             i += len;
@@ -538,29 +542,32 @@ class Ed25519SigningTest {
         byte[] cert = new byte[64];
         for (int i = 0; i < cert.length; i++) cert[i] = (byte) i;
         sendInnerExpectOk(
-                Constants.INS_IMPORT_PKI_CERT,
-                Constants.PKI_IMPORT_P1_INIT,
+                Constants.Wire.INS_IMPORT_PKI_CERT,
+                Constants.Pki.IMPORT_P1_INIT,
                 (byte) 0,
                 shortBE((short) cert.length));
         byte[] writePayload = new byte[2 + cert.length];
         System.arraycopy(cert, 0, writePayload, 2, cert.length);
         sendInnerExpectOk(
-                Constants.INS_IMPORT_PKI_CERT,
-                Constants.PKI_IMPORT_P1_WRITE,
+                Constants.Wire.INS_IMPORT_PKI_CERT,
+                Constants.Pki.IMPORT_P1_WRITE,
                 (byte) 0,
                 writePayload);
         sendInnerExpectOk(
-                Constants.INS_IMPORT_PKI_CERT,
-                Constants.PKI_IMPORT_P1_FINALIZE,
+                Constants.Wire.INS_IMPORT_PKI_CERT,
+                Constants.Pki.IMPORT_P1_FINALIZE,
                 (byte) 0,
                 new byte[0]);
-        sendInnerExpectOk(Constants.INS_LOCK_PKI, (byte) 0, (byte) 0, new byte[0]);
+        sendInnerExpectOk(Constants.Wire.INS_LOCK_PKI, (byte) 0, (byte) 0, new byte[0]);
         session = openSession();
         sendInnerExpectOk(
-                Constants.INS_SETUP, (byte) 0, (byte) 0, encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
+                Constants.Wire.INS_SETUP,
+                (byte) 0,
+                (byte) 0,
+                encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
         assertEquals(
                 0x9000,
-                sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, DEFAULT_PIN).getSW());
+                sendInner(Constants.Wire.INS_VERIFY_PIN, (byte) 0, (byte) 0, DEFAULT_PIN).getSW());
     }
 
     private byte[] sendInnerExpectOk(byte ins, byte p1, byte p2, byte[] data) {
@@ -585,7 +592,7 @@ class Ed25519SigningTest {
 
     private static byte[] innerApdu(byte ins, byte p1, byte p2, byte[] data) {
         byte[] out = new byte[5 + data.length];
-        out[0] = Constants.CLA_MEOWL;
+        out[0] = Constants.Wire.CLA;
         out[1] = ins;
         out[2] = p1;
         out[3] = p2;
@@ -637,7 +644,7 @@ class Ed25519SigningTest {
         ResponseAPDU resp = transmit(INS_INIT_SC, 0x00, 0x00, clientPubEnc);
         assertEquals(0x9000, resp.getSW(), "handshake");
         byte[] body = resp.getData();
-        byte[] cardEphPub = Arrays.copyOfRange(body, 0, Constants.EC_POINT_UNCOMPRESSED_LEN);
+        byte[] cardEphPub = Arrays.copyOfRange(body, 0, Constants.Ec.POINT_UNCOMPRESSED_LEN);
 
         ECPoint cardPub = SECP256K1.getCurve().decodePoint(cardEphPub).normalize();
         ECPoint sharedPoint = cardPub.multiply(clientPriv).normalize();
@@ -692,23 +699,23 @@ class Ed25519SigningTest {
 
         byte[] encryptForCard(byte[] plaintext) throws Exception {
             counter++;
-            byte[] iv = new byte[Constants.SC_BLOCK_LEN];
+            byte[] iv = new byte[Constants.Sc.BLOCK_LEN];
             for (int i = 0; i < 8; i++) {
-                iv[Constants.SC_BLOCK_LEN - 1 - i] = (byte) ((counter >>> (8 * i)) & 0xFF);
+                iv[Constants.Sc.BLOCK_LEN - 1 - i] = (byte) ((counter >>> (8 * i)) & 0xFF);
             }
             byte[] padded = pkcs5Pad(plaintext);
             Cipher c = Cipher.getInstance("AES/CBC/NoPadding");
             c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(kEnc, "AES"), new IvParameterSpec(iv));
             byte[] ct = c.doFinal(padded);
 
-            int lc = iv.length + ct.length + Constants.SC_MAC_LEN;
+            int lc = iv.length + ct.length + Constants.Sc.MAC_LEN;
             byte[] header = {(byte) CLA, (byte) INS_OPEN_SC, 0x00, 0x00, (byte) lc};
             Mac m = Mac.getInstance("HmacSHA256");
             m.init(new SecretKeySpec(kMac, "HmacSHA256"));
             m.update(header);
             m.update(iv);
             m.update(ct);
-            byte[] tag = Arrays.copyOf(m.doFinal(), Constants.SC_MAC_LEN);
+            byte[] tag = Arrays.copyOf(m.doFinal(), Constants.Sc.MAC_LEN);
 
             byte[] out = new byte[lc];
             System.arraycopy(iv, 0, out, 0, iv.length);
@@ -718,21 +725,21 @@ class Ed25519SigningTest {
         }
 
         byte[] decryptFromCard(byte[] envelope) throws Exception {
-            byte[] iv = Arrays.copyOfRange(envelope, 0, Constants.SC_BLOCK_LEN);
+            byte[] iv = Arrays.copyOfRange(envelope, 0, Constants.Sc.BLOCK_LEN);
             byte[] ct =
                     Arrays.copyOfRange(
                             envelope,
-                            Constants.SC_BLOCK_LEN,
-                            envelope.length - Constants.SC_MAC_LEN);
+                            Constants.Sc.BLOCK_LEN,
+                            envelope.length - Constants.Sc.MAC_LEN);
             byte[] tag =
                     Arrays.copyOfRange(
-                            envelope, envelope.length - Constants.SC_MAC_LEN, envelope.length);
+                            envelope, envelope.length - Constants.Sc.MAC_LEN, envelope.length);
             Mac m = Mac.getInstance("HmacSHA256");
             m.init(new SecretKeySpec(kMac, "HmacSHA256"));
             m.update((byte) 0xFF);
             m.update(iv);
             m.update(ct);
-            byte[] expected = Arrays.copyOf(m.doFinal(), Constants.SC_MAC_LEN);
+            byte[] expected = Arrays.copyOf(m.doFinal(), Constants.Sc.MAC_LEN);
             if (!Arrays.equals(expected, tag)) {
                 throw new IllegalStateException("outbound MAC mismatch");
             }
@@ -744,8 +751,8 @@ class Ed25519SigningTest {
         }
 
         private static byte[] pkcs5Pad(byte[] in) {
-            int rem = in.length % Constants.SC_BLOCK_LEN;
-            int pad = Constants.SC_BLOCK_LEN - rem;
+            int rem = in.length % Constants.Sc.BLOCK_LEN;
+            int pad = Constants.Sc.BLOCK_LEN - rem;
             byte[] out = new byte[in.length + pad];
             System.arraycopy(in, 0, out, 0, in.length);
             for (int i = in.length; i < out.length; i++) out[i] = (byte) pad;

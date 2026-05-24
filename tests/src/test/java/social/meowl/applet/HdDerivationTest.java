@@ -42,9 +42,9 @@ class HdDerivationTest {
         (byte) 0xF0, 0x6D, 0x65, 0x6F, 0x77, 0x6C, 0x01
     };
 
-    private static final int CLA = Constants.CLA_MEOWL & 0xFF;
-    private static final int INS_INIT_SC = Constants.INS_INIT_SECURE_CHANNEL & 0xFF;
-    private static final int INS_OPEN_SC = Constants.INS_OPEN_SECURE_CHANNEL & 0xFF;
+    private static final int CLA = Constants.Wire.CLA & 0xFF;
+    private static final int INS_INIT_SC = Constants.Wire.INS_INIT_SECURE_CHANNEL & 0xFF;
+    private static final int INS_OPEN_SC = Constants.Wire.INS_OPEN_SECURE_CHANNEL & 0xFF;
 
     private static final X9ECParameters SECP256K1 = CustomNamedCurves.getByName("secp256k1");
     private static final byte[] HKDF_INFO = "meowl-sc-v1".getBytes();
@@ -101,8 +101,11 @@ class HdDerivationTest {
         @DisplayName("IMPORT_SEED with a 16-byte seed advances lifecycle to SEEDED")
         void importAdvancesLifecycle() throws Exception {
             sendInnerExpectOk(
-                    Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(BIP32_VECTOR_1_SEED));
-            byte[] info = transmit(Constants.INS_GET_INFO & 0xFF, 0, 0, null).getData();
+                    Constants.Wire.INS_IMPORT_SEED,
+                    (byte) 0,
+                    (byte) 0,
+                    prefixLen(BIP32_VECTOR_1_SEED));
+            byte[] info = transmit(Constants.Wire.INS_GET_INFO & 0xFF, 0, 0, null).getData();
             assertEquals(LifecycleState.SEEDED, readLifecycleFromInfoTlv(info));
         }
 
@@ -110,15 +113,18 @@ class HdDerivationTest {
         @DisplayName("IMPORT_SEED twice fails")
         void importTwiceFails() throws Exception {
             sendInnerExpectOk(
-                    Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(BIP32_VECTOR_1_SEED));
+                    Constants.Wire.INS_IMPORT_SEED,
+                    (byte) 0,
+                    (byte) 0,
+                    prefixLen(BIP32_VECTOR_1_SEED));
             ResponseAPDU r =
                     sendInner(
-                            Constants.INS_IMPORT_SEED,
+                            Constants.Wire.INS_IMPORT_SEED,
                             (byte) 0,
                             (byte) 0,
                             prefixLen(BIP32_VECTOR_1_SEED));
             // Lifecycle FSM rejects this because state == SEEDED, not SETUP_DONE.
-            assertEquals(Constants.SW_LIFECYCLE_INVALID & 0xFFFF, r.getSW());
+            assertEquals(Constants.Sw.LIFECYCLE_INVALID & 0xFFFF, r.getSW());
         }
 
         @Test
@@ -126,16 +132,21 @@ class HdDerivationTest {
         void importBadLengthFails() {
             byte[] tooShort = new byte[10];
             ResponseAPDU r =
-                    sendInner(Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(tooShort));
-            assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, r.getSW());
+                    sendInner(
+                            Constants.Wire.INS_IMPORT_SEED,
+                            (byte) 0,
+                            (byte) 0,
+                            prefixLen(tooShort));
+            assertEquals(Constants.Sw.WRONG_LENGTH & 0xFFFF, r.getSW());
         }
 
         @Test
         @DisplayName("GENERATE_SEED returns a 64-byte seed and advances lifecycle to SEEDED")
         void generateAdvancesLifecycle() throws Exception {
             byte[] resp =
-                    sendInnerExpectOk(Constants.INS_GENERATE_SEED, (byte) 0, (byte) 0, new byte[0]);
-            assertEquals(Constants.SEED_GENERATED_LEN, resp.length);
+                    sendInnerExpectOk(
+                            Constants.Wire.INS_GENERATE_SEED, (byte) 0, (byte) 0, new byte[0]);
+            assertEquals(Constants.Hd.SEED_GENERATED_LEN, resp.length);
             // Sanity: not all zero.
             byte acc = 0;
             for (byte b : resp) {
@@ -143,7 +154,7 @@ class HdDerivationTest {
             }
             assertNotEquals(0, acc, "generated seed must contain entropy");
 
-            byte[] info = transmit(Constants.INS_GET_INFO & 0xFF, 0, 0, null).getData();
+            byte[] info = transmit(Constants.Wire.INS_GET_INFO & 0xFF, 0, 0, null).getData();
             assertEquals(LifecycleState.SEEDED, readLifecycleFromInfoTlv(info));
         }
     }
@@ -155,13 +166,16 @@ class HdDerivationTest {
         @BeforeEach
         void importVector1Seed() throws Exception {
             sendInnerExpectOk(
-                    Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(BIP32_VECTOR_1_SEED));
+                    Constants.Wire.INS_IMPORT_SEED,
+                    (byte) 0,
+                    (byte) 0,
+                    prefixLen(BIP32_VECTOR_1_SEED));
         }
 
         @Test
         @DisplayName("Vector 1 / m — master xpub matches the reference")
         void masterXpub() throws Exception {
-            byte[] resp = exportXpub(Constants.CURVE_SECP256K1, new int[] {});
+            byte[] resp = exportXpub(Constants.Hd.CURVE_SECP256K1, new int[] {});
             // BIP-32 v1 master pubkey + chain code, hex from the spec.
             byte[] expectedPub =
                     hex("0339a36013301597daef41fbe593a02cc513d0b55527ec2df1050e2e8ff49c85c2");
@@ -176,7 +190,7 @@ class HdDerivationTest {
         @Test
         @DisplayName("Vector 1 / m/0H — hardened child matches reference")
         void mZeroHardened() throws Exception {
-            byte[] resp = exportXpub(Constants.CURVE_SECP256K1, new int[] {0x80000000});
+            byte[] resp = exportXpub(Constants.Hd.CURVE_SECP256K1, new int[] {0x80000000});
             byte[] expectedPub =
                     hex("035a784662a4a20a65bf6aab9ae98a6c068a81c52e4b032c0fb5400c706cfccc56");
             byte[] expectedChain =
@@ -188,7 +202,7 @@ class HdDerivationTest {
         @Test
         @DisplayName("Vector 1 / m/0H/1 — non-hardened child of hardened parent matches reference")
         void mZeroHardenedOne() throws Exception {
-            byte[] resp = exportXpub(Constants.CURVE_SECP256K1, new int[] {0x80000000, 1});
+            byte[] resp = exportXpub(Constants.Hd.CURVE_SECP256K1, new int[] {0x80000000, 1});
             byte[] expectedPub =
                     hex("03501e454bf00751f24b1b489aa925215d66af2234e3891c3b21a52bedb3cd711c");
             byte[] expectedChain =
@@ -204,7 +218,7 @@ class HdDerivationTest {
         void fullPath() throws Exception {
             byte[] resp =
                     exportXpub(
-                            Constants.CURVE_SECP256K1,
+                            Constants.Hd.CURVE_SECP256K1,
                             new int[] {0x80000000, 1, 0x80000002, 2, 1000000000});
             byte[] expectedPub =
                     hex("022a471424da5e657499d1ff51cb43c47481a03b1e77f951fe64cec9f5a48f7011");
@@ -222,14 +236,17 @@ class HdDerivationTest {
         @BeforeEach
         void importVector1Seed() throws Exception {
             sendInnerExpectOk(
-                    Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(BIP32_VECTOR_1_SEED));
+                    Constants.Wire.INS_IMPORT_SEED,
+                    (byte) 0,
+                    (byte) 0,
+                    prefixLen(BIP32_VECTOR_1_SEED));
         }
 
         @Test
         @DisplayName("SLIP-10 Vector 1 / m — master pubkey + chain code match")
         void masterChainCode() throws Exception {
-            byte[] resp = exportXpub(Constants.CURVE_ED25519, new int[] {});
-            assertEquals(Ed25519.PUBLIC_KEY_LEN + Constants.CHAIN_CODE_LEN, resp.length);
+            byte[] resp = exportXpub(Constants.Hd.CURVE_ED25519, new int[] {});
+            assertEquals(Ed25519.PUBLIC_KEY_LEN + Constants.Hd.CHAIN_CODE_LEN, resp.length);
             assertArrayEquals(
                     hex("a4b2856bfec510abab89753fac1ac0e1112364e7d250545963f135f2a33188ed"),
                     Arrays.copyOfRange(resp, 0, 32));
@@ -241,8 +258,8 @@ class HdDerivationTest {
         @Test
         @DisplayName("SLIP-10 Vector 1 / m/0H — hardened child pubkey + chain code match")
         void zeroHardenedChainCode() throws Exception {
-            byte[] resp = exportXpub(Constants.CURVE_ED25519, new int[] {0x80000000});
-            assertEquals(Ed25519.PUBLIC_KEY_LEN + Constants.CHAIN_CODE_LEN, resp.length);
+            byte[] resp = exportXpub(Constants.Hd.CURVE_ED25519, new int[] {0x80000000});
+            assertEquals(Ed25519.PUBLIC_KEY_LEN + Constants.Hd.CHAIN_CODE_LEN, resp.length);
             assertArrayEquals(
                     hex("8c8a13df77a28f3445213a0f432fde644acaa215fc72dcdf300d5efaa85d350c"),
                     Arrays.copyOfRange(resp, 0, 32));
@@ -259,8 +276,8 @@ class HdDerivationTest {
             // Index 0 (top bit clear) is illegal for ed25519 under SLIP-10. The applet returns
             // 6985 (not 6A86): the offending bit lives in the inner data field, not in the APDU
             // header where ISO 7816-4's 6A86 is meaningful.
-            ResponseAPDU r = exportXpubResp(Constants.CURVE_ED25519, new int[] {0});
-            assertEquals(Constants.SW_CONDITIONS_NOT_SATISFIED & 0xFFFF, r.getSW());
+            ResponseAPDU r = exportXpubResp(Constants.Hd.CURVE_ED25519, new int[] {0});
+            assertEquals(Constants.Sw.CONDITIONS_NOT_SATISFIED & 0xFFFF, r.getSW());
         }
     }
 
@@ -271,13 +288,16 @@ class HdDerivationTest {
         @BeforeEach
         void importVector2Seed() {
             sendInnerExpectOk(
-                    Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(BIP32_VECTOR_2_SEED));
+                    Constants.Wire.INS_IMPORT_SEED,
+                    (byte) 0,
+                    (byte) 0,
+                    prefixLen(BIP32_VECTOR_2_SEED));
         }
 
         @Test
         @DisplayName("Vector 2 / m — master xpub matches reference")
         void masterXpub() {
-            byte[] resp = exportXpub(Constants.CURVE_SECP256K1, new int[] {});
+            byte[] resp = exportXpub(Constants.Hd.CURVE_SECP256K1, new int[] {});
             assertArrayEquals(
                     hex("03cbcaa9c98c877a26977d00825c956a238e8dddfbd322cce4f74b0b5bd6ace4a7"),
                     Arrays.copyOfRange(resp, 0, 33));
@@ -289,7 +309,7 @@ class HdDerivationTest {
         @Test
         @DisplayName("Vector 2 / m/0 — non-hardened first child")
         void mZero() {
-            byte[] resp = exportXpub(Constants.CURVE_SECP256K1, new int[] {0});
+            byte[] resp = exportXpub(Constants.Hd.CURVE_SECP256K1, new int[] {0});
             assertArrayEquals(
                     hex("02fc9e5af0ac8d9b3cecfe2a888e2117ba3d089d8585886c9c826b6b22a98d12ea"),
                     Arrays.copyOfRange(resp, 0, 33));
@@ -304,7 +324,7 @@ class HdDerivationTest {
             // Indices: 0, 0xFFFFFFFF (=2^32-1, hardened 2^31+0x7FFFFFFF), 1, 0xFFFFFFFE
             // (=hardened 2^31+0x7FFFFFFE), 2.
             int[] path = {0, 0xFFFFFFFF, 1, 0xFFFFFFFE, 2};
-            byte[] resp = exportXpub(Constants.CURVE_SECP256K1, path);
+            byte[] resp = exportXpub(Constants.Hd.CURVE_SECP256K1, path);
             assertArrayEquals(
                     hex("024d902e1a2fc7a8755ab5b694c575fce742c48d9ff192e63df5193e4c7afe1f9c"),
                     Arrays.copyOfRange(resp, 0, 33));
@@ -321,13 +341,16 @@ class HdDerivationTest {
         @BeforeEach
         void importVector3Seed() {
             sendInnerExpectOk(
-                    Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(BIP32_VECTOR_3_SEED));
+                    Constants.Wire.INS_IMPORT_SEED,
+                    (byte) 0,
+                    (byte) 0,
+                    prefixLen(BIP32_VECTOR_3_SEED));
         }
 
         @Test
         @DisplayName("Vector 3 / m — master xpub matches reference")
         void masterXpub() {
-            byte[] resp = exportXpub(Constants.CURVE_SECP256K1, new int[] {});
+            byte[] resp = exportXpub(Constants.Hd.CURVE_SECP256K1, new int[] {});
             assertArrayEquals(
                     hex("03683af1ba5743bdfc798cf814efeeab2735ec52d95eced528e692b8e34c4e5669"),
                     Arrays.copyOfRange(resp, 0, 33));
@@ -339,7 +362,7 @@ class HdDerivationTest {
         @Test
         @DisplayName("Vector 3 / m/0H — first hardened child has a leading-zero I_L byte")
         void mZeroHardened() {
-            byte[] resp = exportXpub(Constants.CURVE_SECP256K1, new int[] {0x80000000});
+            byte[] resp = exportXpub(Constants.Hd.CURVE_SECP256K1, new int[] {0x80000000});
             assertArrayEquals(
                     hex("026557fdda1d5d43d79611f784780471f086d58e8126b8c40acb82272a7712e7f2"),
                     Arrays.copyOfRange(resp, 0, 33));
@@ -356,14 +379,17 @@ class HdDerivationTest {
         @BeforeEach
         void importVector2Seed() {
             sendInnerExpectOk(
-                    Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(BIP32_VECTOR_2_SEED));
+                    Constants.Wire.INS_IMPORT_SEED,
+                    (byte) 0,
+                    (byte) 0,
+                    prefixLen(BIP32_VECTOR_2_SEED));
         }
 
         @Test
         @DisplayName("SLIP-10 Vector 2 / m — master pubkey + chain code match")
         void masterChainCode() {
-            byte[] resp = exportXpub(Constants.CURVE_ED25519, new int[] {});
-            assertEquals(Ed25519.PUBLIC_KEY_LEN + Constants.CHAIN_CODE_LEN, resp.length);
+            byte[] resp = exportXpub(Constants.Hd.CURVE_ED25519, new int[] {});
+            assertEquals(Ed25519.PUBLIC_KEY_LEN + Constants.Hd.CHAIN_CODE_LEN, resp.length);
             assertArrayEquals(
                     hex("8fe9693f8fa62a4305a140b9764c5ee01e455963744fe18204b4fb948249308a"),
                     Arrays.copyOfRange(resp, 0, 32));
@@ -375,8 +401,8 @@ class HdDerivationTest {
         @Test
         @DisplayName("SLIP-10 Vector 2 / m/0H — first hardened pubkey + chain code match")
         void zeroHardenedChainCode() {
-            byte[] resp = exportXpub(Constants.CURVE_ED25519, new int[] {0x80000000});
-            assertEquals(Ed25519.PUBLIC_KEY_LEN + Constants.CHAIN_CODE_LEN, resp.length);
+            byte[] resp = exportXpub(Constants.Hd.CURVE_ED25519, new int[] {0x80000000});
+            assertEquals(Ed25519.PUBLIC_KEY_LEN + Constants.Hd.CHAIN_CODE_LEN, resp.length);
             assertArrayEquals(
                     hex("86fab68dcb57aa196c77c5f264f215a112c22a912c10d123b0d03c3c28ef1037"),
                     Arrays.copyOfRange(resp, 0, 32));
@@ -393,17 +419,20 @@ class HdDerivationTest {
         @BeforeEach
         void importVector1Seed() {
             sendInnerExpectOk(
-                    Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(BIP32_VECTOR_1_SEED));
+                    Constants.Wire.INS_IMPORT_SEED,
+                    (byte) 0,
+                    (byte) 0,
+                    prefixLen(BIP32_VECTOR_1_SEED));
         }
 
         @Test
         @DisplayName("Two consecutive secp256k1 derivations — second still produces correct output")
         void backToBackBip32() {
             // First derivation: m/0H. Triggers Bip32.scalarKey.clearKey() at the end.
-            byte[] first = exportXpub(Constants.CURVE_SECP256K1, new int[] {0x80000000});
+            byte[] first = exportXpub(Constants.Hd.CURVE_SECP256K1, new int[] {0x80000000});
             // Second derivation on the same simulator instance must work despite the post-clear
             // state of scalarKey — the EC scalar mult inside ckdPriv re-initialises the key.
-            byte[] second = exportXpub(Constants.CURVE_SECP256K1, new int[] {0x80000000, 1});
+            byte[] second = exportXpub(Constants.Hd.CURVE_SECP256K1, new int[] {0x80000000, 1});
             assertArrayEquals(
                     hex("035a784662a4a20a65bf6aab9ae98a6c068a81c52e4b032c0fb5400c706cfccc56"),
                     Arrays.copyOfRange(first, 0, 33));
@@ -415,8 +444,8 @@ class HdDerivationTest {
         @Test
         @DisplayName("Same seed feeds both secp256k1 and Ed25519 trees in one session")
         void crossCurveSameSeed() {
-            byte[] k1 = exportXpub(Constants.CURVE_SECP256K1, new int[] {});
-            byte[] ed = exportXpub(Constants.CURVE_ED25519, new int[] {});
+            byte[] k1 = exportXpub(Constants.Hd.CURVE_SECP256K1, new int[] {});
+            byte[] ed = exportXpub(Constants.Hd.CURVE_ED25519, new int[] {});
             assertArrayEquals(
                     hex("873dff81c02f525623fd1fe5167eac3a55a049de3d314bb42ee227ffed37d508"),
                     Arrays.copyOfRange(k1, 33, 65));
@@ -432,8 +461,8 @@ class HdDerivationTest {
         @DisplayName("Determinism — same path yields the same output across calls")
         void deterministicRepeatedPath() {
             int[] path = {0x80000000, 1, 0x80000002, 2, 1000000000};
-            byte[] first = exportXpub(Constants.CURVE_SECP256K1, path);
-            byte[] second = exportXpub(Constants.CURVE_SECP256K1, path);
+            byte[] first = exportXpub(Constants.Hd.CURVE_SECP256K1, path);
+            byte[] second = exportXpub(Constants.Hd.CURVE_SECP256K1, path);
             assertArrayEquals(first, second);
         }
     }
@@ -445,23 +474,26 @@ class HdDerivationTest {
         @BeforeEach
         void importVector1Seed() {
             sendInnerExpectOk(
-                    Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(BIP32_VECTOR_1_SEED));
+                    Constants.Wire.INS_IMPORT_SEED,
+                    (byte) 0,
+                    (byte) 0,
+                    prefixLen(BIP32_VECTOR_1_SEED));
         }
 
         @Test
         @DisplayName("depth > HD_MAX_DEPTH (=8) is rejected with SW_WRONG_LENGTH")
         void depthTooDeep() {
-            int[] tooDeep = new int[Constants.HD_MAX_DEPTH + 1];
+            int[] tooDeep = new int[Constants.Hd.MAX_DEPTH + 1];
             for (int i = 0; i < tooDeep.length; i++) tooDeep[i] = 0x80000000 | i;
-            ResponseAPDU r = exportXpubResp(Constants.CURVE_SECP256K1, tooDeep);
-            assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, r.getSW());
+            ResponseAPDU r = exportXpubResp(Constants.Hd.CURVE_SECP256K1, tooDeep);
+            assertEquals(Constants.Sw.WRONG_LENGTH & 0xFFFF, r.getSW());
         }
 
         @Test
         @DisplayName("Unknown curve byte (0x02) is rejected with SW_INCORRECT_P1P2")
         void unknownCurve() {
             ResponseAPDU r = exportXpubResp((byte) 0x02, new int[] {});
-            assertEquals(Constants.SW_INCORRECT_P1P2 & 0xFFFF, r.getSW());
+            assertEquals(Constants.Sw.INCORRECT_P1P2 & 0xFFFF, r.getSW());
         }
 
         @Test
@@ -469,11 +501,11 @@ class HdDerivationTest {
         void truncatedPath() {
             // Encode path with depth=2 but only one index of payload.
             byte[] req = new byte[2 + 4];
-            req[0] = Constants.CURVE_SECP256K1;
+            req[0] = Constants.Hd.CURVE_SECP256K1;
             req[1] = 2; // claims depth = 2
             // remaining 4 bytes = a single index, so total dataLen = 6 ≠ 2 + 4*2 = 10
-            ResponseAPDU r = sendInner(Constants.INS_EXPORT_XPUB, (byte) 0, (byte) 0, req);
-            assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, r.getSW());
+            ResponseAPDU r = sendInner(Constants.Wire.INS_EXPORT_XPUB, (byte) 0, (byte) 0, req);
+            assertEquals(Constants.Sw.WRONG_LENGTH & 0xFFFF, r.getSW());
         }
     }
 
@@ -485,8 +517,8 @@ class HdDerivationTest {
         @DisplayName("EXPORT_XPUB before SEEDED is rejected with SW_LIFECYCLE_INVALID")
         void exportBeforeSeeded() {
             // setUp() leaves the card in SETUP_DONE. EXPORT_XPUB requires SEEDED.
-            ResponseAPDU r = exportXpubResp(Constants.CURVE_SECP256K1, new int[] {});
-            assertEquals(Constants.SW_LIFECYCLE_INVALID & 0xFFFF, r.getSW());
+            ResponseAPDU r = exportXpubResp(Constants.Hd.CURVE_SECP256K1, new int[] {});
+            assertEquals(Constants.Sw.LIFECYCLE_INVALID & 0xFFFF, r.getSW());
         }
 
         @Test
@@ -496,22 +528,25 @@ class HdDerivationTest {
             session = openSession();
             ResponseAPDU r =
                     sendInner(
-                            Constants.INS_IMPORT_SEED,
+                            Constants.Wire.INS_IMPORT_SEED,
                             (byte) 0,
                             (byte) 0,
                             prefixLen(BIP32_VECTOR_1_SEED));
-            assertEquals(Constants.SW_SECURITY_STATUS_NOT_SATISFIED & 0xFFFF, r.getSW());
+            assertEquals(Constants.Sw.SECURITY_STATUS_NOT_SATISFIED & 0xFFFF, r.getSW());
         }
 
         @Test
         @DisplayName("EXPORT_XPUB without a verified PIN is rejected (after SC re-handshake)")
         void exportWithoutPinIsRejected() throws Exception {
             sendInnerExpectOk(
-                    Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(BIP32_VECTOR_1_SEED));
+                    Constants.Wire.INS_IMPORT_SEED,
+                    (byte) 0,
+                    (byte) 0,
+                    prefixLen(BIP32_VECTOR_1_SEED));
             // SC re-handshake invalidates the PIN session.
             session = openSession();
-            ResponseAPDU r = exportXpubResp(Constants.CURVE_SECP256K1, new int[] {});
-            assertEquals(Constants.SW_SECURITY_STATUS_NOT_SATISFIED & 0xFFFF, r.getSW());
+            ResponseAPDU r = exportXpubResp(Constants.Hd.CURVE_SECP256K1, new int[] {});
+            assertEquals(Constants.Sw.SECURITY_STATUS_NOT_SATISFIED & 0xFFFF, r.getSW());
         }
     }
 
@@ -519,12 +554,12 @@ class HdDerivationTest {
 
     private byte[] exportXpub(byte curve, int[] path) {
         byte[] req = encodePath(curve, path);
-        return sendInnerExpectOk(Constants.INS_EXPORT_XPUB, (byte) 0, (byte) 0, req);
+        return sendInnerExpectOk(Constants.Wire.INS_EXPORT_XPUB, (byte) 0, (byte) 0, req);
     }
 
     private ResponseAPDU exportXpubResp(byte curve, int[] path) {
         byte[] req = encodePath(curve, path);
-        return sendInner(Constants.INS_EXPORT_XPUB, (byte) 0, (byte) 0, req);
+        return sendInner(Constants.Wire.INS_EXPORT_XPUB, (byte) 0, (byte) 0, req);
     }
 
     private static byte[] encodePath(byte curve, int[] path) {
@@ -546,30 +581,33 @@ class HdDerivationTest {
         byte[] cert = new byte[64];
         for (int i = 0; i < cert.length; i++) cert[i] = (byte) i;
         sendInnerExpectOk(
-                Constants.INS_IMPORT_PKI_CERT,
-                Constants.PKI_IMPORT_P1_INIT,
+                Constants.Wire.INS_IMPORT_PKI_CERT,
+                Constants.Pki.IMPORT_P1_INIT,
                 (byte) 0,
                 shortBE((short) cert.length));
         byte[] writePayload = new byte[2 + cert.length];
         System.arraycopy(cert, 0, writePayload, 2, cert.length);
         sendInnerExpectOk(
-                Constants.INS_IMPORT_PKI_CERT,
-                Constants.PKI_IMPORT_P1_WRITE,
+                Constants.Wire.INS_IMPORT_PKI_CERT,
+                Constants.Pki.IMPORT_P1_WRITE,
                 (byte) 0,
                 writePayload);
         sendInnerExpectOk(
-                Constants.INS_IMPORT_PKI_CERT,
-                Constants.PKI_IMPORT_P1_FINALIZE,
+                Constants.Wire.INS_IMPORT_PKI_CERT,
+                Constants.Pki.IMPORT_P1_FINALIZE,
                 (byte) 0,
                 new byte[0]);
-        sendInnerExpectOk(Constants.INS_LOCK_PKI, (byte) 0, (byte) 0, new byte[0]);
+        sendInnerExpectOk(Constants.Wire.INS_LOCK_PKI, (byte) 0, (byte) 0, new byte[0]);
         // PKI lock invalidates the SC and PIN; re-open a session before the user flow.
         session = openSession();
         sendInnerExpectOk(
-                Constants.INS_SETUP, (byte) 0, (byte) 0, encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
+                Constants.Wire.INS_SETUP,
+                (byte) 0,
+                (byte) 0,
+                encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
         assertEquals(
                 0x9000,
-                sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, DEFAULT_PIN).getSW());
+                sendInner(Constants.Wire.INS_VERIFY_PIN, (byte) 0, (byte) 0, DEFAULT_PIN).getSW());
     }
 
     private byte[] sendInnerExpectOk(byte ins, byte p1, byte p2, byte[] data) {
@@ -594,7 +632,7 @@ class HdDerivationTest {
 
     private static byte[] innerApdu(byte ins, byte p1, byte p2, byte[] data) {
         byte[] out = new byte[5 + data.length];
-        out[0] = Constants.CLA_MEOWL;
+        out[0] = Constants.Wire.CLA;
         out[1] = ins;
         out[2] = p1;
         out[3] = p2;
@@ -628,7 +666,7 @@ class HdDerivationTest {
         while (i < tlv.length) {
             int tag = tlv[i++] & 0xFF;
             int len = tlv[i++] & 0xFF;
-            if (tag == (Constants.TAG_LIFECYCLE_STATE & 0xFF)) {
+            if (tag == (Constants.Wire.TAG_LIFECYCLE_STATE & 0xFF)) {
                 return tlv[i];
             }
             i += len;
@@ -659,7 +697,7 @@ class HdDerivationTest {
         ResponseAPDU resp = transmit(INS_INIT_SC, 0x00, 0x00, clientPubEnc);
         assertEquals(0x9000, resp.getSW(), "handshake");
         byte[] body = resp.getData();
-        byte[] cardEphPub = Arrays.copyOfRange(body, 0, Constants.EC_POINT_UNCOMPRESSED_LEN);
+        byte[] cardEphPub = Arrays.copyOfRange(body, 0, Constants.Ec.POINT_UNCOMPRESSED_LEN);
 
         ECPoint cardPub = SECP256K1.getCurve().decodePoint(cardEphPub).normalize();
         ECPoint sharedPoint = cardPub.multiply(clientPriv).normalize();
@@ -714,23 +752,23 @@ class HdDerivationTest {
 
         byte[] encryptForCard(byte[] plaintext) throws Exception {
             counter++;
-            byte[] iv = new byte[Constants.SC_BLOCK_LEN];
+            byte[] iv = new byte[Constants.Sc.BLOCK_LEN];
             for (int i = 0; i < 8; i++) {
-                iv[Constants.SC_BLOCK_LEN - 1 - i] = (byte) ((counter >>> (8 * i)) & 0xFF);
+                iv[Constants.Sc.BLOCK_LEN - 1 - i] = (byte) ((counter >>> (8 * i)) & 0xFF);
             }
             byte[] padded = pkcs5Pad(plaintext);
             Cipher c = Cipher.getInstance("AES/CBC/NoPadding");
             c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(kEnc, "AES"), new IvParameterSpec(iv));
             byte[] ct = c.doFinal(padded);
 
-            int lc = iv.length + ct.length + Constants.SC_MAC_LEN;
+            int lc = iv.length + ct.length + Constants.Sc.MAC_LEN;
             byte[] header = {(byte) CLA, (byte) INS_OPEN_SC, 0x00, 0x00, (byte) lc};
             Mac m = Mac.getInstance("HmacSHA256");
             m.init(new SecretKeySpec(kMac, "HmacSHA256"));
             m.update(header);
             m.update(iv);
             m.update(ct);
-            byte[] tag = Arrays.copyOf(m.doFinal(), Constants.SC_MAC_LEN);
+            byte[] tag = Arrays.copyOf(m.doFinal(), Constants.Sc.MAC_LEN);
 
             byte[] out = new byte[lc];
             System.arraycopy(iv, 0, out, 0, iv.length);
@@ -740,21 +778,21 @@ class HdDerivationTest {
         }
 
         byte[] decryptFromCard(byte[] envelope) throws Exception {
-            byte[] iv = Arrays.copyOfRange(envelope, 0, Constants.SC_BLOCK_LEN);
+            byte[] iv = Arrays.copyOfRange(envelope, 0, Constants.Sc.BLOCK_LEN);
             byte[] ct =
                     Arrays.copyOfRange(
                             envelope,
-                            Constants.SC_BLOCK_LEN,
-                            envelope.length - Constants.SC_MAC_LEN);
+                            Constants.Sc.BLOCK_LEN,
+                            envelope.length - Constants.Sc.MAC_LEN);
             byte[] tag =
                     Arrays.copyOfRange(
-                            envelope, envelope.length - Constants.SC_MAC_LEN, envelope.length);
+                            envelope, envelope.length - Constants.Sc.MAC_LEN, envelope.length);
             Mac m = Mac.getInstance("HmacSHA256");
             m.init(new SecretKeySpec(kMac, "HmacSHA256"));
             m.update((byte) 0xFF);
             m.update(iv);
             m.update(ct);
-            byte[] expected = Arrays.copyOf(m.doFinal(), Constants.SC_MAC_LEN);
+            byte[] expected = Arrays.copyOf(m.doFinal(), Constants.Sc.MAC_LEN);
             if (!Arrays.equals(expected, tag)) {
                 throw new IllegalStateException("outbound MAC mismatch");
             }
@@ -766,8 +804,8 @@ class HdDerivationTest {
         }
 
         private static byte[] pkcs5Pad(byte[] in) {
-            int rem = in.length % Constants.SC_BLOCK_LEN;
-            int pad = Constants.SC_BLOCK_LEN - rem;
+            int rem = in.length % Constants.Sc.BLOCK_LEN;
+            int pad = Constants.Sc.BLOCK_LEN - rem;
             byte[] out = new byte[in.length + pad];
             System.arraycopy(in, 0, out, 0, in.length);
             for (int i = in.length; i < out.length; i++) out[i] = (byte) pad;

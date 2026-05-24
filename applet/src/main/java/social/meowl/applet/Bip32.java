@@ -54,7 +54,7 @@ public final class Bip32 {
     private static final short STATE_I_OFF = (short) 64;
     private static final short STATE_PUB_OFF = (short) 128;
     private static final short STATE_LEN =
-            (short) (STATE_PUB_OFF + Constants.EC_POINT_UNCOMPRESSED_LEN);
+            (short) (STATE_PUB_OFF + Constants.Ec.POINT_UNCOMPRESSED_LEN);
 
     /**
      * @param sharedHmac512 same engine handed to {@link MasterSeed} and {@link Slip10}; safe to
@@ -73,7 +73,7 @@ public final class Bip32 {
                         },
                         Secp256k1Curve.PARAMS,
                         Secp256k1Curve.OFFSET_G,
-                        Constants.EC_POINT_UNCOMPRESSED_LEN,
+                        Constants.Ec.POINT_UNCOMPRESSED_LEN,
                         (short) 256);
         this.state = JCSystem.makeTransientByteArray(STATE_LEN, JCSystem.CLEAR_ON_DESELECT);
     }
@@ -100,10 +100,10 @@ public final class Bip32 {
         short pubLen = computePubkey(state, STATE_K_OFF, state, STATE_PUB_OFF);
         Util.arrayCopyNonAtomic(state, STATE_PUB_OFF, outBuf, outOff, pubLen);
         Util.arrayCopyNonAtomic(
-                state, STATE_C_OFF, outBuf, (short) (outOff + pubLen), Constants.CHAIN_CODE_LEN);
+                state, STATE_C_OFF, outBuf, (short) (outOff + pubLen), Constants.Hd.CHAIN_CODE_LEN);
 
         wipeTransientSecrets();
-        return (short) (pubLen + Constants.CHAIN_CODE_LEN);
+        return (short) (pubLen + Constants.Hd.CHAIN_CODE_LEN);
     }
 
     /**
@@ -116,9 +116,9 @@ public final class Bip32 {
     public short deriveLeafScalar(
             byte[] pathBuf, short pathOff, short depth, byte[] outBuf, short outOff) {
         walkPathToLeaf(pathBuf, pathOff, depth);
-        Util.arrayCopyNonAtomic(state, STATE_K_OFF, outBuf, outOff, Constants.EC_SCALAR_LEN);
+        Util.arrayCopyNonAtomic(state, STATE_K_OFF, outBuf, outOff, Constants.Ec.SCALAR_LEN);
         wipeTransientSecrets();
-        return Constants.EC_SCALAR_LEN;
+        return Constants.Ec.SCALAR_LEN;
     }
 
     /**
@@ -137,7 +137,7 @@ public final class Bip32 {
      * @return {@link Constants#EC_POINT_UNCOMPRESSED_LEN}
      */
     public short scalarMultG(byte[] scalar, short scalarOff, byte[] outBuf, short outOff) {
-        return secp256k1Ec.multiplyG(scalar, scalarOff, Constants.EC_SCALAR_LEN, outBuf, outOff);
+        return secp256k1Ec.multiplyG(scalar, scalarOff, Constants.Ec.SCALAR_LEN, outBuf, outOff);
     }
 
     /**
@@ -145,8 +145,8 @@ public final class Bip32 {
      * state[STATE_K_OFF..+32]} and the chain code in {@code state[STATE_C_OFF..+32]}.
      */
     private void walkPathToLeaf(byte[] pathBuf, short pathOff, short depth) {
-        if (depth < 0 || depth > Constants.HD_MAX_DEPTH) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        if (depth < 0 || depth > Constants.Hd.MAX_DEPTH) {
+            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
         }
         masterSeed.copyBip32MasterTo(state, STATE_K_OFF);
 
@@ -179,21 +179,21 @@ public final class Bip32 {
     private void ckdPriv(byte[] pathBuf, short idxOff) {
         boolean hardened = (pathBuf[idxOff] & HARDENED_MASK) != 0;
 
-        hmac.init(state, STATE_C_OFF, Constants.CHAIN_CODE_LEN);
+        hmac.init(state, STATE_C_OFF, Constants.Hd.CHAIN_CODE_LEN);
 
         if (hardened) {
             hmac.update(HARDENED_PREFIX, (short) 0, (short) 1);
-            hmac.update(state, STATE_K_OFF, Constants.EC_SCALAR_LEN);
+            hmac.update(state, STATE_K_OFF, Constants.Ec.SCALAR_LEN);
         } else {
             computeCompressedPubkey(state, STATE_K_OFF, state, STATE_PUB_OFF);
-            hmac.update(state, STATE_PUB_OFF, Constants.EC_POINT_COMPRESSED_LEN);
+            hmac.update(state, STATE_PUB_OFF, Constants.Ec.POINT_COMPRESSED_LEN);
         }
         hmac.doFinal(pathBuf, idxOff, INDEX_LEN, state, STATE_I_OFF);
 
         if (BigNat.ctLessThan(
-                        state, STATE_I_OFF, Secp256k1Curve.N, (short) 0, Constants.EC_SCALAR_LEN)
+                        state, STATE_I_OFF, Secp256k1Curve.N, (short) 0, Constants.Ec.SCALAR_LEN)
                 == 0) {
-            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
+            ISOException.throwIt(Constants.Sw.CONDITIONS_NOT_SATISFIED);
         }
         BigNat.modAdd(
                 state,
@@ -204,29 +204,29 @@ public final class Bip32 {
                 (short) 0,
                 state,
                 STATE_K_OFF,
-                Constants.EC_SCALAR_LEN);
-        if (BigNat.ctIsZero(state, STATE_K_OFF, Constants.EC_SCALAR_LEN) != 0) {
-            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
+                Constants.Ec.SCALAR_LEN);
+        if (BigNat.ctIsZero(state, STATE_K_OFF, Constants.Ec.SCALAR_LEN) != 0) {
+            ISOException.throwIt(Constants.Sw.CONDITIONS_NOT_SATISFIED);
         }
 
         Util.arrayCopyNonAtomic(
                 state,
-                (short) (STATE_I_OFF + Constants.EC_SCALAR_LEN),
+                (short) (STATE_I_OFF + Constants.Ec.SCALAR_LEN),
                 state,
                 STATE_C_OFF,
-                Constants.CHAIN_CODE_LEN);
+                Constants.Hd.CHAIN_CODE_LEN);
     }
 
     private short computeCompressedPubkey(
             byte[] scalar, short scalarOff, byte[] outBuf, short outOff) {
         scalarMultG(scalar, scalarOff, outBuf, outOff);
-        byte yLsb = outBuf[(short) (outOff + Constants.EC_POINT_UNCOMPRESSED_LEN - 1)];
+        byte yLsb = outBuf[(short) (outOff + Constants.Ec.POINT_UNCOMPRESSED_LEN - 1)];
         outBuf[outOff] = ((yLsb & 0x01) == 0) ? (byte) 0x02 : (byte) 0x03;
         Util.arrayFillNonAtomic(
                 outBuf,
-                (short) (outOff + Constants.EC_POINT_COMPRESSED_LEN),
-                (short) (Constants.EC_POINT_UNCOMPRESSED_LEN - Constants.EC_POINT_COMPRESSED_LEN),
+                (short) (outOff + Constants.Ec.POINT_COMPRESSED_LEN),
+                (short) (Constants.Ec.POINT_UNCOMPRESSED_LEN - Constants.Ec.POINT_COMPRESSED_LEN),
                 (byte) 0);
-        return Constants.EC_POINT_COMPRESSED_LEN;
+        return Constants.Ec.POINT_COMPRESSED_LEN;
     }
 }

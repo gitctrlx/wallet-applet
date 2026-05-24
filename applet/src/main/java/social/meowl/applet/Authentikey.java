@@ -45,23 +45,23 @@ public final class Authentikey {
      * @return {@link Constants#EC_POINT_COMPRESSED_LEN}
      */
     public short writeCompressedPubkeyTo(byte[] dst, short offset) {
-        Bounds.requireCapacity(dst, offset, Constants.EC_POINT_UNCOMPRESSED_LEN);
+        Bounds.requireCapacity(dst, offset, Constants.Ec.POINT_UNCOMPRESSED_LEN);
 
         short uncompressedLen = publicKey.getW(dst, offset);
-        if (uncompressedLen != Constants.EC_POINT_UNCOMPRESSED_LEN || dst[offset] != (byte) 0x04) {
-            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
+        if (uncompressedLen != Constants.Ec.POINT_UNCOMPRESSED_LEN || dst[offset] != (byte) 0x04) {
+            ISOException.throwIt(Constants.Sw.UNSUPPORTED_FEATURE);
         }
 
         // SEC 1 §2.3.3: keep x in place, replace the 0x04 prefix with 0x02 (y even) / 0x03 (y odd).
-        byte yLsb = dst[(short) (offset + Constants.EC_POINT_UNCOMPRESSED_LEN - 1)];
+        byte yLsb = dst[(short) (offset + Constants.Ec.POINT_UNCOMPRESSED_LEN - 1)];
         dst[offset] = ((yLsb & 0x01) == 0) ? (byte) 0x02 : (byte) 0x03;
         Util.arrayFillNonAtomic(
                 dst,
-                (short) (offset + Constants.EC_POINT_COMPRESSED_LEN),
-                (short) (Constants.EC_POINT_UNCOMPRESSED_LEN - Constants.EC_POINT_COMPRESSED_LEN),
+                (short) (offset + Constants.Ec.POINT_COMPRESSED_LEN),
+                (short) (Constants.Ec.POINT_UNCOMPRESSED_LEN - Constants.Ec.POINT_COMPRESSED_LEN),
                 (byte) 0);
 
-        return Constants.EC_POINT_COMPRESSED_LEN;
+        return Constants.Ec.POINT_COMPRESSED_LEN;
     }
 
     /** Package-private access for the Secure Channel handshake signer. */

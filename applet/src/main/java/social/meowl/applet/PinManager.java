@@ -41,11 +41,12 @@ public final class PinManager {
 
     /** Constructs an unprovisioned manager. */
     public PinManager() {
-        this.pin = new OwnerPIN(Constants.PIN_RETRY_LIMIT, Constants.PIN_MAX_LEN);
-        this.puk = new OwnerPIN(Constants.PUK_RETRY_LIMIT, Constants.PUK_MAX_LEN);
+        this.pin = new OwnerPIN(Constants.Pin.RETRY_LIMIT, Constants.Pin.MAX_LEN);
+        this.puk = new OwnerPIN(Constants.Pin.PUK_RETRY_LIMIT, Constants.Pin.PUK_MAX_LEN);
         this.provisioned = new byte[1];
         this.scrub =
-                JCSystem.makeTransientByteArray(Constants.PUK_MAX_LEN, JCSystem.CLEAR_ON_DESELECT);
+                JCSystem.makeTransientByteArray(
+                        Constants.Pin.PUK_MAX_LEN, JCSystem.CLEAR_ON_DESELECT);
     }
 
     /** Returns {@code true} once {@link #setup} has been called successfully. */
@@ -78,7 +79,7 @@ public final class PinManager {
             short pukOffset,
             short pukLen) {
         if (provisioned[0] != 0) {
-            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
+            ISOException.throwIt(Constants.Sw.CONDITIONS_NOT_SATISFIED);
         }
         requirePinPolicy(pinLen);
         requirePukPolicy(pukLen);
@@ -99,21 +100,21 @@ public final class PinManager {
         // Probe getTriesRemaining first so a blocked PIN reports as blocked regardless of length.
         byte triesRemaining = pin.getTriesRemaining();
         if (triesRemaining == 0) {
-            ISOException.throwIt(Constants.SW_AUTH_BLOCKED);
+            ISOException.throwIt(Constants.Sw.AUTH_BLOCKED);
         }
         // Bounds-check before OwnerPIN.check (which raises AIOOBE on length > maxPINSize). Policy
         // violations return SW_WRONG_LENGTH without consuming a retry — the same SW is returned
         // for every length-violating input regardless of candidate bytes, so this path leaks no
         // information to a brute-force attacker.
-        if (length < Constants.PIN_MIN_LEN || length > Constants.PIN_MAX_LEN) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        if (length < Constants.Pin.MIN_LEN || length > Constants.Pin.MAX_LEN) {
+            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
         }
         if (!pin.check(buf, offset, (byte) length)) {
             byte remaining = pin.getTriesRemaining();
             if (remaining == 0) {
-                ISOException.throwIt(Constants.SW_AUTH_BLOCKED);
+                ISOException.throwIt(Constants.Sw.AUTH_BLOCKED);
             }
-            ISOException.throwIt((short) (Constants.SW_PIN_RETRIES_BASE | (remaining & 0x0F)));
+            ISOException.throwIt((short) (Constants.Sw.PIN_RETRIES_BASE | (remaining & 0x0F)));
         }
     }
 
@@ -166,7 +167,7 @@ public final class PinManager {
             short newPinLen) {
         requireProvisioned();
         if (pin.getTriesRemaining() != 0) {
-            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
+            ISOException.throwIt(Constants.Sw.CONDITIONS_NOT_SATISFIED);
         }
         verifyPukInternal(pukBuf, pukOffset, pukLen);
         requirePinPolicy(newPinLen);
@@ -198,57 +199,57 @@ public final class PinManager {
         // the scrub MUST propagate so the enclosing JC transaction rolls back — silently
         // swallowing would leave the caller believing reset-to-factory committed while the
         // EEPROM cells still held the previous PIN/PUK hashes.
-        Util.arrayFillNonAtomic(scrub, (short) 0, Constants.PUK_MAX_LEN, (byte) 0xFF);
-        pin.update(scrub, (short) 0, Constants.PIN_MAX_LEN);
-        puk.update(scrub, (short) 0, Constants.PUK_MAX_LEN);
+        Util.arrayFillNonAtomic(scrub, (short) 0, Constants.Pin.PUK_MAX_LEN, (byte) 0xFF);
+        pin.update(scrub, (short) 0, Constants.Pin.MAX_LEN);
+        puk.update(scrub, (short) 0, Constants.Pin.PUK_MAX_LEN);
         // Rebuild fresh OwnerPIN instances; JC spec offers no clearKey-equivalent.
-        this.pin = new OwnerPIN(Constants.PIN_RETRY_LIMIT, Constants.PIN_MAX_LEN);
-        this.puk = new OwnerPIN(Constants.PUK_RETRY_LIMIT, Constants.PUK_MAX_LEN);
+        this.pin = new OwnerPIN(Constants.Pin.RETRY_LIMIT, Constants.Pin.MAX_LEN);
+        this.puk = new OwnerPIN(Constants.Pin.PUK_RETRY_LIMIT, Constants.Pin.PUK_MAX_LEN);
         this.provisioned[0] = 0;
     }
 
     /** Returns the current PIN try counter; useful for inclusion in {@code GET_INFO}. */
     public byte pinTriesRemaining() {
-        return isProvisioned() ? pin.getTriesRemaining() : Constants.PIN_RETRY_LIMIT;
+        return isProvisioned() ? pin.getTriesRemaining() : Constants.Pin.RETRY_LIMIT;
     }
 
     /** Returns the current PUK try counter. */
     public byte pukTriesRemaining() {
-        return isProvisioned() ? puk.getTriesRemaining() : Constants.PUK_RETRY_LIMIT;
+        return isProvisioned() ? puk.getTriesRemaining() : Constants.Pin.PUK_RETRY_LIMIT;
     }
 
     private void verifyPukInternal(byte[] buf, short offset, short length) {
         byte triesRemaining = puk.getTriesRemaining();
         if (triesRemaining == 0) {
-            ISOException.throwIt(Constants.SW_AUTH_BLOCKED);
+            ISOException.throwIt(Constants.Sw.AUTH_BLOCKED);
         }
-        if (length < Constants.PUK_MIN_LEN || length > Constants.PUK_MAX_LEN) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        if (length < Constants.Pin.PUK_MIN_LEN || length > Constants.Pin.PUK_MAX_LEN) {
+            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
         }
         if (!puk.check(buf, offset, (byte) length)) {
             byte remaining = puk.getTriesRemaining();
             if (remaining == 0) {
-                ISOException.throwIt(Constants.SW_AUTH_BLOCKED);
+                ISOException.throwIt(Constants.Sw.AUTH_BLOCKED);
             }
-            ISOException.throwIt((short) (Constants.SW_PIN_RETRIES_BASE | (remaining & 0x0F)));
+            ISOException.throwIt((short) (Constants.Sw.PIN_RETRIES_BASE | (remaining & 0x0F)));
         }
     }
 
     private static void requirePinPolicy(short length) {
-        if (length < Constants.PIN_MIN_LEN || length > Constants.PIN_MAX_LEN) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        if (length < Constants.Pin.MIN_LEN || length > Constants.Pin.MAX_LEN) {
+            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
         }
     }
 
     private static void requirePukPolicy(short length) {
-        if (length < Constants.PUK_MIN_LEN || length > Constants.PUK_MAX_LEN) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        if (length < Constants.Pin.PUK_MIN_LEN || length > Constants.Pin.PUK_MAX_LEN) {
+            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
         }
     }
 
     private void requireProvisioned() {
         if (!isProvisioned()) {
-            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
+            ISOException.throwIt(Constants.Sw.CONDITIONS_NOT_SATISFIED);
         }
     }
 }

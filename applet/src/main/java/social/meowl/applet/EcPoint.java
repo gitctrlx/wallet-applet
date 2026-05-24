@@ -91,7 +91,7 @@ public final class EcPoint {
         try {
             this.ka = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY, false);
         } catch (javacard.security.CryptoException e) {
-            throw Constants.fail(Constants.SW_UNSUPPORTED_FEATURE);
+            throw Constants.fail(Constants.Sw.UNSUPPORTED_FEATURE);
         }
         this.curveParams = curveParams;
         this.generatorOff = generatorOff;
@@ -113,7 +113,7 @@ public final class EcPoint {
         ka.init(scalarKey);
         short len = ka.generateSecret(curveParams, generatorOff, pointLen, out, outOff);
         if (len != pointLen || out[outOff] != (byte) 0x04) {
-            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
+            ISOException.throwIt(Constants.Sw.UNSUPPORTED_FEATURE);
         }
         return pointLen;
     }
@@ -136,7 +136,7 @@ public final class EcPoint {
         ka.init(scalarKey);
         short len = ka.generateSecret(point, pointOff, pointLen, out, outOff);
         if (len != pointLen || out[outOff] != (byte) 0x04) {
-            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
+            ISOException.throwIt(Constants.Sw.UNSUPPORTED_FEATURE);
         }
         return pointLen;
     }

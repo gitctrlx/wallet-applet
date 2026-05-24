@@ -52,9 +52,9 @@ class SchnorrK1Test {
         (byte) 0xF0, 0x6D, 0x65, 0x6F, 0x77, 0x6C, 0x01
     };
 
-    private static final int CLA = Constants.CLA_MEOWL & 0xFF;
-    private static final int INS_INIT_SC = Constants.INS_INIT_SECURE_CHANNEL & 0xFF;
-    private static final int INS_OPEN_SC = Constants.INS_OPEN_SECURE_CHANNEL & 0xFF;
+    private static final int CLA = Constants.Wire.CLA & 0xFF;
+    private static final int INS_INIT_SC = Constants.Wire.INS_INIT_SECURE_CHANNEL & 0xFF;
+    private static final int INS_OPEN_SC = Constants.Wire.INS_OPEN_SECURE_CHANNEL & 0xFF;
 
     private static final X9ECParameters SECP256K1 = CustomNamedCurves.getByName("secp256k1");
     private static final BigInteger CURVE_P = SECP256K1.getCurve().getField().getCharacteristic();
@@ -90,7 +90,7 @@ class SchnorrK1Test {
         session = openSession();
         bringToSetupDoneAndVerifyPin();
         sendInnerExpectOk(
-                Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(BIP32_VECTOR_1_SEED));
+                Constants.Wire.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(BIP32_VECTOR_1_SEED));
     }
 
     @Nested
@@ -103,7 +103,7 @@ class SchnorrK1Test {
             int[] path = {};
             byte[] xOnlyPub = xOnlyPubkey(path);
             byte[] sig = signSchnorr(path, SAMPLE_DIGEST);
-            assertEquals(Constants.SIG_LEN_R_S, sig.length);
+            assertEquals(Constants.Ec.SIG_LEN_R_S, sig.length);
             assertTrue(
                     Bip340.verify(xOnlyPub, SAMPLE_DIGEST, sig),
                     "card-produced sig must verify under derived x-only pubkey");
@@ -141,8 +141,8 @@ class SchnorrK1Test {
         void signAllZeroDigest() {
             int[] path = {0};
             byte[] xOnlyPub = xOnlyPubkey(path);
-            byte[] sig = signSchnorr(path, new byte[Constants.DIGEST_LEN]);
-            assertTrue(Bip340.verify(xOnlyPub, new byte[Constants.DIGEST_LEN], sig));
+            byte[] sig = signSchnorr(path, new byte[Constants.Ec.DIGEST_LEN]);
+            assertTrue(Bip340.verify(xOnlyPub, new byte[Constants.Ec.DIGEST_LEN], sig));
         }
 
         @Test
@@ -151,7 +151,7 @@ class SchnorrK1Test {
             int[] path = {0x80000001};
             byte[] xOnlyPub = xOnlyPubkey(path);
             for (int i = 0; i < 5; i++) {
-                byte[] digest = new byte[Constants.DIGEST_LEN];
+                byte[] digest = new byte[Constants.Ec.DIGEST_LEN];
                 RANDOM.nextBytes(digest);
                 byte[] sig = signSchnorr(path, digest);
                 assertTrue(Bip340.verify(xOnlyPub, digest, sig), "iteration " + i);
@@ -185,7 +185,7 @@ class SchnorrK1Test {
             int[] path = {0x80000000, 1};
             byte[] xOnlyPub = xOnlyPubkey(path);
             for (int i = 0; i < 5; i++) {
-                byte[] digest = new byte[Constants.DIGEST_LEN];
+                byte[] digest = new byte[Constants.Ec.DIGEST_LEN];
                 RANDOM.nextBytes(digest);
                 byte[] sig = signSchnorr(path, digest);
                 // BIP-340 forces y(R) even; verify() implicitly checks this — verify it again
@@ -226,35 +226,35 @@ class SchnorrK1Test {
         @Test
         @DisplayName("depth > HD_MAX_DEPTH is rejected with SW_WRONG_LENGTH")
         void depthTooDeep() {
-            int[] tooDeep = new int[Constants.HD_MAX_DEPTH + 1];
+            int[] tooDeep = new int[Constants.Hd.MAX_DEPTH + 1];
             for (int i = 0; i < tooDeep.length; i++) tooDeep[i] = 0x80000000 | i;
             ResponseAPDU r = signSchnorrResp(tooDeep, SAMPLE_DIGEST);
-            assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, r.getSW());
+            assertEquals(Constants.Sw.WRONG_LENGTH & 0xFFFF, r.getSW());
         }
 
         @Test
         @DisplayName("digest shorter than 32 bytes is rejected with SW_WRONG_LENGTH")
         void digestTooShort() {
             byte[] req = encodeSignRequest(new int[] {0}, new byte[16]);
-            ResponseAPDU r = sendInner(Constants.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, req);
-            assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, r.getSW());
+            ResponseAPDU r = sendInner(Constants.Wire.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, req);
+            assertEquals(Constants.Sw.WRONG_LENGTH & 0xFFFF, r.getSW());
         }
 
         @Test
         @DisplayName("Empty request is rejected with SW_WRONG_LENGTH")
         void emptyRequest() {
             ResponseAPDU r =
-                    sendInner(Constants.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, new byte[0]);
-            assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, r.getSW());
+                    sendInner(Constants.Wire.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, new byte[0]);
+            assertEquals(Constants.Sw.WRONG_LENGTH & 0xFFFF, r.getSW());
         }
 
         @Test
         @DisplayName("Truncated path (declared depth ≠ supplied bytes) is rejected")
         void truncatedPath() {
-            byte[] req = new byte[1 + 4 + Constants.DIGEST_LEN];
+            byte[] req = new byte[1 + 4 + Constants.Ec.DIGEST_LEN];
             req[0] = 2; // declared depth = 2, but we only supply one 4-byte index
-            ResponseAPDU r = sendInner(Constants.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, req);
-            assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, r.getSW());
+            ResponseAPDU r = sendInner(Constants.Wire.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, req);
+            assertEquals(Constants.Sw.WRONG_LENGTH & 0xFFFF, r.getSW());
         }
     }
 
@@ -272,7 +272,7 @@ class SchnorrK1Test {
             session = openSession();
             bringToSetupDoneAndVerifyPin();
             ResponseAPDU r = signSchnorrResp(new int[] {0}, SAMPLE_DIGEST);
-            assertEquals(Constants.SW_LIFECYCLE_INVALID & 0xFFFF, r.getSW());
+            assertEquals(Constants.Sw.LIFECYCLE_INVALID & 0xFFFF, r.getSW());
         }
 
         @Test
@@ -280,7 +280,7 @@ class SchnorrK1Test {
         void signWithoutPinIsRejected() throws Exception {
             session = openSession();
             ResponseAPDU r = signSchnorrResp(new int[] {0}, SAMPLE_DIGEST);
-            assertEquals(Constants.SW_SECURITY_STATUS_NOT_SATISFIED & 0xFFFF, r.getSW());
+            assertEquals(Constants.Sw.SECURITY_STATUS_NOT_SATISFIED & 0xFFFF, r.getSW());
         }
     }
 
@@ -291,11 +291,11 @@ class SchnorrK1Test {
         @Test
         @DisplayName("CAP_K1_SCHNORR bit is advertised in GET_INFO")
         void capK1SchnorrIsAdvertised() throws Exception {
-            byte[] tlv = transmit(Constants.INS_GET_INFO & 0xFF, 0, 0, null).getData();
+            byte[] tlv = transmit(Constants.Wire.INS_GET_INFO & 0xFF, 0, 0, null).getData();
             short caps = readCapabilities(tlv);
             assertNotEquals(
                     (short) 0,
-                    (short) (caps & Constants.CAP_K1_SCHNORR),
+                    (short) (caps & Constants.Wire.CAP_K1_SCHNORR),
                     "CAP_K1_SCHNORR must be advertised");
         }
     }
@@ -354,20 +354,20 @@ class SchnorrK1Test {
     /*  Phase-5B helpers.  */
 
     private byte[] xOnlyPubkey(int[] path) {
-        byte[] req = encodeXpubRequest(Constants.CURVE_SECP256K1, path);
-        byte[] resp = sendInnerExpectOk(Constants.INS_EXPORT_XPUB, (byte) 0, (byte) 0, req);
+        byte[] req = encodeXpubRequest(Constants.Hd.CURVE_SECP256K1, path);
+        byte[] resp = sendInnerExpectOk(Constants.Wire.INS_EXPORT_XPUB, (byte) 0, (byte) 0, req);
         // EXPORT_XPUB returns 33-byte compressed P (0x02|0x03 || x); BIP-340 strips the prefix.
-        return Arrays.copyOfRange(resp, 1, Constants.EC_POINT_COMPRESSED_LEN);
+        return Arrays.copyOfRange(resp, 1, Constants.Ec.POINT_COMPRESSED_LEN);
     }
 
     private byte[] signSchnorr(int[] path, byte[] digest) {
         byte[] req = encodeSignRequest(path, digest);
-        return sendInnerExpectOk(Constants.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, req);
+        return sendInnerExpectOk(Constants.Wire.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, req);
     }
 
     private ResponseAPDU signSchnorrResp(int[] path, byte[] digest) {
         byte[] req = encodeSignRequest(path, digest);
-        return sendInner(Constants.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, req);
+        return sendInner(Constants.Wire.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, req);
     }
 
     private static byte[] encodeSignRequest(int[] path, byte[] digest) {
@@ -472,7 +472,7 @@ class SchnorrK1Test {
         while (i < tlv.length) {
             int tag = tlv[i++] & 0xFF;
             int len = tlv[i++] & 0xFF;
-            if (tag == (Constants.TAG_CAPABILITIES & 0xFF)) {
+            if (tag == (Constants.Wire.TAG_CAPABILITIES & 0xFF)) {
                 return (short) (((tlv[i] & 0xFF) << 8) | (tlv[i + 1] & 0xFF));
             }
             i += len;
@@ -488,29 +488,32 @@ class SchnorrK1Test {
         byte[] cert = new byte[64];
         for (int i = 0; i < cert.length; i++) cert[i] = (byte) i;
         sendInnerExpectOk(
-                Constants.INS_IMPORT_PKI_CERT,
-                Constants.PKI_IMPORT_P1_INIT,
+                Constants.Wire.INS_IMPORT_PKI_CERT,
+                Constants.Pki.IMPORT_P1_INIT,
                 (byte) 0,
                 shortBE((short) cert.length));
         byte[] writePayload = new byte[2 + cert.length];
         System.arraycopy(cert, 0, writePayload, 2, cert.length);
         sendInnerExpectOk(
-                Constants.INS_IMPORT_PKI_CERT,
-                Constants.PKI_IMPORT_P1_WRITE,
+                Constants.Wire.INS_IMPORT_PKI_CERT,
+                Constants.Pki.IMPORT_P1_WRITE,
                 (byte) 0,
                 writePayload);
         sendInnerExpectOk(
-                Constants.INS_IMPORT_PKI_CERT,
-                Constants.PKI_IMPORT_P1_FINALIZE,
+                Constants.Wire.INS_IMPORT_PKI_CERT,
+                Constants.Pki.IMPORT_P1_FINALIZE,
                 (byte) 0,
                 new byte[0]);
-        sendInnerExpectOk(Constants.INS_LOCK_PKI, (byte) 0, (byte) 0, new byte[0]);
+        sendInnerExpectOk(Constants.Wire.INS_LOCK_PKI, (byte) 0, (byte) 0, new byte[0]);
         session = openSession();
         sendInnerExpectOk(
-                Constants.INS_SETUP, (byte) 0, (byte) 0, encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
+                Constants.Wire.INS_SETUP,
+                (byte) 0,
+                (byte) 0,
+                encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
         assertEquals(
                 0x9000,
-                sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, DEFAULT_PIN).getSW());
+                sendInner(Constants.Wire.INS_VERIFY_PIN, (byte) 0, (byte) 0, DEFAULT_PIN).getSW());
     }
 
     private byte[] sendInnerExpectOk(byte ins, byte p1, byte p2, byte[] data) {
@@ -535,7 +538,7 @@ class SchnorrK1Test {
 
     private static byte[] innerApdu(byte ins, byte p1, byte p2, byte[] data) {
         byte[] out = new byte[5 + data.length];
-        out[0] = Constants.CLA_MEOWL;
+        out[0] = Constants.Wire.CLA;
         out[1] = ins;
         out[2] = p1;
         out[3] = p2;
@@ -587,7 +590,7 @@ class SchnorrK1Test {
         ResponseAPDU resp = transmit(INS_INIT_SC, 0x00, 0x00, clientPubEnc);
         assertEquals(0x9000, resp.getSW(), "handshake");
         byte[] body = resp.getData();
-        byte[] cardEphPub = Arrays.copyOfRange(body, 0, Constants.EC_POINT_UNCOMPRESSED_LEN);
+        byte[] cardEphPub = Arrays.copyOfRange(body, 0, Constants.Ec.POINT_UNCOMPRESSED_LEN);
 
         ECPoint cardPub = SECP256K1.getCurve().decodePoint(cardEphPub).normalize();
         ECPoint sharedPoint = cardPub.multiply(clientPriv).normalize();
@@ -642,23 +645,23 @@ class SchnorrK1Test {
 
         byte[] encryptForCard(byte[] plaintext) throws Exception {
             counter++;
-            byte[] iv = new byte[Constants.SC_BLOCK_LEN];
+            byte[] iv = new byte[Constants.Sc.BLOCK_LEN];
             for (int i = 0; i < 8; i++) {
-                iv[Constants.SC_BLOCK_LEN - 1 - i] = (byte) ((counter >>> (8 * i)) & 0xFF);
+                iv[Constants.Sc.BLOCK_LEN - 1 - i] = (byte) ((counter >>> (8 * i)) & 0xFF);
             }
             byte[] padded = pkcs5Pad(plaintext);
             Cipher c = Cipher.getInstance("AES/CBC/NoPadding");
             c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(kEnc, "AES"), new IvParameterSpec(iv));
             byte[] ct = c.doFinal(padded);
 
-            int lc = iv.length + ct.length + Constants.SC_MAC_LEN;
+            int lc = iv.length + ct.length + Constants.Sc.MAC_LEN;
             byte[] header = {(byte) CLA, (byte) INS_OPEN_SC, 0x00, 0x00, (byte) lc};
             Mac m = Mac.getInstance("HmacSHA256");
             m.init(new SecretKeySpec(kMac, "HmacSHA256"));
             m.update(header);
             m.update(iv);
             m.update(ct);
-            byte[] tag = Arrays.copyOf(m.doFinal(), Constants.SC_MAC_LEN);
+            byte[] tag = Arrays.copyOf(m.doFinal(), Constants.Sc.MAC_LEN);
 
             byte[] out = new byte[lc];
             System.arraycopy(iv, 0, out, 0, iv.length);
@@ -668,21 +671,21 @@ class SchnorrK1Test {
         }
 
         byte[] decryptFromCard(byte[] envelope) throws Exception {
-            byte[] iv = Arrays.copyOfRange(envelope, 0, Constants.SC_BLOCK_LEN);
+            byte[] iv = Arrays.copyOfRange(envelope, 0, Constants.Sc.BLOCK_LEN);
             byte[] ct =
                     Arrays.copyOfRange(
                             envelope,
-                            Constants.SC_BLOCK_LEN,
-                            envelope.length - Constants.SC_MAC_LEN);
+                            Constants.Sc.BLOCK_LEN,
+                            envelope.length - Constants.Sc.MAC_LEN);
             byte[] tag =
                     Arrays.copyOfRange(
-                            envelope, envelope.length - Constants.SC_MAC_LEN, envelope.length);
+                            envelope, envelope.length - Constants.Sc.MAC_LEN, envelope.length);
             Mac m = Mac.getInstance("HmacSHA256");
             m.init(new SecretKeySpec(kMac, "HmacSHA256"));
             m.update((byte) 0xFF);
             m.update(iv);
             m.update(ct);
-            byte[] expected = Arrays.copyOf(m.doFinal(), Constants.SC_MAC_LEN);
+            byte[] expected = Arrays.copyOf(m.doFinal(), Constants.Sc.MAC_LEN);
             if (!Arrays.equals(expected, tag)) {
                 throw new IllegalStateException("outbound MAC mismatch");
             }
@@ -694,8 +697,8 @@ class SchnorrK1Test {
         }
 
         private static byte[] pkcs5Pad(byte[] in) {
-            int rem = in.length % Constants.SC_BLOCK_LEN;
-            int pad = Constants.SC_BLOCK_LEN - rem;
+            int rem = in.length % Constants.Sc.BLOCK_LEN;
+            int pad = Constants.Sc.BLOCK_LEN - rem;
             byte[] out = new byte[in.length + pad];
             System.arraycopy(in, 0, out, 0, in.length);
             for (int i = in.length; i < out.length; i++) out[i] = (byte) pad;

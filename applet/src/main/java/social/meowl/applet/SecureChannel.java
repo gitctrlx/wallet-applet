@@ -62,15 +62,15 @@ import javacardx.crypto.Cipher;
 public final class SecureChannel {
 
     /** Required size of the client ephemeral public key (uncompressed SEC1). */
-    private static final short CLIENT_EPH_PUB_LEN = Constants.EC_POINT_UNCOMPRESSED_LEN;
+    private static final short CLIENT_EPH_PUB_LEN = Constants.Ec.POINT_UNCOMPRESSED_LEN;
 
     /** {@code K_enc ‖ K_mac ‖ IV_base} layout produced by HKDF-Expand. */
     private static final short OKM_LEN =
-            (short) (Constants.SC_KEY_LEN + Constants.SC_KEY_LEN + Constants.SC_BLOCK_LEN);
+            (short) (Constants.Sc.KEY_LEN + Constants.Sc.KEY_LEN + Constants.Sc.BLOCK_LEN);
 
     /** Offset of {@code IV_base} inside {@link #okm}. */
     private static final short OKM_IV_OFFSET =
-            (short) (Constants.SC_KEY_LEN + Constants.SC_KEY_LEN);
+            (short) (Constants.Sc.KEY_LEN + Constants.Sc.KEY_LEN);
 
     /** Handshake scratch layout (all sizes in bytes). */
     private static final short HS_CLIENT_PUB = (short) 0; // 65
@@ -80,7 +80,7 @@ public final class SecureChannel {
     private static final short HS_SHARED =
             (short) (HS_CARD_PUB + CLIENT_EPH_PUB_LEN); // 65 → ends 195
     private static final short HS_SALT = (short) (HS_SHARED + CLIENT_EPH_PUB_LEN); // 64 → ends 259
-    private static final short HS_SCRATCH_LEN = (short) (HS_SALT + (Constants.EC_SCALAR_LEN * 2));
+    private static final short HS_SCRATCH_LEN = (short) (HS_SALT + (Constants.Ec.SCALAR_LEN * 2));
 
     /** Application-binding label for HKDF-Expand. */
     private static final byte[] HKDF_INFO = {
@@ -143,7 +143,7 @@ public final class SecureChannel {
      */
     public SecureChannel(Authentikey authentikey, HmacSha sharedHmac256, byte[] sharedScratch) {
         if ((short) sharedScratch.length < HS_SCRATCH_LEN) {
-            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
+            ISOException.throwIt(Constants.Sw.UNSUPPORTED_FEATURE);
         }
         this.authentikey = authentikey;
         this.hkdf = new Hkdf(sharedHmac256);
@@ -166,13 +166,13 @@ public final class SecureChannel {
                                 KeyBuilder.LENGTH_AES_256,
                                 false);
         this.macKey =
-                JCSystem.makeTransientByteArray(Constants.SC_KEY_LEN, JCSystem.CLEAR_ON_DESELECT);
+                JCSystem.makeTransientByteArray(Constants.Sc.KEY_LEN, JCSystem.CLEAR_ON_DESELECT);
 
         this.okm = JCSystem.makeTransientByteArray(OKM_LEN, JCSystem.CLEAR_ON_DESELECT);
         this.lastInboundIv =
-                JCSystem.makeTransientByteArray(Constants.SC_BLOCK_LEN, JCSystem.CLEAR_ON_DESELECT);
+                JCSystem.makeTransientByteArray(Constants.Sc.BLOCK_LEN, JCSystem.CLEAR_ON_DESELECT);
         this.outboundCounter =
-                JCSystem.makeTransientByteArray(Constants.SC_BLOCK_LEN, JCSystem.CLEAR_ON_DESELECT);
+                JCSystem.makeTransientByteArray(Constants.Sc.BLOCK_LEN, JCSystem.CLEAR_ON_DESELECT);
         this.macScratch =
                 JCSystem.makeTransientByteArray(Hkdf.HASH_LEN, JCSystem.CLEAR_ON_DESELECT);
         this.hsScratch = sharedScratch;
@@ -187,12 +187,12 @@ public final class SecureChannel {
     /** Tears down the session, clearing all derived keys and counters. */
     public void reset() {
         encKey.clearKey();
-        Util.arrayFillNonAtomic(macKey, (short) 0, Constants.SC_KEY_LEN, (byte) 0);
+        Util.arrayFillNonAtomic(macKey, (short) 0, Constants.Sc.KEY_LEN, (byte) 0);
         hmac.reset();
         hkdf.reset();
         Util.arrayFillNonAtomic(okm, (short) 0, OKM_LEN, (byte) 0);
-        Util.arrayFillNonAtomic(lastInboundIv, (short) 0, Constants.SC_BLOCK_LEN, (byte) 0);
-        Util.arrayFillNonAtomic(outboundCounter, (short) 0, Constants.SC_BLOCK_LEN, (byte) 0);
+        Util.arrayFillNonAtomic(lastInboundIv, (short) 0, Constants.Sc.BLOCK_LEN, (byte) 0);
+        Util.arrayFillNonAtomic(outboundCounter, (short) 0, Constants.Sc.BLOCK_LEN, (byte) 0);
         Util.arrayFillNonAtomic(macScratch, (short) 0, Hkdf.HASH_LEN, (byte) 0);
         Util.arrayFillNonAtomic(hsScratch, (short) 0, HS_SCRATCH_LEN, (byte) 0);
         openFlag[0] = 0;
@@ -209,11 +209,11 @@ public final class SecureChannel {
     public short initHandshake(byte[] apduBuffer, short inDataOffset, short inDataLen) {
         reset();
         if (inDataLen != CLIENT_EPH_PUB_LEN) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
         }
         // Per MEAP-2: a non-0x04 prefix is a crypto failure (6FB2), not a length error (6700).
         if (apduBuffer[inDataOffset] != (byte) 0x04) {
-            ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
+            ISOException.throwIt(Constants.Sw.SECURE_CHANNEL_FAILED);
         }
 
         try {
@@ -226,16 +226,16 @@ public final class SecureChannel {
             ECPublicKey cardEphPub = (ECPublicKey) ephKeypair.getPublic();
             short cardPubLen = cardEphPub.getW(hsScratch, HS_CARD_PUB);
             if (cardPubLen != CLIENT_EPH_PUB_LEN || hsScratch[HS_CARD_PUB] != (byte) 0x04) {
-                ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
+                ISOException.throwIt(Constants.Sw.SECURE_CHANNEL_FAILED);
             }
 
             ecdh.init((ECPrivateKey) ephKeypair.getPrivate());
             short sharedLen =
                     ecdh.generateSecret(
                             hsScratch, HS_CLIENT_PUB, CLIENT_EPH_PUB_LEN, hsScratch, HS_SHARED);
-            if (sharedLen != Constants.EC_POINT_UNCOMPRESSED_LEN
+            if (sharedLen != Constants.Ec.POINT_UNCOMPRESSED_LEN
                     || hsScratch[HS_SHARED] != (byte) 0x04) {
-                ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
+                ISOException.throwIt(Constants.Sw.SECURE_CHANNEL_FAILED);
             }
 
             // Compose HKDF salt = client_x ‖ card_x.
@@ -244,30 +244,30 @@ public final class SecureChannel {
                     (short) (HS_CLIENT_PUB + 1),
                     hsScratch,
                     HS_SALT,
-                    Constants.EC_SCALAR_LEN);
+                    Constants.Ec.SCALAR_LEN);
             Util.arrayCopyNonAtomic(
                     hsScratch,
                     (short) (HS_CARD_PUB + 1),
                     hsScratch,
-                    (short) (HS_SALT + Constants.EC_SCALAR_LEN),
-                    Constants.EC_SCALAR_LEN);
+                    (short) (HS_SALT + Constants.Ec.SCALAR_LEN),
+                    Constants.Ec.SCALAR_LEN);
 
             hkdf.extract(
                     hsScratch,
                     HS_SALT,
-                    (short) (Constants.EC_SCALAR_LEN * 2),
+                    (short) (Constants.Ec.SCALAR_LEN * 2),
                     hsScratch,
                     (short) (HS_SHARED + 1),
-                    Constants.EC_SCALAR_LEN);
+                    Constants.Ec.SCALAR_LEN);
             hkdf.expand(HKDF_INFO, (short) 0, (short) HKDF_INFO.length, okm, (short) 0, OKM_LEN);
             encKey.setKey(okm, (short) 0);
             // K_mac in transient byte storage: the same code path works on cards without TYPE_HMAC*
             // in their key builder catalogue (J3R180).
             Util.arrayCopyNonAtomic(
-                    okm, Constants.SC_KEY_LEN, macKey, (short) 0, Constants.SC_KEY_LEN);
+                    okm, Constants.Sc.KEY_LEN, macKey, (short) 0, Constants.Sc.KEY_LEN);
 
-            Util.arrayFillNonAtomic(lastInboundIv, (short) 0, Constants.SC_BLOCK_LEN, (byte) 0);
-            Util.arrayFillNonAtomic(outboundCounter, (short) 0, Constants.SC_BLOCK_LEN, (byte) 0);
+            Util.arrayFillNonAtomic(lastInboundIv, (short) 0, Constants.Sc.BLOCK_LEN, (byte) 0);
+            Util.arrayFillNonAtomic(outboundCounter, (short) 0, Constants.Sc.BLOCK_LEN, (byte) 0);
             openFlag[0] = (byte) 1;
 
             // Sign (card_eph_pub ‖ client_eph_pub) with the authentikey via update + sign so the
@@ -295,7 +295,7 @@ public final class SecureChannel {
             return 0;
         } catch (Exception e) {
             reset();
-            ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
+            ISOException.throwIt(Constants.Sw.SECURE_CHANNEL_FAILED);
             return 0;
         }
     }
@@ -309,19 +309,19 @@ public final class SecureChannel {
      */
     public short unwrap(byte[] apduBuffer, short outerDataOffset, short outerDataLen) {
         if (!isOpen()) {
-            ISOException.throwIt(Constants.SW_SECURE_CHANNEL_REQUIRED);
+            ISOException.throwIt(Constants.Sw.SECURE_CHANNEL_REQUIRED);
         }
         short minLen =
-                (short) (Constants.SC_BLOCK_LEN + Constants.SC_BLOCK_LEN + Constants.SC_MAC_LEN);
+                (short) (Constants.Sc.BLOCK_LEN + Constants.Sc.BLOCK_LEN + Constants.Sc.MAC_LEN);
         if (outerDataLen < minLen) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
         }
-        short ctLen = (short) (outerDataLen - Constants.SC_BLOCK_LEN - Constants.SC_MAC_LEN);
-        if ((short) (ctLen % Constants.SC_BLOCK_LEN) != 0) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        short ctLen = (short) (outerDataLen - Constants.Sc.BLOCK_LEN - Constants.Sc.MAC_LEN);
+        if ((short) (ctLen % Constants.Sc.BLOCK_LEN) != 0) {
+            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
         }
         short ivOffset = outerDataOffset;
-        short ctOffset = (short) (ivOffset + Constants.SC_BLOCK_LEN);
+        short ctOffset = (short) (ivOffset + Constants.Sc.BLOCK_LEN);
         short macOffset = (short) (ctOffset + ctLen);
 
         // Replay defence before MAC verification: reject non-monotonic IVs cheaply. IV bytes
@@ -331,28 +331,28 @@ public final class SecureChannel {
         // path below is still a session-killer because at that point the attacker either holds
         // K_mac or is corrupting in flight — a genuine integrity event, not just replay.
         if (compare16(apduBuffer, ivOffset, lastInboundIv, (short) 0) <= 0) {
-            ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
+            ISOException.throwIt(Constants.Sw.SECURE_CHANNEL_FAILED);
         }
 
         // MAC = HMAC-SHA-256(K_mac, outer_header ‖ IV ‖ ciphertext)[0..16]. BigNat.ctEquals is
         // mandatory: Util.arrayCompare is left-to-right ternary and leaks mismatch position.
-        hmac.init(macKey, (short) 0, Constants.SC_KEY_LEN);
+        hmac.init(macKey, (short) 0, Constants.Sc.KEY_LEN);
         hmac.update(apduBuffer, (short) 0, (short) 5);
         hmac.doFinal(
                 apduBuffer,
                 ivOffset,
-                (short) (Constants.SC_BLOCK_LEN + ctLen),
+                (short) (Constants.Sc.BLOCK_LEN + ctLen),
                 macScratch,
                 (short) 0);
-        if (!BigNat.ctEquals(macScratch, (short) 0, apduBuffer, macOffset, Constants.SC_MAC_LEN)) {
+        if (!BigNat.ctEquals(macScratch, (short) 0, apduBuffer, macOffset, Constants.Sc.MAC_LEN)) {
             reset();
-            ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
+            ISOException.throwIt(Constants.Sw.SECURE_CHANNEL_FAILED);
         }
         Util.arrayCopyNonAtomic(
-                apduBuffer, ivOffset, lastInboundIv, (short) 0, Constants.SC_BLOCK_LEN);
+                apduBuffer, ivOffset, lastInboundIv, (short) 0, Constants.Sc.BLOCK_LEN);
 
         // AES-CBC NOPAD; PKCS#5 padding is stripped manually below.
-        aesCbc.init(encKey, Cipher.MODE_DECRYPT, apduBuffer, ivOffset, Constants.SC_BLOCK_LEN);
+        aesCbc.init(encKey, Cipher.MODE_DECRYPT, apduBuffer, ivOffset, Constants.Sc.BLOCK_LEN);
         short paddedLen =
                 aesCbc.doFinal(apduBuffer, ctOffset, ctLen, apduBuffer, ISO7816.OFFSET_CDATA);
         return stripPkcs5(apduBuffer, ISO7816.OFFSET_CDATA, paddedLen);
@@ -365,46 +365,46 @@ public final class SecureChannel {
      */
     public short wrap(byte[] apduBuffer, short plainOffset, short plaintextLen) {
         if (!isOpen()) {
-            ISOException.throwIt(Constants.SW_SECURE_CHANNEL_REQUIRED);
+            ISOException.throwIt(Constants.Sw.SECURE_CHANNEL_REQUIRED);
         }
         short padded = pkcs5PaddedLength(plaintextLen);
-        short total = (short) (Constants.SC_BLOCK_LEN + padded + Constants.SC_MAC_LEN);
+        short total = (short) (Constants.Sc.BLOCK_LEN + padded + Constants.Sc.MAC_LEN);
         if (total > (short) apduBuffer.length) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
         }
 
         // Move plaintext to its final pre-encryption position (after the IV slot) and pad.
         Util.arrayCopyNonAtomic(
-                apduBuffer, plainOffset, apduBuffer, Constants.SC_BLOCK_LEN, plaintextLen);
-        applyPkcs5(apduBuffer, Constants.SC_BLOCK_LEN, plaintextLen, padded);
+                apduBuffer, plainOffset, apduBuffer, Constants.Sc.BLOCK_LEN, plaintextLen);
+        applyPkcs5(apduBuffer, Constants.Sc.BLOCK_LEN, plaintextLen, padded);
 
         // IV = IV_base XOR (counter++).
         incrementCounter();
-        for (short i = 0; i < Constants.SC_BLOCK_LEN; i++) {
+        for (short i = 0; i < Constants.Sc.BLOCK_LEN; i++) {
             apduBuffer[i] = (byte) (okm[(short) (OKM_IV_OFFSET + i)] ^ outboundCounter[i]);
         }
 
-        aesCbc.init(encKey, Cipher.MODE_ENCRYPT, apduBuffer, (short) 0, Constants.SC_BLOCK_LEN);
+        aesCbc.init(encKey, Cipher.MODE_ENCRYPT, apduBuffer, (short) 0, Constants.Sc.BLOCK_LEN);
         short ctLen =
                 aesCbc.doFinal(
                         apduBuffer,
-                        Constants.SC_BLOCK_LEN,
+                        Constants.Sc.BLOCK_LEN,
                         padded,
                         apduBuffer,
-                        Constants.SC_BLOCK_LEN);
+                        Constants.Sc.BLOCK_LEN);
 
-        short macOffset = (short) (Constants.SC_BLOCK_LEN + ctLen);
-        hmac.init(macKey, (short) 0, Constants.SC_KEY_LEN);
+        short macOffset = (short) (Constants.Sc.BLOCK_LEN + ctLen);
+        hmac.init(macKey, (short) 0, Constants.Sc.KEY_LEN);
         hmac.update(RESP_HEADER, (short) 0, (short) RESP_HEADER.length);
         hmac.doFinal(
                 apduBuffer,
                 (short) 0,
-                (short) (Constants.SC_BLOCK_LEN + ctLen),
+                (short) (Constants.Sc.BLOCK_LEN + ctLen),
                 macScratch,
                 (short) 0);
-        Util.arrayCopyNonAtomic(macScratch, (short) 0, apduBuffer, macOffset, Constants.SC_MAC_LEN);
+        Util.arrayCopyNonAtomic(macScratch, (short) 0, apduBuffer, macOffset, Constants.Sc.MAC_LEN);
 
-        return (short) (Constants.SC_BLOCK_LEN + ctLen + Constants.SC_MAC_LEN);
+        return (short) (Constants.Sc.BLOCK_LEN + ctLen + Constants.Sc.MAC_LEN);
     }
 
     /**
@@ -415,7 +415,7 @@ public final class SecureChannel {
      * injection.
      */
     private void incrementCounter() {
-        for (short i = (short) (Constants.SC_BLOCK_LEN - 1); i >= 0; i--) {
+        for (short i = (short) (Constants.Sc.BLOCK_LEN - 1); i >= 0; i--) {
             short next = (short) ((outboundCounter[i] & 0xFF) + 1);
             outboundCounter[i] = (byte) next;
             if (next <= 0xFF) {
@@ -425,7 +425,7 @@ public final class SecureChannel {
         // All 16 bytes carried out — counter wrapped to all-zero. Tear down so the host must
         // re-handshake with a fresh IV_base before any further outbound ciphertext is emitted.
         reset();
-        ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
+        ISOException.throwIt(Constants.Sw.SECURE_CHANNEL_FAILED);
     }
 
     /**
@@ -441,7 +441,7 @@ public final class SecureChannel {
         // it without an int-support directive.
         short gtMask = 0;
         short ltMask = 0;
-        for (short i = 0; i < Constants.SC_BLOCK_LEN; i++) {
+        for (short i = 0; i < Constants.Sc.BLOCK_LEN; i++) {
             short av = (short) (a[(short) (aOff + i)] & 0xFF);
             short bv = (short) (b[(short) (bOff + i)] & 0xFF);
             short diffAB = (short) (av - bv);
@@ -469,8 +469,8 @@ public final class SecureChannel {
     static short stripPkcs5(byte[] buf, short offset, short paddedLen) {
         // Block-alignment is structural metadata (ciphertext length the AES engine accepted),
         // not a secret-derived byte, so an early return is safe here.
-        if (paddedLen <= 0 || (short) (paddedLen % Constants.SC_BLOCK_LEN) != 0) {
-            ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
+        if (paddedLen <= 0 || (short) (paddedLen % Constants.Sc.BLOCK_LEN) != 0) {
+            ISOException.throwIt(Constants.Sw.SECURE_CHANNEL_FAILED);
         }
         short padVal = (short) (buf[(short) (offset + paddedLen - 1)] & 0xFF);
         // failMask: 0 = OK, non-zero = at least one invariant failed. All sign-bit extractions
@@ -481,10 +481,10 @@ public final class SecureChannel {
         short padNonZeroBit = (short) (((short) (padVal | -padVal) >>> 15) & 1);
         failMask |= (short) (1 - padNonZeroBit);
         // padVal > BLOCK_LEN → reject. (BLOCK_LEN - padVal) is negative iff padVal > BLOCK_LEN.
-        failMask |= (short) (((short) (Constants.SC_BLOCK_LEN - padVal) >>> 15) & 1);
+        failMask |= (short) (((short) (Constants.Sc.BLOCK_LEN - padVal) >>> 15) & 1);
         // Walk the full trailing block at constant cost; per-byte contribution is gated by the
         // "this position must equal padVal" mask.
-        for (short i = 0; i < Constants.SC_BLOCK_LEN; i++) {
+        for (short i = 0; i < Constants.Sc.BLOCK_LEN; i++) {
             short distFromEnd = (short) (i + 1); // 1..BLOCK_LEN
             short outsidePad = (short) (((short) (padVal - distFromEnd) >>> 15) & 1);
             short mustMatch = (short) (outsidePad - 1);
@@ -493,14 +493,14 @@ public final class SecureChannel {
             failMask |= (short) (((short) (mismatchHere | -mismatchHere) >>> 15) & 1);
         }
         if (failMask != 0) {
-            ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
+            ISOException.throwIt(Constants.Sw.SECURE_CHANNEL_FAILED);
         }
         return (short) (paddedLen - padVal);
     }
 
     private static short pkcs5PaddedLength(short plaintextLen) {
-        short rem = (short) (plaintextLen % Constants.SC_BLOCK_LEN);
-        return (short) (plaintextLen + Constants.SC_BLOCK_LEN - rem);
+        short rem = (short) (plaintextLen % Constants.Sc.BLOCK_LEN);
+        return (short) (plaintextLen + Constants.Sc.BLOCK_LEN - rem);
     }
 
     private static void applyPkcs5(byte[] buf, short offset, short plaintextLen, short padded) {

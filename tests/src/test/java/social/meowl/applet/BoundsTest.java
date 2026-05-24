@@ -26,7 +26,7 @@ class BoundsTest {
                 assertThrows(
                         ISOException.class,
                         () -> Bounds.requireCapacity(null, (short) 0, (short) 0));
-        assertEquals(Constants.SW_WRONG_LENGTH, ex.getReason());
+        assertEquals(Constants.Sw.WRONG_LENGTH, ex.getReason());
     }
 
     @Test

@@ -48,9 +48,9 @@ class PersonalisationTest {
         (byte) 0xF0, 0x6D, 0x65, 0x6F, 0x77, 0x6C, 0x01
     };
 
-    private static final int CLA = Constants.CLA_MEOWL & 0xFF;
-    private static final int INS_INIT_SC = Constants.INS_INIT_SECURE_CHANNEL & 0xFF;
-    private static final int INS_OPEN_SC = Constants.INS_OPEN_SECURE_CHANNEL & 0xFF;
+    private static final int CLA = Constants.Wire.CLA & 0xFF;
+    private static final int INS_INIT_SC = Constants.Wire.INS_INIT_SECURE_CHANNEL & 0xFF;
+    private static final int INS_OPEN_SC = Constants.Wire.INS_OPEN_SECURE_CHANNEL & 0xFF;
 
     private static final X9ECParameters SECP256K1 = CustomNamedCurves.getByName("secp256k1");
     private static final byte[] HKDF_INFO = "meowl-sc-v1".getBytes();
@@ -87,8 +87,8 @@ class PersonalisationTest {
         void exportPkiPubkey() throws Exception {
             byte[] pk =
                     sendInnerExpectOk(
-                            Constants.INS_EXPORT_PKI_PUBKEY, (byte) 0, (byte) 0, new byte[0]);
-            assertEquals(Constants.EC_POINT_COMPRESSED_LEN, pk.length);
+                            Constants.Wire.INS_EXPORT_PKI_PUBKEY, (byte) 0, (byte) 0, new byte[0]);
+            assertEquals(Constants.Ec.POINT_COMPRESSED_LEN, pk.length);
             assertTrue(pk[0] == 0x02 || pk[0] == 0x03);
         }
 
@@ -97,12 +97,13 @@ class PersonalisationTest {
         void signPkiCsr() throws Exception {
             byte[] digest = new byte[32];
             RANDOM.nextBytes(digest);
-            byte[] sig = sendInnerExpectOk(Constants.INS_SIGN_PKI_CSR, (byte) 0, (byte) 0, digest);
+            byte[] sig =
+                    sendInnerExpectOk(Constants.Wire.INS_SIGN_PKI_CSR, (byte) 0, (byte) 0, digest);
             assertTrue(sig.length >= 70 && sig.length <= 72, "DER ECDSA sig is 70-72 bytes");
 
             byte[] pubkey =
                     sendInnerExpectOk(
-                            Constants.INS_EXPORT_PKI_PUBKEY, (byte) 0, (byte) 0, new byte[0]);
+                            Constants.Wire.INS_EXPORT_PKI_PUBKEY, (byte) 0, (byte) 0, new byte[0]);
             assertTrue(verifyEcdsaPreHashed(pubkey, digest, sig), "host must verify the signature");
         }
 
@@ -113,22 +114,22 @@ class PersonalisationTest {
 
             // INIT
             sendInnerExpectOk(
-                    Constants.INS_IMPORT_PKI_CERT,
-                    Constants.PKI_IMPORT_P1_INIT,
+                    Constants.Wire.INS_IMPORT_PKI_CERT,
+                    Constants.Pki.IMPORT_P1_INIT,
                     (byte) 0,
                     shortBE((short) cert.length));
 
             // WRITE in 200-byte chunks
             int written = 0;
             while (written < cert.length) {
-                int chunkLen = Math.min(Constants.PKI_CERT_CHUNK_MAX_LEN, cert.length - written);
+                int chunkLen = Math.min(Constants.Pki.CERT_CHUNK_MAX_LEN, cert.length - written);
                 byte[] payload = new byte[2 + chunkLen];
                 payload[0] = (byte) (written >> 8);
                 payload[1] = (byte) (written & 0xFF);
                 System.arraycopy(cert, written, payload, 2, chunkLen);
                 sendInnerExpectOk(
-                        Constants.INS_IMPORT_PKI_CERT,
-                        Constants.PKI_IMPORT_P1_WRITE,
+                        Constants.Wire.INS_IMPORT_PKI_CERT,
+                        Constants.Pki.IMPORT_P1_WRITE,
                         (byte) 0,
                         payload);
                 written += chunkLen;
@@ -136,13 +137,13 @@ class PersonalisationTest {
 
             // FINALIZE
             sendInnerExpectOk(
-                    Constants.INS_IMPORT_PKI_CERT,
-                    Constants.PKI_IMPORT_P1_FINALIZE,
+                    Constants.Wire.INS_IMPORT_PKI_CERT,
+                    Constants.Pki.IMPORT_P1_FINALIZE,
                     (byte) 0,
                     new byte[0]);
 
             // LOCK_PKI
-            sendInnerExpectOk(Constants.INS_LOCK_PKI, (byte) 0, (byte) 0, new byte[0]);
+            sendInnerExpectOk(Constants.Wire.INS_LOCK_PKI, (byte) 0, (byte) 0, new byte[0]);
 
             // EXPORT_PKI_CERT: page through the cert.
             byte[] readBack = new byte[cert.length];
@@ -154,7 +155,8 @@ class PersonalisationTest {
                             (byte) 0x00, (byte) 100
                         };
                 byte[] resp =
-                        sendInnerExpectOk(Constants.INS_EXPORT_PKI_CERT, (byte) 0, (byte) 0, req);
+                        sendInnerExpectOk(
+                                Constants.Wire.INS_EXPORT_PKI_CERT, (byte) 0, (byte) 0, req);
                 // resp = [totalLen(2)] || [data]
                 int total = ((resp[0] & 0xFF) << 8) | (resp[1] & 0xFF);
                 assertEquals(cert.length, total);
@@ -181,19 +183,20 @@ class PersonalisationTest {
             // buffer's first 100 bytes were just overwritten with 0xAA by the previous import;
             // the importInit wipe must zero them again so the export below reads only 0x00.
             sendInnerExpectOk(
-                    Constants.INS_IMPORT_PKI_CERT,
-                    Constants.PKI_IMPORT_P1_INIT,
+                    Constants.Wire.INS_IMPORT_PKI_CERT,
+                    Constants.Pki.IMPORT_P1_INIT,
                     (byte) 0,
                     shortBE((short) 100));
             sendInnerExpectOk(
-                    Constants.INS_IMPORT_PKI_CERT,
-                    Constants.PKI_IMPORT_P1_FINALIZE,
+                    Constants.Wire.INS_IMPORT_PKI_CERT,
+                    Constants.Pki.IMPORT_P1_FINALIZE,
                     (byte) 0,
                     new byte[0]);
 
             // Page the whole committed window; expect 100 bytes of 0x00.
             byte[] req = new byte[] {0x00, 0x00, 0x00, (byte) 100};
-            byte[] resp = sendInnerExpectOk(Constants.INS_EXPORT_PKI_CERT, (byte) 0, (byte) 0, req);
+            byte[] resp =
+                    sendInnerExpectOk(Constants.Wire.INS_EXPORT_PKI_CERT, (byte) 0, (byte) 0, req);
             int total = ((resp[0] & 0xFF) << 8) | (resp[1] & 0xFF);
             assertEquals(100, total);
             byte[] data = Arrays.copyOfRange(resp, 2, resp.length);
@@ -206,8 +209,9 @@ class PersonalisationTest {
         @DisplayName("LOCK_PKI without a cert fails with SW_CONDITIONS_NOT_SATISFIED")
         void lockWithoutCertFails() {
             assertEquals(
-                    Constants.SW_CONDITIONS_NOT_SATISFIED & 0xFFFF,
-                    sendInner(Constants.INS_LOCK_PKI, (byte) 0, (byte) 0, new byte[0]).getSW());
+                    Constants.Sw.CONDITIONS_NOT_SATISFIED & 0xFFFF,
+                    sendInner(Constants.Wire.INS_LOCK_PKI, (byte) 0, (byte) 0, new byte[0])
+                            .getSW());
         }
 
         @Test
@@ -215,35 +219,35 @@ class PersonalisationTest {
         void lockBlocksFurtherImport() throws Exception {
             byte[] cert = synthesiseCert(200);
             importCert(cert);
-            sendInnerExpectOk(Constants.INS_LOCK_PKI, (byte) 0, (byte) 0, new byte[0]);
+            sendInnerExpectOk(Constants.Wire.INS_LOCK_PKI, (byte) 0, (byte) 0, new byte[0]);
 
             // After lock: lifecycle = PERSONALIZED; INIT must fail with SW_LIFECYCLE_INVALID.
             ResponseAPDU resp =
                     sendInner(
-                            Constants.INS_IMPORT_PKI_CERT,
-                            Constants.PKI_IMPORT_P1_INIT,
+                            Constants.Wire.INS_IMPORT_PKI_CERT,
+                            Constants.Pki.IMPORT_P1_INIT,
                             (byte) 0,
                             shortBE((short) 100));
-            assertEquals(Constants.SW_LIFECYCLE_INVALID & 0xFFFF, resp.getSW());
+            assertEquals(Constants.Sw.LIFECYCLE_INVALID & 0xFFFF, resp.getSW());
         }
 
         @Test
         @DisplayName("IMPORT_PKI_CERT rejects offset arithmetic overflow with SW_WRONG_LENGTH")
         void importWriteRejectsOffsetOverflow() {
             sendInnerExpectOk(
-                    Constants.INS_IMPORT_PKI_CERT,
-                    Constants.PKI_IMPORT_P1_INIT,
+                    Constants.Wire.INS_IMPORT_PKI_CERT,
+                    Constants.Pki.IMPORT_P1_INIT,
                     (byte) 0,
-                    shortBE(Constants.PKI_CERT_MAX_LEN));
+                    shortBE(Constants.Pki.CERT_MAX_LEN));
 
             byte[] payload = new byte[] {0x7F, (byte) 0xFF, 0x01};
             ResponseAPDU resp =
                     sendInner(
-                            Constants.INS_IMPORT_PKI_CERT,
-                            Constants.PKI_IMPORT_P1_WRITE,
+                            Constants.Wire.INS_IMPORT_PKI_CERT,
+                            Constants.Pki.IMPORT_P1_WRITE,
                             (byte) 0,
                             payload);
-            assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, resp.getSW());
+            assertEquals(Constants.Sw.WRONG_LENGTH & 0xFFFF, resp.getSW());
         }
     }
 
@@ -256,7 +260,7 @@ class PersonalisationTest {
             // Bring the card to PERSONALIZED with a minimal cert so SETUP becomes reachable.
             byte[] cert = synthesiseCert(100);
             importCert(cert);
-            sendInnerExpectOk(Constants.INS_LOCK_PKI, (byte) 0, (byte) 0, new byte[0]);
+            sendInnerExpectOk(Constants.Wire.INS_LOCK_PKI, (byte) 0, (byte) 0, new byte[0]);
             // Re-open a Secure Channel session — LOCK_PKI does not affect SC state, but the
             // following SETUP is the first user-side command and we want a clean session here
             // since the Pin tests run end-to-end without extra coupling.
@@ -267,8 +271,11 @@ class PersonalisationTest {
         @DisplayName("SETUP installs PIN+PUK and advances lifecycle to SETUP_DONE")
         void setupAdvancesLifecycle() throws Exception {
             sendInnerExpectOk(
-                    Constants.INS_SETUP, (byte) 0, (byte) 0, encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
-            byte[] info = transmit(Constants.INS_GET_INFO & 0xFF, 0, 0, null).getData();
+                    Constants.Wire.INS_SETUP,
+                    (byte) 0,
+                    (byte) 0,
+                    encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
+            byte[] info = transmit(Constants.Wire.INS_GET_INFO & 0xFF, 0, 0, null).getData();
             byte lifecycle = readLifecycleFromInfoTlv(info);
             assertEquals(LifecycleState.SETUP_DONE, lifecycle);
         }
@@ -277,15 +284,18 @@ class PersonalisationTest {
         @DisplayName("Calling SETUP twice fails with SW_CONDITIONS_NOT_SATISFIED")
         void setupTwiceFails() throws Exception {
             sendInnerExpectOk(
-                    Constants.INS_SETUP, (byte) 0, (byte) 0, encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
+                    Constants.Wire.INS_SETUP,
+                    (byte) 0,
+                    (byte) 0,
+                    encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
             ResponseAPDU second =
                     sendInner(
-                            Constants.INS_SETUP,
+                            Constants.Wire.INS_SETUP,
                             (byte) 0,
                             (byte) 0,
                             encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
             assertEquals(
-                    Constants.SW_LIFECYCLE_INVALID & 0xFFFF,
+                    Constants.Sw.LIFECYCLE_INVALID & 0xFFFF,
                     second.getSW(),
                     "second SETUP must be rejected by the FSM");
         }
@@ -294,8 +304,12 @@ class PersonalisationTest {
         @DisplayName("VERIFY_PIN: correct PIN succeeds")
         void verifyCorrectPin() throws Exception {
             sendInnerExpectOk(
-                    Constants.INS_SETUP, (byte) 0, (byte) 0, encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
-            ResponseAPDU r = sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, DEFAULT_PIN);
+                    Constants.Wire.INS_SETUP,
+                    (byte) 0,
+                    (byte) 0,
+                    encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
+            ResponseAPDU r =
+                    sendInner(Constants.Wire.INS_VERIFY_PIN, (byte) 0, (byte) 0, DEFAULT_PIN);
             assertEquals(0x9000, r.getSW());
         }
 
@@ -303,47 +317,58 @@ class PersonalisationTest {
         @DisplayName("VERIFY_PIN: wrong PIN returns 63Cn with decremented try counter")
         void verifyWrongPinDecrements() throws Exception {
             sendInnerExpectOk(
-                    Constants.INS_SETUP, (byte) 0, (byte) 0, encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
+                    Constants.Wire.INS_SETUP,
+                    (byte) 0,
+                    (byte) 0,
+                    encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
             ResponseAPDU r =
-                    sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, "999999".getBytes());
+                    sendInner(
+                            Constants.Wire.INS_VERIFY_PIN, (byte) 0, (byte) 0, "999999".getBytes());
             int sw = r.getSW();
-            int base = Constants.SW_PIN_RETRIES_BASE & 0xFFF0;
+            int base = Constants.Sw.PIN_RETRIES_BASE & 0xFFF0;
             assertEquals(base, sw & 0xFFF0, "must be 63Cn");
             int remaining = sw & 0x000F;
-            assertEquals(Constants.PIN_RETRY_LIMIT - 1, remaining);
+            assertEquals(Constants.Pin.RETRY_LIMIT - 1, remaining);
         }
 
         @Test
         @DisplayName("VERIFY_PIN: exhausting retries blocks the PIN")
         void exhaustRetriesBlocksPin() throws Exception {
             sendInnerExpectOk(
-                    Constants.INS_SETUP, (byte) 0, (byte) 0, encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
-            for (int i = 0; i < Constants.PIN_RETRY_LIMIT; i++) {
-                sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, "999999".getBytes());
+                    Constants.Wire.INS_SETUP,
+                    (byte) 0,
+                    (byte) 0,
+                    encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
+            for (int i = 0; i < Constants.Pin.RETRY_LIMIT; i++) {
+                sendInner(Constants.Wire.INS_VERIFY_PIN, (byte) 0, (byte) 0, "999999".getBytes());
             }
-            ResponseAPDU r = sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, DEFAULT_PIN);
-            assertEquals(Constants.SW_AUTH_BLOCKED & 0xFFFF, r.getSW());
+            ResponseAPDU r =
+                    sendInner(Constants.Wire.INS_VERIFY_PIN, (byte) 0, (byte) 0, DEFAULT_PIN);
+            assertEquals(Constants.Sw.AUTH_BLOCKED & 0xFFFF, r.getSW());
         }
 
         @Test
         @DisplayName("UNBLOCK_PIN: correct PUK unblocks a blocked PIN with a fresh PIN")
         void unblockPinWithCorrectPuk() throws Exception {
             sendInnerExpectOk(
-                    Constants.INS_SETUP, (byte) 0, (byte) 0, encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
+                    Constants.Wire.INS_SETUP,
+                    (byte) 0,
+                    (byte) 0,
+                    encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
             // Exhaust the PIN counter.
-            for (int i = 0; i < Constants.PIN_RETRY_LIMIT; i++) {
-                sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, "999999".getBytes());
+            for (int i = 0; i < Constants.Pin.RETRY_LIMIT; i++) {
+                sendInner(Constants.Wire.INS_VERIFY_PIN, (byte) 0, (byte) 0, "999999".getBytes());
             }
             byte[] newPin = "654321".getBytes();
             sendInnerExpectOk(
-                    Constants.INS_UNBLOCK_PIN,
+                    Constants.Wire.INS_UNBLOCK_PIN,
                     (byte) 0,
                     (byte) 0,
                     encodeLengthPrefixedPair(DEFAULT_PUK, newPin));
             // The new PIN must verify; the old one must not.
             assertEquals(
                     0x9000,
-                    sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, newPin).getSW());
+                    sendInner(Constants.Wire.INS_VERIFY_PIN, (byte) 0, (byte) 0, newPin).getSW());
         }
 
         @Test
@@ -352,23 +377,31 @@ class PersonalisationTest {
                         + " retry")
         void underLengthPinDoesNotConsumeRetry() throws Exception {
             sendInnerExpectOk(
-                    Constants.INS_SETUP, (byte) 0, (byte) 0, encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
+                    Constants.Wire.INS_SETUP,
+                    (byte) 0,
+                    (byte) 0,
+                    encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
             // Send a clearly-too-short PIN. Must return SW_WRONG_LENGTH.
             byte[] tooShort = new byte[] {0x31, 0x32, 0x33};
             assertEquals(
-                    Constants.SW_WRONG_LENGTH & 0xFFFF,
-                    sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, tooShort).getSW());
+                    Constants.Sw.WRONG_LENGTH & 0xFFFF,
+                    sendInner(Constants.Wire.INS_VERIFY_PIN, (byte) 0, (byte) 0, tooShort).getSW());
             // Now the correct PIN must still succeed — the prior call did not consume a retry.
             assertEquals(
                     0x9000,
-                    sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, DEFAULT_PIN).getSW());
+                    sendInner(Constants.Wire.INS_VERIFY_PIN, (byte) 0, (byte) 0, DEFAULT_PIN)
+                            .getSW());
             // Send another deliberately wrong (but well-formed) PIN: the counter must show 2
             // retries remaining, confirming the previous under-length attempt was free.
             int sw =
-                    sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, "999999".getBytes())
+                    sendInner(
+                                    Constants.Wire.INS_VERIFY_PIN,
+                                    (byte) 0,
+                                    (byte) 0,
+                                    "999999".getBytes())
                             .getSW();
-            assertEquals(Constants.SW_PIN_RETRIES_BASE & 0xFFF0, sw & 0xFFF0);
-            assertEquals(Constants.PIN_RETRY_LIMIT - 1, sw & 0x000F);
+            assertEquals(Constants.Sw.PIN_RETRIES_BASE & 0xFFF0, sw & 0xFFF0);
+            assertEquals(Constants.Pin.RETRY_LIMIT - 1, sw & 0x000F);
         }
 
         @Test
@@ -376,14 +409,17 @@ class PersonalisationTest {
                 "VERIFY_PIN with over-max-length PIN returns SW_WRONG_LENGTH (no exception leak)")
         void overLengthPinReturnsWrongLength() throws Exception {
             sendInnerExpectOk(
-                    Constants.INS_SETUP, (byte) 0, (byte) 0, encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
-            byte[] tooLong = new byte[Constants.PIN_MAX_LEN + 1];
+                    Constants.Wire.INS_SETUP,
+                    (byte) 0,
+                    (byte) 0,
+                    encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
+            byte[] tooLong = new byte[Constants.Pin.MAX_LEN + 1];
             for (int i = 0; i < tooLong.length; i++) {
                 tooLong[i] = (byte) '0';
             }
             assertEquals(
-                    Constants.SW_WRONG_LENGTH & 0xFFFF,
-                    sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, tooLong).getSW(),
+                    Constants.Sw.WRONG_LENGTH & 0xFFFF,
+                    sendInner(Constants.Wire.INS_VERIFY_PIN, (byte) 0, (byte) 0, tooLong).getSW(),
                     "over-length PIN must be rejected cleanly, not via the OwnerPIN ABE path");
         }
 
@@ -393,15 +429,19 @@ class PersonalisationTest {
                         + " invalidate")
         void changePukSessionIsInvalidatedByReHandshake() throws Exception {
             sendInnerExpectOk(
-                    Constants.INS_SETUP, (byte) 0, (byte) 0, encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
+                    Constants.Wire.INS_SETUP,
+                    (byte) 0,
+                    (byte) 0,
+                    encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
             // Verify PIN inside the current Secure Channel.
             assertEquals(
                     0x9000,
-                    sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, DEFAULT_PIN).getSW());
+                    sendInner(Constants.Wire.INS_VERIFY_PIN, (byte) 0, (byte) 0, DEFAULT_PIN)
+                            .getSW());
             // While in the same SC, CHANGE_PUK is allowed.
             byte[] freshPuk = "ZZZZZZZZ".getBytes();
             sendInnerExpectOk(
-                    Constants.INS_CHANGE_PUK,
+                    Constants.Wire.INS_CHANGE_PUK,
                     (byte) 0,
                     (byte) 0,
                     encodeLengthPrefixedPair(DEFAULT_PUK, freshPuk));
@@ -412,12 +452,12 @@ class PersonalisationTest {
             byte[] yetAnotherPuk = "YYYYYYYY".getBytes();
             ResponseAPDU r =
                     sendInner(
-                            Constants.INS_CHANGE_PUK,
+                            Constants.Wire.INS_CHANGE_PUK,
                             (byte) 0,
                             (byte) 0,
                             encodeLengthPrefixedPair(freshPuk, yetAnotherPuk));
             assertEquals(
-                    Constants.SW_SECURITY_STATUS_NOT_SATISFIED & 0xFFFF,
+                    Constants.Sw.SECURITY_STATUS_NOT_SATISFIED & 0xFFFF,
                     r.getSW(),
                     "PIN-validated flag must not carry across Secure Channel re-handshakes");
         }
@@ -426,18 +466,23 @@ class PersonalisationTest {
         @DisplayName("CHANGE_PIN: rotates the PIN; old PIN no longer verifies")
         void changePin() throws Exception {
             sendInnerExpectOk(
-                    Constants.INS_SETUP, (byte) 0, (byte) 0, encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
+                    Constants.Wire.INS_SETUP,
+                    (byte) 0,
+                    (byte) 0,
+                    encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
             byte[] newPin = "654321".getBytes();
             sendInnerExpectOk(
-                    Constants.INS_CHANGE_PIN,
+                    Constants.Wire.INS_CHANGE_PIN,
                     (byte) 0,
                     (byte) 0,
                     encodeLengthPrefixedPair(DEFAULT_PIN, newPin));
             assertEquals(
                     0x9000,
-                    sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, newPin).getSW());
+                    sendInner(Constants.Wire.INS_VERIFY_PIN, (byte) 0, (byte) 0, newPin).getSW());
             // The old PIN now decrements the counter rather than succeeding.
-            int sw = sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, DEFAULT_PIN).getSW();
+            int sw =
+                    sendInner(Constants.Wire.INS_VERIFY_PIN, (byte) 0, (byte) 0, DEFAULT_PIN)
+                            .getSW();
             assertNotEquals(0x9000, sw);
         }
     }
@@ -466,7 +511,7 @@ class PersonalisationTest {
 
     private static byte[] innerApdu(byte ins, byte p1, byte p2, byte[] data) {
         byte[] out = new byte[5 + data.length];
-        out[0] = Constants.CLA_MEOWL;
+        out[0] = Constants.Wire.CLA;
         out[1] = ins;
         out[2] = p1;
         out[3] = p2;
@@ -510,7 +555,7 @@ class PersonalisationTest {
         while (i < tlv.length) {
             int tag = tlv[i++] & 0xFF;
             int len = tlv[i++] & 0xFF;
-            if (tag == (Constants.TAG_LIFECYCLE_STATE & 0xFF)) {
+            if (tag == (Constants.Wire.TAG_LIFECYCLE_STATE & 0xFF)) {
                 return tlv[i];
             }
             i += len;
@@ -520,27 +565,27 @@ class PersonalisationTest {
 
     private void importCert(byte[] cert) throws Exception {
         sendInnerExpectOk(
-                Constants.INS_IMPORT_PKI_CERT,
-                Constants.PKI_IMPORT_P1_INIT,
+                Constants.Wire.INS_IMPORT_PKI_CERT,
+                Constants.Pki.IMPORT_P1_INIT,
                 (byte) 0,
                 shortBE((short) cert.length));
         int written = 0;
         while (written < cert.length) {
-            int chunkLen = Math.min(Constants.PKI_CERT_CHUNK_MAX_LEN, cert.length - written);
+            int chunkLen = Math.min(Constants.Pki.CERT_CHUNK_MAX_LEN, cert.length - written);
             byte[] payload = new byte[2 + chunkLen];
             payload[0] = (byte) (written >> 8);
             payload[1] = (byte) (written & 0xFF);
             System.arraycopy(cert, written, payload, 2, chunkLen);
             sendInnerExpectOk(
-                    Constants.INS_IMPORT_PKI_CERT,
-                    Constants.PKI_IMPORT_P1_WRITE,
+                    Constants.Wire.INS_IMPORT_PKI_CERT,
+                    Constants.Pki.IMPORT_P1_WRITE,
                     (byte) 0,
                     payload);
             written += chunkLen;
         }
         sendInnerExpectOk(
-                Constants.INS_IMPORT_PKI_CERT,
-                Constants.PKI_IMPORT_P1_FINALIZE,
+                Constants.Wire.INS_IMPORT_PKI_CERT,
+                Constants.Pki.IMPORT_P1_FINALIZE,
                 (byte) 0,
                 new byte[0]);
     }
@@ -593,7 +638,7 @@ class PersonalisationTest {
         ResponseAPDU resp = transmit(INS_INIT_SC, 0x00, 0x00, clientPubEnc);
         assertEquals(0x9000, resp.getSW(), "handshake");
         byte[] body = resp.getData();
-        byte[] cardEphPub = Arrays.copyOfRange(body, 0, Constants.EC_POINT_UNCOMPRESSED_LEN);
+        byte[] cardEphPub = Arrays.copyOfRange(body, 0, Constants.Ec.POINT_UNCOMPRESSED_LEN);
 
         ECPoint cardPub = SECP256K1.getCurve().decodePoint(cardEphPub).normalize();
         ECPoint sharedPoint = cardPub.multiply(clientPriv).normalize();
@@ -648,23 +693,23 @@ class PersonalisationTest {
 
         byte[] encryptForCard(byte[] plaintext) throws Exception {
             counter++;
-            byte[] iv = new byte[Constants.SC_BLOCK_LEN];
+            byte[] iv = new byte[Constants.Sc.BLOCK_LEN];
             for (int i = 0; i < 8; i++) {
-                iv[Constants.SC_BLOCK_LEN - 1 - i] = (byte) ((counter >>> (8 * i)) & 0xFF);
+                iv[Constants.Sc.BLOCK_LEN - 1 - i] = (byte) ((counter >>> (8 * i)) & 0xFF);
             }
             byte[] padded = pkcs5Pad(plaintext);
             Cipher c = Cipher.getInstance("AES/CBC/NoPadding");
             c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(kEnc, "AES"), new IvParameterSpec(iv));
             byte[] ct = c.doFinal(padded);
 
-            int lc = iv.length + ct.length + Constants.SC_MAC_LEN;
+            int lc = iv.length + ct.length + Constants.Sc.MAC_LEN;
             byte[] header = {(byte) CLA, (byte) INS_OPEN_SC, 0x00, 0x00, (byte) lc};
             Mac m = Mac.getInstance("HmacSHA256");
             m.init(new SecretKeySpec(kMac, "HmacSHA256"));
             m.update(header);
             m.update(iv);
             m.update(ct);
-            byte[] tag = Arrays.copyOf(m.doFinal(), Constants.SC_MAC_LEN);
+            byte[] tag = Arrays.copyOf(m.doFinal(), Constants.Sc.MAC_LEN);
 
             byte[] out = new byte[lc];
             System.arraycopy(iv, 0, out, 0, iv.length);
@@ -674,22 +719,22 @@ class PersonalisationTest {
         }
 
         byte[] decryptFromCard(byte[] envelope) throws Exception {
-            byte[] iv = Arrays.copyOfRange(envelope, 0, Constants.SC_BLOCK_LEN);
+            byte[] iv = Arrays.copyOfRange(envelope, 0, Constants.Sc.BLOCK_LEN);
             byte[] ct =
                     Arrays.copyOfRange(
                             envelope,
-                            Constants.SC_BLOCK_LEN,
-                            envelope.length - Constants.SC_MAC_LEN);
+                            Constants.Sc.BLOCK_LEN,
+                            envelope.length - Constants.Sc.MAC_LEN);
             byte[] tag =
                     Arrays.copyOfRange(
-                            envelope, envelope.length - Constants.SC_MAC_LEN, envelope.length);
+                            envelope, envelope.length - Constants.Sc.MAC_LEN, envelope.length);
 
             Mac m = Mac.getInstance("HmacSHA256");
             m.init(new SecretKeySpec(kMac, "HmacSHA256"));
             m.update((byte) 0xFF);
             m.update(iv);
             m.update(ct);
-            byte[] expected = Arrays.copyOf(m.doFinal(), Constants.SC_MAC_LEN);
+            byte[] expected = Arrays.copyOf(m.doFinal(), Constants.Sc.MAC_LEN);
             if (!Arrays.equals(expected, tag)) {
                 throw new IllegalStateException("outbound MAC mismatch");
             }
@@ -701,8 +746,8 @@ class PersonalisationTest {
         }
 
         private static byte[] pkcs5Pad(byte[] in) {
-            int rem = in.length % Constants.SC_BLOCK_LEN;
-            int pad = Constants.SC_BLOCK_LEN - rem;
+            int rem = in.length % Constants.Sc.BLOCK_LEN;
+            int pad = Constants.Sc.BLOCK_LEN - rem;
             byte[] out = new byte[in.length + pad];
             System.arraycopy(in, 0, out, 0, in.length);
             for (int i = in.length; i < out.length; i++) out[i] = (byte) pad;

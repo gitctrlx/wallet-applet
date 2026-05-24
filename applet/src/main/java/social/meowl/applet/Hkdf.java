@@ -79,7 +79,7 @@ public final class Hkdf {
             short ikmOffset,
             short ikmLen) {
         if (saltLen < 0 || ikmLen < 0) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
         }
         if (saltLen == 0) {
             // RFC 5869 §2.2: if salt is empty, use HashLen zero bytes.
@@ -106,10 +106,10 @@ public final class Hkdf {
             short outOffset,
             short length) {
         if (length < 0 || length > MAX_EXPAND_LEN) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
         }
         if (info == null && infoLen != 0) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
         }
         Bounds.requireCapacity(out, outOffset, length);
 

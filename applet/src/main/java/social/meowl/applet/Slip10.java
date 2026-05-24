@@ -64,9 +64,9 @@ public final class Slip10 {
     public short deriveChainCode(
             byte[] pathBuf, short pathOff, short depth, byte[] outBuf, short outOff) {
         walkPath(pathBuf, pathOff, depth);
-        Util.arrayCopyNonAtomic(state, STATE_C_OFF, outBuf, outOff, Constants.CHAIN_CODE_LEN);
+        Util.arrayCopyNonAtomic(state, STATE_C_OFF, outBuf, outOff, Constants.Hd.CHAIN_CODE_LEN);
         wipeWalkState();
-        return Constants.CHAIN_CODE_LEN;
+        return Constants.Hd.CHAIN_CODE_LEN;
     }
 
     /**
@@ -85,8 +85,8 @@ public final class Slip10 {
     }
 
     private void walkPath(byte[] pathBuf, short pathOff, short depth) {
-        if (depth < 0 || depth > Constants.HD_MAX_DEPTH) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        if (depth < 0 || depth > Constants.Hd.MAX_DEPTH) {
+            ISOException.throwIt(Constants.Sw.WRONG_LENGTH);
         }
         // STATE_K_OFF and STATE_C_OFF are contiguous, so this 64-byte copy lands k(32) || c(32)
         // directly into state[0..64] in one shot.
@@ -97,7 +97,7 @@ public final class Slip10 {
                 // SLIP-10 Ed25519 forbids non-hardened derivation. 6985 (CONDITIONS_NOT_SATISFIED)
                 // is the semantically correct SW since the offending bit lives in the data field,
                 // not the APDU header (which would otherwise warrant 6A86).
-                ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
+                ISOException.throwIt(Constants.Sw.CONDITIONS_NOT_SATISFIED);
             }
             ckdPriv(pathBuf, idxOff);
         }
@@ -109,7 +109,7 @@ public final class Slip10 {
     }
 
     private void ckdPriv(byte[] pathBuf, short idxOff) {
-        hmac.init(state, STATE_C_OFF, Constants.CHAIN_CODE_LEN);
+        hmac.init(state, STATE_C_OFF, Constants.Hd.CHAIN_CODE_LEN);
         hmac.update(ZERO_BYTE, (short) 0, (short) 1);
         hmac.update(state, STATE_K_OFF, SECRET_KEY_LEN);
         hmac.doFinal(pathBuf, idxOff, Bip32.INDEX_LEN, state, STATE_I_OFF);
@@ -120,6 +120,6 @@ public final class Slip10 {
                 (short) (STATE_I_OFF + SECRET_KEY_LEN),
                 state,
                 STATE_C_OFF,
-                Constants.CHAIN_CODE_LEN);
+                Constants.Hd.CHAIN_CODE_LEN);
     }
 }

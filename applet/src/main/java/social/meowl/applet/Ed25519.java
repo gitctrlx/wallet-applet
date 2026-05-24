@@ -102,12 +102,12 @@ public final class Ed25519 {
      */
     public Ed25519(byte[] sharedScratch, Fp25519Inv sharedInv) {
         if ((short) sharedScratch.length < SCRATCH_LEN) {
-            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
+            ISOException.throwIt(Constants.Sw.UNSUPPORTED_FEATURE);
         }
         try {
             this.sha512 = MessageDigest.getInstance(MessageDigest.ALG_SHA_512, false);
         } catch (Exception e) {
-            throw Constants.fail(Constants.SW_UNSUPPORTED_FEATURE);
+            throw Constants.fail(Constants.Sw.UNSUPPORTED_FEATURE);
         }
         this.ec =
                 new EcPoint(

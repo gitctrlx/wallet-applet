@@ -132,7 +132,7 @@ class LifecycleStateTest {
             LifecycleState s = newInstance();
             ISOException ex =
                     assertThrows(ISOException.class, () -> s.transitionTo(LifecycleState.SEEDED));
-            assertEquals(Constants.SW_LIFECYCLE_INVALID, ex.getReason());
+            assertEquals(Constants.Sw.LIFECYCLE_INVALID, ex.getReason());
             // Failed transition does not mutate state.
             assertEquals(LifecycleState.UNINITIALIZED, s.current());
         }
@@ -202,7 +202,7 @@ class LifecycleStateTest {
                         assertThrows(
                                 ISOException.class,
                                 () -> s.transitionToInTx(LifecycleState.SEEDED));
-                assertEquals(Constants.SW_LIFECYCLE_INVALID, ex.getReason());
+                assertEquals(Constants.Sw.LIFECYCLE_INVALID, ex.getReason());
             } finally {
                 JCSystem.abortTransaction();
             }
