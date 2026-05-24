@@ -110,20 +110,14 @@ public final class EcPoint {
      */
     public short multiplyG(
             byte[] scalar, short scalarOff, short scalarLen, byte[] out, short outOff) {
-        applyCurveParams();
-        scalarKey.setS(scalar, scalarOff, scalarLen);
-        ka.init(scalarKey);
-        short len = ka.generateSecret(curveParams, generatorOff, pointLen, out, outOff);
-        if (len != pointLen || out[outOff] != (byte) 0x04) {
-            ISOException.throwIt(Constants.SW_UNSUPPORTED_FEATURE);
-        }
-        return pointLen;
+        return multiplyPoint(scalar, scalarOff, scalarLen, curveParams, generatorOff, out, outOff);
     }
 
     /**
      * Computes {@code scalar · point} on this curve and writes the result as an uncompressed point
      * to {@code out[outOff..outOff + 65]}. {@code point} MUST be the uncompressed encoding {@code
-     * 0x04 ‖ X ‖ Y}.
+     * 0x04 ‖ X ‖ Y}. {@link #multiplyG} is implemented as a single-line forward to this routine
+     * with {@code point = curveParams} and {@code pointOff = generatorOff}.
      */
     public short multiplyPoint(
             byte[] scalar,

@@ -445,7 +445,9 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         if (!pkiManager.hasCert()) {
             ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
         }
-        state.transitionTo(LifecycleState.PERSONALIZED);
+        JCSystem.beginTransaction();
+        state.transitionToInTx(LifecycleState.PERSONALIZED);
+        JCSystem.commitTransaction();
         return 0;
     }
 

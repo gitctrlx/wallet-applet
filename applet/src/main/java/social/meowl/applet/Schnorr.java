@@ -14,7 +14,7 @@ import javacard.security.RandomData;
  *
  * <p>Tagged hashing, parity testing and modular arithmetic run in software on top of {@link
  * MessageDigest#ALG_SHA_256}, {@link BigNat} and {@link Barrett}; the two scalar multiplications
- * are delegated to the hardware EC coprocessor via the shared {@link Bip32#secp256k1()} engine.
+ * are delegated to the hardware EC coprocessor via {@link Bip32#scalarMultG}.
  *
  * <p>Algorithm — <a
  * href="https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki#default-signing">BIP-340
@@ -106,9 +106,6 @@ public final class Schnorr {
     private static final short WORK_OFF = 290;
     private static final short SCRATCH_LEN = 354;
 
-    /** Size of an x/y coordinate, the SHA-256 digest, and a mod-n scalar — all 32 bytes. */
-    private static final short COORD_LEN = 32;
-
     private final Bip32 bip32;
     private final Barrett barrettN;
     private final MessageDigest sha256;
@@ -159,7 +156,7 @@ public final class Schnorr {
         try {
             // Stage the digest in our scratch first; the response (anchored at OFFSET_CDATA)
             // would otherwise overwrite the digest mid-flow.
-            Util.arrayCopyNonAtomic(digestBuf, digestOff, scratch, M_OFF, COORD_LEN);
+            Util.arrayCopyNonAtomic(digestBuf, digestOff, scratch, M_OFF, Constants.EC_SCALAR_LEN);
 
             // 1. Derive d' (BIP-32 enforces 0 < d' < n).
             bip32.deriveLeafScalar(pathBuf, pathOff, depth, scratch, D_OFF);
@@ -171,30 +168,42 @@ public final class Schnorr {
             //    with the y(R) path below so both call sites are structurally identical.
             byte pyLastByte = scratch[(short) (P_OFF + Constants.EC_POINT_UNCOMPRESSED_LEN - 1)];
             short pParityMask = (short) -((pyLastByte & 0x01));
-            BigNat.ctSelectNeg(scratch, D_OFF, Secp256k1Curve.N, (short) 0, COORD_LEN, pParityMask);
+            BigNat.ctSelectNeg(
+                    scratch,
+                    D_OFF,
+                    Secp256k1Curve.N,
+                    (short) 0,
+                    Constants.EC_SCALAR_LEN,
+                    pParityMask);
 
             // 3. t = bytes(d) ⊕ tagged_hash("BIP0340/aux", aux).
             //    aux staged at WORK_OFF; the slot is reused for the multiply-add later.
-            rng.nextBytes(scratch, WORK_OFF, COORD_LEN);
+            rng.nextBytes(scratch, WORK_OFF, Constants.EC_SCALAR_LEN);
             taggedHashStart(HASH_OF_TAG_AUX);
-            sha256.doFinal(scratch, WORK_OFF, COORD_LEN, scratch, T_OFF);
-            for (short i = 0; i < COORD_LEN; i++) {
+            sha256.doFinal(scratch, WORK_OFF, Constants.EC_SCALAR_LEN, scratch, T_OFF);
+            for (short i = 0; i < Constants.EC_SCALAR_LEN; i++) {
                 scratch[(short) (T_OFF + i)] ^= scratch[(short) (D_OFF + i)];
             }
 
             // 4. rand = tagged_hash("BIP0340/nonce", t ‖ bytes(P) ‖ m).
             taggedHashStart(HASH_OF_TAG_NONCE);
-            sha256.update(scratch, T_OFF, COORD_LEN);
-            sha256.update(scratch, (short) (P_OFF + 1), COORD_LEN); // P.x (skip 0x04 prefix)
-            sha256.doFinal(scratch, M_OFF, COORD_LEN, scratch, K_OFF);
+            sha256.update(scratch, T_OFF, Constants.EC_SCALAR_LEN);
+            sha256.update(scratch, (short) (P_OFF + 1), Constants.EC_SCALAR_LEN); // P.x (skip 0x04)
+            sha256.doFinal(scratch, M_OFF, Constants.EC_SCALAR_LEN, scratch, K_OFF);
 
             // 5. k' = int(rand) mod n; reject k' == 0.
             //    rand < 2²⁵⁶ and n > 2²⁵⁵ so one conditional subtract suffices.
             short kLessN =
-                    BigNat.ctLessThan(scratch, K_OFF, Secp256k1Curve.N, (short) 0, COORD_LEN);
+                    BigNat.ctLessThan(
+                            scratch, K_OFF, Secp256k1Curve.N, (short) 0, Constants.EC_SCALAR_LEN);
             BigNat.ctSelectSub(
-                    scratch, K_OFF, Secp256k1Curve.N, (short) 0, COORD_LEN, (short) ~kLessN);
-            if (BigNat.ctIsZero(scratch, K_OFF, COORD_LEN) != 0) {
+                    scratch,
+                    K_OFF,
+                    Secp256k1Curve.N,
+                    (short) 0,
+                    Constants.EC_SCALAR_LEN,
+                    (short) ~kLessN);
+            if (BigNat.ctIsZero(scratch, K_OFF, Constants.EC_SCALAR_LEN) != 0) {
                 ISOException.throwIt(Constants.SW_INTERNAL_ERROR);
             }
 
@@ -205,45 +214,70 @@ public final class Schnorr {
             bip32.scalarMultG(scratch, K_OFF, scratch, R_OFF);
             byte ryLastByte = scratch[(short) (R_OFF + Constants.EC_POINT_UNCOMPRESSED_LEN - 1)];
             short rParityMask = (short) -((ryLastByte & 0x01));
-            BigNat.ctSelectNeg(scratch, K_OFF, Secp256k1Curve.N, (short) 0, COORD_LEN, rParityMask);
+            BigNat.ctSelectNeg(
+                    scratch,
+                    K_OFF,
+                    Secp256k1Curve.N,
+                    (short) 0,
+                    Constants.EC_SCALAR_LEN,
+                    rParityMask);
 
             // 7. e = int(tagged_hash("BIP0340/challenge", R.x ‖ P.x ‖ m)) mod n.
             taggedHashStart(HASH_OF_TAG_CHALLENGE);
-            sha256.update(scratch, (short) (R_OFF + 1), COORD_LEN); // R.x
-            sha256.update(scratch, (short) (P_OFF + 1), COORD_LEN); // P.x
-            sha256.doFinal(scratch, M_OFF, COORD_LEN, scratch, E_OFF);
+            sha256.update(scratch, (short) (R_OFF + 1), Constants.EC_SCALAR_LEN); // R.x
+            sha256.update(scratch, (short) (P_OFF + 1), Constants.EC_SCALAR_LEN); // P.x
+            sha256.doFinal(scratch, M_OFF, Constants.EC_SCALAR_LEN, scratch, E_OFF);
             short eLessN =
-                    BigNat.ctLessThan(scratch, E_OFF, Secp256k1Curve.N, (short) 0, COORD_LEN);
+                    BigNat.ctLessThan(
+                            scratch, E_OFF, Secp256k1Curve.N, (short) 0, Constants.EC_SCALAR_LEN);
             BigNat.ctSelectSub(
-                    scratch, E_OFF, Secp256k1Curve.N, (short) 0, COORD_LEN, (short) ~eLessN);
+                    scratch,
+                    E_OFF,
+                    Secp256k1Curve.N,
+                    (short) 0,
+                    Constants.EC_SCALAR_LEN,
+                    (short) ~eLessN);
 
             // 7b. Emit bytes(R) now. R.x is the only thing we still need from R; the upcoming
             //     Barrett scratch aliases the head of R_OFF, so emit-then-clobber is simpler than
             //     carving a non-contiguous Barrett workspace.
-            Util.arrayCopyNonAtomic(scratch, (short) (R_OFF + 1), outBuf, outOff, COORD_LEN);
+            Util.arrayCopyNonAtomic(
+                    scratch, (short) (R_OFF + 1), outBuf, outOff, Constants.EC_SCALAR_LEN);
 
             // 8. s = (k + e · d) mod n.
             // 8a. e · d (32×32 → 64) into WORK_OFF.
             BigNat.multAsymmetric(
-                    scratch, E_OFF, COORD_LEN, scratch, D_OFF, COORD_LEN, scratch, WORK_OFF);
+                    scratch,
+                    E_OFF,
+                    Constants.EC_SCALAR_LEN,
+                    scratch,
+                    D_OFF,
+                    Constants.EC_SCALAR_LEN,
+                    scratch,
+                    WORK_OFF);
             // 8b. Add k (zero-extended to 64 bytes) into WORK[0..64]. ctAddLowerHalf walks every
             //     byte of the upper half unconditionally so the wall-clock is independent of
             //     where the carry chain stops.
-            BigNat.ctAddLowerHalf(scratch, WORK_OFF, scratch, K_OFF, COORD_LEN);
+            BigNat.ctAddLowerHalf(scratch, WORK_OFF, scratch, K_OFF, Constants.EC_SCALAR_LEN);
             // 8c. Reduce WORK[0..64] mod n into the trailing 32 bytes of WORK with constant-time
             //     Barrett. The unreduced dividend k + e·d is a SECRET intermediate.
             //     The 132-byte Barrett scratch reuses scratch[D_OFF..D_OFF+132]; by this point d,
             //     t, P.x and R.x are no longer needed.
             barrettN.reduce(
-                    scratch, WORK_OFF, scratch, D_OFF, scratch, (short) (WORK_OFF + COORD_LEN));
+                    scratch,
+                    WORK_OFF,
+                    scratch,
+                    D_OFF,
+                    scratch,
+                    (short) (WORK_OFF + Constants.EC_SCALAR_LEN));
 
             // 9. Emit s (bytes(R) was emitted at step 7b before Barrett aliased R_OFF).
             Util.arrayCopyNonAtomic(
                     scratch,
-                    (short) (WORK_OFF + COORD_LEN),
+                    (short) (WORK_OFF + Constants.EC_SCALAR_LEN),
                     outBuf,
-                    (short) (outOff + COORD_LEN),
-                    COORD_LEN);
+                    (short) (outOff + Constants.EC_SCALAR_LEN),
+                    Constants.EC_SCALAR_LEN);
 
             return Constants.SIG_LEN_R_S;
         } finally {
@@ -257,7 +291,7 @@ public final class Schnorr {
      */
     private void taggedHashStart(byte[] tagHash) {
         sha256.reset();
-        sha256.update(tagHash, (short) 0, COORD_LEN);
-        sha256.update(tagHash, (short) 0, COORD_LEN);
+        sha256.update(tagHash, (short) 0, Constants.EC_SCALAR_LEN);
+        sha256.update(tagHash, (short) 0, Constants.EC_SCALAR_LEN);
     }
 }

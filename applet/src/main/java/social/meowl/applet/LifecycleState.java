@@ -49,23 +49,9 @@ public final class LifecycleState {
     }
 
     /**
-     * Advances to {@code target}, which must equal {@code current + 1}. Manages its own
-     * transaction; use {@link #transitionToInTx} when the caller already holds an open one and
-     * wants the lifecycle advance to commit atomically with sibling mutations. Throws {@link
-     * Constants#SW_LIFECYCLE_INVALID} if the move is illegal.
-     */
-    public void transitionTo(byte target) {
-        if (!isLegalForward(current, target)) {
-            ISOException.throwIt(Constants.SW_LIFECYCLE_INVALID);
-        }
-        JCSystem.beginTransaction();
-        current = target;
-        JCSystem.commitTransaction();
-    }
-
-    /**
-     * Transaction-less variant of {@link #transitionTo}. Caller MUST already hold a {@link
-     * JCSystem#beginTransaction()} block.
+     * Advances to {@code target}, which must equal {@code current + 1}. Caller MUST hold a {@link
+     * JCSystem#beginTransaction()} block so the advance commits atomically with sibling mutations.
+     * Throws {@link Constants#SW_LIFECYCLE_INVALID} if the move is illegal.
      */
     public void transitionToInTx(byte target) {
         if (!isLegalForward(current, target)) {

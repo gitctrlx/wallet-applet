@@ -33,9 +33,9 @@ public final class PinManager {
     private final byte[] provisioned; // [0] != 0 → setup() has been called
 
     /**
-     * Scratch used by {@link #wipe()} to drive a known-pattern write through both {@link OwnerPIN}
-     * cells before discarding their references. Sized at {@link Constants#PUK_MAX_LEN} so the same
-     * buffer covers PIN and PUK updates.
+     * Scratch used by {@link #wipeInTx()} to drive a known-pattern write through both {@link
+     * OwnerPIN} cells before discarding their references. Sized at {@link Constants#PUK_MAX_LEN} so
+     * the same buffer covers PIN and PUK updates.
      */
     private final byte[] scrub;
 
@@ -164,17 +164,10 @@ public final class PinManager {
      * Destroys all PIN/PUK state. Drives a best-effort EEPROM scrub (an {@code update()} cycle with
      * an all-{@code 0xFF} buffer) through each {@link OwnerPIN} before re-instantiating fresh
      * instances, since the JC spec offers no {@code clearKey()}-equivalent on {@link OwnerPIN}.
-     */
-    public void wipe() {
-        JCSystem.beginTransaction();
-        wipeInTx();
-        JCSystem.commitTransaction();
-    }
-
-    /**
-     * Transaction-less wipe variant. Caller MUST hold a {@link JCSystem#beginTransaction()} block;
-     * used by {@link MeowlApplet#wipe()} to bundle the PIN/PUK invalidation with the PKI, master-
-     * seed and lifecycle wipes into one atomic reset-to-factory commit.
+     *
+     * <p>Caller MUST hold a {@link JCSystem#beginTransaction()} block; used by {@link
+     * MeowlApplet#wipe()} to bundle the PIN/PUK invalidation with the PKI, master-seed and
+     * lifecycle wipes into one atomic reset-to-factory commit.
      */
     public void wipeInTx() {
         // Two-layer wipe: an EEPROM-cell scrub via OwnerPIN.update() with a garbage buffer,

@@ -20,9 +20,10 @@ import org.junit.jupiter.api.Test;
  * Unit tests for the {@link LifecycleState} finite state machine.
  *
  * <p>The pure {@link LifecycleState#isLegalForward(byte, byte)} decision function is exercised
- * directly. The stateful {@code transitionTo} / {@code reset} flow is exercised inside a {@link
- * CardSimulator} so the JavaCard transaction machinery is engaged exactly as it would be on real
- * silicon.
+ * directly. The stateful {@code transitionToInTx} / {@code resetInTx} flow is exercised inside a
+ * {@link CardSimulator} so the JavaCard transaction machinery is engaged exactly as it would be on
+ * real silicon. Every mutator demands a caller-held transaction; the tests open one explicitly per
+ * call to match the production contract advertised by {@link LifecycleState}.
  */
 class LifecycleStateTest {
 
@@ -94,7 +95,7 @@ class LifecycleStateTest {
     }
 
     @Nested
-    @DisplayName("transitionTo() / reset(): stateful behaviour under CardSimulator")
+    @DisplayName("transitionToInTx() / resetInTx(): stateful behaviour under CardSimulator")
     class Stateful {
 
         private LifecycleState newInstance() {
@@ -108,6 +109,18 @@ class LifecycleStateTest {
             return new LifecycleState();
         }
 
+        /** Drives one {@code transitionToInTx} call inside a manual transaction. */
+        private static void advance(LifecycleState s, byte target) {
+            JCSystem.beginTransaction();
+            try {
+                s.transitionToInTx(target);
+                JCSystem.commitTransaction();
+            } catch (RuntimeException e) {
+                JCSystem.abortTransaction();
+                throw e;
+            }
+        }
+
         @Test
         @DisplayName("a fresh instance is UNINITIALIZED")
         void freshIsUninitialized() {
@@ -115,86 +128,20 @@ class LifecycleStateTest {
         }
 
         @Test
-        @DisplayName("legal forward transitions update the state")
+        @DisplayName("each legal forward step updates the state")
         void forwardUpdatesState() {
             LifecycleState s = newInstance();
-            s.transitionTo(LifecycleState.PERSONALIZED);
+            advance(s, LifecycleState.PERSONALIZED);
             assertEquals(LifecycleState.PERSONALIZED, s.current());
-            s.transitionTo(LifecycleState.SETUP_DONE);
+            advance(s, LifecycleState.SETUP_DONE);
             assertEquals(LifecycleState.SETUP_DONE, s.current());
-            s.transitionTo(LifecycleState.SEEDED);
+            advance(s, LifecycleState.SEEDED);
             assertEquals(LifecycleState.SEEDED, s.current());
         }
 
         @Test
-        @DisplayName("illegal transitions throw SW_LIFECYCLE_INVALID")
+        @DisplayName("illegal transitions throw SW_LIFECYCLE_INVALID and leave state untouched")
         void illegalTransitionThrows() {
-            LifecycleState s = newInstance();
-            ISOException ex =
-                    assertThrows(ISOException.class, () -> s.transitionTo(LifecycleState.SEEDED));
-            assertEquals(Constants.SW_LIFECYCLE_INVALID, ex.getReason());
-            // Failed transition does not mutate state.
-            assertEquals(LifecycleState.UNINITIALIZED, s.current());
-        }
-
-        @Test
-        @DisplayName("resetInTx() collapses any state back to UNINITIALIZED")
-        void resetCollapses() {
-            LifecycleState s = newInstance();
-            s.transitionTo(LifecycleState.PERSONALIZED);
-            s.transitionTo(LifecycleState.SETUP_DONE);
-            s.resetInTx();
-            assertEquals(LifecycleState.UNINITIALIZED, s.current());
-        }
-    }
-
-    /**
-     * InTx variants used by {@link MeowlApplet#wipe()} and {@code handleSetup} so the lifecycle
-     * mutation joins the caller's already-open transaction (atomic-wipe support API). The
-     * integration coverage in {@code MeowlAppletTest.lifecycleRevertsToUninitialized} pins the
-     * end-to-end outcome; these unit tests pin the FSM-level invariants — illegal-jump rejection
-     * and the four-step legal forward chain.
-     */
-    @Nested
-    @DisplayName("transitionToInTx() / resetInTx(): InTx variants")
-    class InTxVariants {
-
-        private LifecycleState newInstance() {
-            CardSimulator simulator = new CardSimulator();
-            AID aid = AIDUtil.create(new byte[] {(byte) 0xF0, 0x6D, 0x65, 0x6F, 0x77, 0x6C, 0x01});
-            simulator.installApplet(aid, MeowlApplet.class);
-            simulator.selectApplet(aid);
-            return new LifecycleState();
-        }
-
-        @Test
-        @DisplayName("transitionToInTx accepts each legal forward step")
-        void inTxLegalForward() {
-            LifecycleState s = newInstance();
-            JCSystem.beginTransaction();
-            try {
-                s.transitionToInTx(LifecycleState.PERSONALIZED);
-                JCSystem.commitTransaction();
-            } catch (RuntimeException e) {
-                JCSystem.abortTransaction();
-                throw e;
-            }
-            assertEquals(LifecycleState.PERSONALIZED, s.current());
-
-            JCSystem.beginTransaction();
-            try {
-                s.transitionToInTx(LifecycleState.SETUP_DONE);
-                JCSystem.commitTransaction();
-            } catch (RuntimeException e) {
-                JCSystem.abortTransaction();
-                throw e;
-            }
-            assertEquals(LifecycleState.SETUP_DONE, s.current());
-        }
-
-        @Test
-        @DisplayName("transitionToInTx rejects illegal jumps with SW_LIFECYCLE_INVALID")
-        void inTxRejectsIllegal() {
             LifecycleState s = newInstance();
             JCSystem.beginTransaction();
             try {
@@ -210,12 +157,12 @@ class LifecycleStateTest {
         }
 
         @Test
-        @DisplayName("resetInTx returns the FSM to UNINITIALIZED from any forward state")
-        void inTxResetFromSeeded() {
+        @DisplayName("resetInTx() collapses any forward state back to UNINITIALIZED")
+        void resetCollapses() {
             LifecycleState s = newInstance();
-            s.transitionTo(LifecycleState.PERSONALIZED);
-            s.transitionTo(LifecycleState.SETUP_DONE);
-            s.transitionTo(LifecycleState.SEEDED);
+            advance(s, LifecycleState.PERSONALIZED);
+            advance(s, LifecycleState.SETUP_DONE);
+            advance(s, LifecycleState.SEEDED);
             JCSystem.beginTransaction();
             try {
                 s.resetInTx();
