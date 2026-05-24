@@ -57,28 +57,6 @@ public final class ApduTlv {
     }
 
     /**
-     * Writes a TLV record carrying {@code length} bytes copied from {@code src} starting at {@code
-     * srcOffset}.
-     *
-     * <p>Raises {@link Constants#SW_WRONG_LENGTH} if {@code length} exceeds {@link #MAX_VALUE_LEN},
-     * if the source range is malformed, or if the destination cannot hold the record.
-     *
-     * @return the offset immediately after the written record
-     */
-    public static short putBytes(
-            byte[] dst, short offset, byte tag, byte[] src, short srcOffset, short length) {
-        if (length > MAX_VALUE_LEN) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
-        }
-        Bounds.requireRange(src, srcOffset, length);
-        Bounds.requireCapacity(dst, offset, (short) (2 + length));
-        dst[offset] = tag;
-        dst[(short) (offset + 1)] = (byte) length;
-        Util.arrayCopyNonAtomic(src, srcOffset, dst, (short) (offset + 2), length);
-        return (short) (offset + 2 + length);
-    }
-
-    /**
      * Reserves a TLV header at {@code offset}, returning the offset where the value should be
      * written. After {@code length} value bytes have been emitted the header is back-patched via
      * {@link #finishReserved(byte[], short, short)} — the streaming-TLV equivalent that lets the

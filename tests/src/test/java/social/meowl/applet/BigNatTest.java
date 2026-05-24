@@ -107,7 +107,7 @@ class BigNatTest {
                 byte[] b = randomScalar();
                 byte[] product = new byte[64];
 
-                BigNat.mult(a, (short) 0, b, (short) 0, LEN, product, (short) 0);
+                BigNat.multAsymmetric(a, (short) 0, LEN, b, (short) 0, LEN, product, (short) 0);
 
                 BigInteger expected = bigInt(a).multiply(bigInt(b));
                 byte[] expectedBytes = new byte[64];

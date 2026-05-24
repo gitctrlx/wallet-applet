@@ -18,30 +18,17 @@ final class Bounds {
     private Bounds() {}
 
     /**
-     * Verifies that {@code dst[offset .. offset + needed]} is a valid sub-range. Raises {@link
+     * Verifies that {@code buf[offset .. offset + length]} is a valid sub-range. Raises {@link
      * Constants#SW_WRONG_LENGTH} on any malformed input (null buffer, negative offset or length,
-     * insufficient capacity).
+     * insufficient capacity). Used both as a destination-capacity check and a source-range check —
+     * the two are arithmetically identical so a single helper backs both call sites.
      */
-    static void requireCapacity(byte[] dst, short offset, short needed) {
-        if (dst == null
-                || offset < 0
-                || needed < 0
-                || offset > (short) dst.length
-                || needed > (short) (dst.length - offset)) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
-        }
-    }
-
-    /**
-     * Source-side counterpart of {@link #requireCapacity}; same semantics, different name for
-     * call-site readability.
-     */
-    static void requireRange(byte[] src, short offset, short length) {
-        if (src == null
+    static void requireCapacity(byte[] buf, short offset, short length) {
+        if (buf == null
                 || offset < 0
                 || length < 0
-                || offset > (short) src.length
-                || length > (short) (src.length - offset)) {
+                || offset > (short) buf.length
+                || length > (short) (buf.length - offset)) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
     }

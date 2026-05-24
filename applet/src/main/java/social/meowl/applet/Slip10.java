@@ -26,9 +26,6 @@ import javacard.framework.Util;
  */
 public final class Slip10 {
 
-    /** SLIP-10 leaf private key length (≡ RFC 8032 secret-key seed length). */
-    public static final short SECRET_KEY_LEN = (short) 32;
-
     /** Hardened-bit mask of the top byte of a 32-bit big-endian index. */
     private static final byte HARDENED_MASK = (byte) 0x80;
 
@@ -79,9 +76,9 @@ public final class Slip10 {
     public short deriveLeafKey(
             byte[] pathBuf, short pathOff, short depth, byte[] outBuf, short outOff) {
         walkPath(pathBuf, pathOff, depth);
-        Util.arrayCopyNonAtomic(state, STATE_K_OFF, outBuf, outOff, SECRET_KEY_LEN);
+        Util.arrayCopyNonAtomic(state, STATE_K_OFF, outBuf, outOff, Constants.EC_SCALAR_LEN);
         wipeWalkState();
-        return SECRET_KEY_LEN;
+        return Constants.EC_SCALAR_LEN;
     }
 
     private void walkPath(byte[] pathBuf, short pathOff, short depth) {
@@ -111,13 +108,13 @@ public final class Slip10 {
     private void ckdPriv(byte[] pathBuf, short idxOff) {
         hmac.init(state, STATE_C_OFF, Constants.CHAIN_CODE_LEN);
         hmac.update(ZERO_BYTE, (short) 0, (short) 1);
-        hmac.update(state, STATE_K_OFF, SECRET_KEY_LEN);
+        hmac.update(state, STATE_K_OFF, Constants.EC_SCALAR_LEN);
         hmac.doFinal(pathBuf, idxOff, Bip32.INDEX_LEN, state, STATE_I_OFF);
 
-        Util.arrayCopyNonAtomic(state, STATE_I_OFF, state, STATE_K_OFF, SECRET_KEY_LEN);
+        Util.arrayCopyNonAtomic(state, STATE_I_OFF, state, STATE_K_OFF, Constants.EC_SCALAR_LEN);
         Util.arrayCopyNonAtomic(
                 state,
-                (short) (STATE_I_OFF + SECRET_KEY_LEN),
+                (short) (STATE_I_OFF + Constants.EC_SCALAR_LEN),
                 state,
                 STATE_C_OFF,
                 Constants.CHAIN_CODE_LEN);

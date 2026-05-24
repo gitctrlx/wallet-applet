@@ -185,7 +185,15 @@ public final class Ed25519 {
 
             // 8. S = (r + k · s) mod ℓ. The 64-byte k·s product is secret; Barrett-reduce it
             //    constant-time then add r and conditionally subtract ℓ.
-            BigNat.mult(scratch, K_BE_OFF, scratch, S_BE_OFF, SCALAR_LEN, scratch, HASH_OFF);
+            BigNat.multAsymmetric(
+                    scratch,
+                    K_BE_OFF,
+                    SCALAR_LEN,
+                    scratch,
+                    S_BE_OFF,
+                    SCALAR_LEN,
+                    scratch,
+                    HASH_OFF);
             barrettL.reduce(
                     scratch, HASH_OFF, scratch, WORK_OFF, scratch, (short) (HASH_OFF + SCALAR_LEN));
             BigNat.copy(scratch, R_BE_OFF, scratch, S_OUT_OFF, SCALAR_LEN);

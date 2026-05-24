@@ -139,7 +139,7 @@ public final class PkiManager {
                 || chunkLen > Constants.PKI_CERT_CHUNK_MAX_LEN) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        Bounds.requireRange(chunk, chunkOffset, chunkLen);
+        Bounds.requireCapacity(chunk, chunkOffset, chunkLen);
         // Util.arrayCopy is the transactional variant.
         JCSystem.beginTransaction();
         Util.arrayCopy(chunk, chunkOffset, cert, offset, chunkLen);

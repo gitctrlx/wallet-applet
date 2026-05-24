@@ -82,19 +82,4 @@ class BoundsTest {
                 ISOException.class,
                 () -> Bounds.requireCapacity(new byte[16], (short) 20000, (short) 20000));
     }
-
-    @Test
-    @DisplayName("requireRange mirrors requireCapacity for the source-side variant")
-    void requireRangeMirrorsCapacity() {
-        assertThrows(ISOException.class, () -> Bounds.requireRange(null, (short) 0, (short) 0));
-        assertThrows(
-                ISOException.class, () -> Bounds.requireRange(new byte[16], (short) -1, (short) 0));
-        assertThrows(
-                ISOException.class, () -> Bounds.requireRange(new byte[16], (short) 0, (short) 17));
-        assertThrows(
-                ISOException.class,
-                () -> Bounds.requireRange(new byte[16], (short) 20000, (short) 20000));
-        assertDoesNotThrow(() -> Bounds.requireRange(new byte[16], (short) 0, (short) 16));
-        assertDoesNotThrow(() -> Bounds.requireRange(new byte[16], (short) 16, (short) 0));
-    }
 }

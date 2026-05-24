@@ -75,76 +75,6 @@ class ApduTlvTest {
     }
 
     @Test
-    @DisplayName("putBytes: copies the value span and advances the cursor by 2 + length")
-    void putBytesHappyPath() {
-        byte[] src = {(byte) 0x11, (byte) 0x22, (byte) 0x33, (byte) 0x44, (byte) 0x55};
-        byte[] dst = new byte[10];
-        short cursor = ApduTlv.putBytes(dst, (short) 2, TAG, src, (short) 1, (short) 3);
-        assertEquals((short) 7, cursor);
-        assertEquals(TAG, dst[2]);
-        assertEquals((byte) 0x03, dst[3]);
-        assertEquals((byte) 0x22, dst[4]);
-        assertEquals((byte) 0x33, dst[5]);
-        assertEquals((byte) 0x44, dst[6]);
-    }
-
-    @Test
-    @DisplayName("putBytes: zero-length value emits [tag, 0x00] only")
-    void putBytesEmptyValue() {
-        byte[] dst = new byte[4];
-        byte[] src = new byte[0];
-        short cursor = ApduTlv.putBytes(dst, (short) 1, TAG, src, (short) 0, (short) 0);
-        assertEquals((short) 3, cursor);
-        assertEquals(TAG, dst[1]);
-        assertEquals((byte) 0x00, dst[2]);
-    }
-
-    @Test
-    @DisplayName("putBytes: length == MAX_VALUE_LEN (255) is accepted at the boundary")
-    void putBytesMaxLengthBoundary() {
-        byte[] src = filled((byte) 0x77, 255);
-        byte[] dst = new byte[257];
-        short cursor = ApduTlv.putBytes(dst, (short) 0, TAG, src, (short) 0, (short) 255);
-        assertEquals((short) 257, cursor);
-        assertEquals(TAG, dst[0]);
-        assertEquals((byte) 0xFF, dst[1]); // 255 == 0xFF (single-byte length form)
-        for (int i = 0; i < 255; i++) {
-            assertEquals((byte) 0x77, dst[2 + i], "value byte " + i);
-        }
-    }
-
-    @Test
-    @DisplayName("putBytes: length > MAX_VALUE_LEN raises SW_WRONG_LENGTH")
-    void putBytesOverMaxLength() {
-        byte[] src = new byte[256];
-        byte[] dst = new byte[260];
-        assertSw(
-                Constants.SW_WRONG_LENGTH,
-                () -> ApduTlv.putBytes(dst, (short) 0, TAG, src, (short) 0, (short) 256));
-    }
-
-    @Test
-    @DisplayName("putBytes: insufficient destination capacity raises SW_WRONG_LENGTH")
-    void putBytesDestinationOverrun() {
-        byte[] src = filled((byte) 0xAB, 10);
-        byte[] dst = new byte[5]; // need 2 + 10 = 12 bytes
-        assertSw(
-                Constants.SW_WRONG_LENGTH,
-                () -> ApduTlv.putBytes(dst, (short) 0, TAG, src, (short) 0, (short) 10));
-    }
-
-    @Test
-    @DisplayName(
-            "putBytes: source range overrun (srcOff + length > src.length) raises SW_WRONG_LENGTH")
-    void putBytesSourceOverrun() {
-        byte[] src = new byte[5];
-        byte[] dst = new byte[20];
-        assertSw(
-                Constants.SW_WRONG_LENGTH,
-                () -> ApduTlv.putBytes(dst, (short) 0, TAG, src, (short) 3, (short) 5));
-    }
-
-    @Test
     @DisplayName(
             "reserve + finishReserved: round-trip preserves value bytes and back-patches length")
     void reserveAndFinishRoundtrip() {
@@ -225,20 +155,19 @@ class ApduTlvTest {
     }
 
     @Test
-    @DisplayName("sequential records: putByte → putShort → putBytes lay out without gaps")
+    @DisplayName(
+            "sequential records: putByte → putShort → reserve+finishReserved lay out without gaps")
     void chainedRecordsLayoutContiguously() {
         byte[] dst = new byte[20];
         short cursor = (short) 0;
         cursor = ApduTlv.putByte(dst, cursor, (byte) 0x01, (byte) 0xAA);
         cursor = ApduTlv.putShort(dst, cursor, (byte) 0x02, (short) 0xBBCC);
-        cursor =
-                ApduTlv.putBytes(
-                        dst,
-                        cursor,
-                        (byte) 0x03,
-                        new byte[] {(byte) 0xDD, (byte) 0xEE},
-                        (short) 0,
-                        (short) 2);
+        short headerOff = cursor;
+        short valueOff = ApduTlv.reserve(dst, headerOff, (byte) 0x03);
+        dst[valueOff] = (byte) 0xDD;
+        dst[(short) (valueOff + 1)] = (byte) 0xEE;
+        ApduTlv.finishReserved(dst, headerOff, (short) 2);
+        cursor = (short) (valueOff + 2);
 
         // Expected layout: 01 01 AA | 02 02 BB CC | 03 02 DD EE
         byte[] expected = {
@@ -259,10 +188,6 @@ class ApduTlvTest {
         assertArrayEquals(expected, actual);
         assertEquals((short) 11, cursor);
     }
-
-    // ------------------------------------------------------------------
-    // helpers
-    // ------------------------------------------------------------------
 
     private static byte[] filled(byte value, int length) {
         byte[] out = new byte[length];

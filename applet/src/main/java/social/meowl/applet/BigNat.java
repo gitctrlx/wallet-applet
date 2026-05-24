@@ -117,20 +117,9 @@ public final class BigNat {
     }
 
     /**
-     * Schoolbook unsigned multiplication: {@code z[zOff..zOff + 2·size] = x · y} for equal-width
-     * operands. The destination is fully overwritten and MUST NOT alias either source.
-     *
-     * <p>For 32-byte operands this is 1024 byte-multiplies. On 32 MHz JC silicon this runs under 10
-     * ms — comparable to a native ECDH on small scalars.
-     */
-    public static void mult(
-            byte[] x, short xOff, byte[] y, short yOff, short size, byte[] z, short zOff) {
-        multAsymmetric(x, xOff, size, y, yOff, size, z, zOff);
-    }
-
-    /**
      * Schoolbook unsigned multiplication of unequal-width operands: {@code z[zOff..zOff + xSize +
-     * ySize] = x · y}. Used by {@link Barrett} for its 33×33 and 33×32 intermediates.
+     * ySize] = x · y}. Used by {@link Barrett} for its 33×33 and 33×32 intermediates, and by every
+     * 32×32 caller passing {@code xSize == ySize == 32}.
      *
      * <p>The destination MUST NOT alias either source. Schedule-independent over the operand bytes:
      * every {@code (i, j)} cell is visited regardless of byte values.

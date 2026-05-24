@@ -224,7 +224,8 @@ public final class Schnorr {
 
             // 8. s = (k + e · d) mod n.
             // 8a. e · d (32×32 → 64) into WORK_OFF.
-            BigNat.mult(scratch, E_OFF, scratch, D_OFF, COORD_LEN, scratch, WORK_OFF);
+            BigNat.multAsymmetric(
+                    scratch, E_OFF, COORD_LEN, scratch, D_OFF, COORD_LEN, scratch, WORK_OFF);
             // 8b. Add k (zero-extended to 64 bytes) into WORK[0..64]. ctAddLowerHalf walks every
             //     byte of the upper half unconditionally so the wall-clock is independent of
             //     where the carry chain stops.

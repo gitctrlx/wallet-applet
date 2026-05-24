@@ -110,7 +110,7 @@ public final class Fp25519 {
             short outOff,
             byte[] scratch,
             short scratchOff) {
-        BigNat.mult(a, aOff, b, bOff, LEN, scratch, scratchOff);
+        BigNat.multAsymmetric(a, aOff, LEN, b, bOff, LEN, scratch, scratchOff);
         reducePseudoMersenne(scratch, scratchOff, out, outOff);
         Util.arrayFillNonAtomic(scratch, scratchOff, MUL_SCRATCH_LEN, (byte) 0);
     }
