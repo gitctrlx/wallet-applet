@@ -7,7 +7,6 @@ package social.meowl.applet;
 import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
 import javacard.framework.OwnerPIN;
-import javacard.framework.Util;
 
 /**
  * User PIN + PUK manager per {@code docs/specs/meap-3.md}.
@@ -28,24 +27,15 @@ import javacard.framework.Util;
  */
 public final class PinManager {
 
-    private OwnerPIN pin;
-    private OwnerPIN puk;
+    private final OwnerPIN pin;
+    private final OwnerPIN puk;
     private final byte[] provisioned; // [0] != 0 → setup() has been called
-
-    /**
-     * Scratch used by {@link #wipeInTx()} to drive a known-pattern write through both {@link
-     * OwnerPIN} cells before discarding their references. Sized at {@link Constants#PUK_MAX_LEN} so
-     * the same buffer covers PIN and PUK updates.
-     */
-    private final byte[] scrub;
 
     /** Constructs an unprovisioned manager. */
     public PinManager() {
         this.pin = new OwnerPIN(Constants.PIN_RETRY_LIMIT, Constants.PIN_MAX_LEN);
         this.puk = new OwnerPIN(Constants.PUK_RETRY_LIMIT, Constants.PUK_MAX_LEN);
         this.provisioned = new byte[1];
-        this.scrub =
-                JCSystem.makeTransientByteArray(Constants.PUK_MAX_LEN, JCSystem.CLEAR_ON_DESELECT);
     }
 
     /** Returns {@code true} once {@link #setupInTx} has been called successfully. */
@@ -161,27 +151,27 @@ public final class PinManager {
     }
 
     /**
-     * Destroys all PIN/PUK state. Drives a best-effort EEPROM scrub (an {@code update()} cycle with
-     * an all-{@code 0xFF} buffer) through each {@link OwnerPIN} before re-instantiating fresh
-     * instances, since the JC spec offers no {@code clearKey()}-equivalent on {@link OwnerPIN}.
+     * Logically invalidates PIN/PUK by clearing the {@link #provisioned} flag. Every PIN/PUK entry
+     * point gates on {@link #requireProvisioned}, so a {@code provisioned == 0} card cannot reach
+     * {@link OwnerPIN#check} no matter what bytes the host sends. The subsequent {@code SETUP} call
+     * drives {@link OwnerPIN#update} with fresh PIN/PUK values, which per the JC 3.0.5 spec
+     * overwrites the stored value, clears the validated flag, and resets the retry counter — so the
+     * prior credentials cannot survive into the next personalisation cycle.
      *
-     * <p>Caller MUST hold a {@link JCSystem#beginTransaction()} block; used by {@link
-     * MeowlApplet#wipe()} to bundle the PIN/PUK invalidation with the PKI, master-seed and
-     * lifecycle wipes into one atomic reset-to-factory commit.
+     * <p>The earlier two-update scrub via {@code OwnerPIN.update(scrub, 0, PIN_MAX_LEN)} was
+     * removed because it tripped a J3R180 quirk: when the wipe length differed from the next {@code
+     * SETUP} length (32-byte PUK scrub → 8-byte PUK setup), {@link OwnerPIN#check} on the
+     * freshly-installed PUK returned false even though the bytes matched, breaking {@code
+     * UNBLOCK_PIN} and {@code CHANGE_PUK} immediately after reset-to-factory. Dropping the scrub
+     * also shrinks the wipe transaction enough that it commits within the BWT of a contactless
+     * link.
+     *
+     * <p>Caller MUST hold a {@link JCSystem#beginTransaction()} block; bundled with PKI, master
+     * seed and lifecycle wipes into the single atomic reset-to-factory commit driven by {@link
+     * MeowlApplet#wipe()}.
      */
     public void wipeInTx() {
-        // Two-layer wipe: an EEPROM-cell scrub via OwnerPIN.update() with a garbage buffer,
-        // then a fresh OwnerPIN re-instantiation as the JC-level invalidation. Failures during
-        // the scrub MUST propagate so the enclosing JC transaction rolls back — silently
-        // swallowing would leave the caller believing reset-to-factory committed while the
-        // EEPROM cells still held the previous PIN/PUK hashes.
-        Util.arrayFillNonAtomic(scrub, (short) 0, Constants.PUK_MAX_LEN, (byte) 0xFF);
-        pin.update(scrub, (short) 0, Constants.PIN_MAX_LEN);
-        puk.update(scrub, (short) 0, Constants.PUK_MAX_LEN);
-        // Rebuild fresh OwnerPIN instances; JC spec offers no clearKey-equivalent.
-        this.pin = new OwnerPIN(Constants.PIN_RETRY_LIMIT, Constants.PIN_MAX_LEN);
-        this.puk = new OwnerPIN(Constants.PUK_RETRY_LIMIT, Constants.PUK_MAX_LEN);
-        this.provisioned[0] = 0;
+        provisioned[0] = 0;
     }
 
     /**

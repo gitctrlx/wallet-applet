@@ -187,14 +187,20 @@ public final class PkiManager {
 
     /**
      * Reset-to-factory hook. Per {@code docs/specs/meap-4.md} the authentikey is preserved; the
-     * manufacturer-issued certificate is wiped so a re-personalised card can install a fresh one.
+     * manufacturer-issued certificate is logically wiped so a re-personalised card can install a
+     * fresh one.
+     *
+     * <p>We zero only the bookkeeping fields, not the 1 KiB cert buffer: with {@code importedLen =
+     * 0} the buffer is unreadable through {@link #exportPagedAt} (which gates on {@code
+     * importedLen}) and {@link #importInit} repaints the staged region with zeros before any future
+     * WRITE arrives, so residual bytes can never surface to the host. Skipping the bulk fill keeps
+     * the wipe transaction small enough to commit within the BWT of a contactless link.
      *
      * <p>Caller MUST hold a {@link JCSystem#beginTransaction()} block; bundled with PIN, master
      * seed and lifecycle wipes into the single atomic reset-to-factory commit driven by {@link
      * MeowlApplet#wipe()}.
      */
     public void wipeInTx() {
-        Util.arrayFillNonAtomic(cert, (short) 0, Constants.PKI_CERT_MAX_LEN, (byte) 0);
         importedLen = 0;
         stagedTotalLen = 0;
         importState = IMPORT_STATE_IDLE;
