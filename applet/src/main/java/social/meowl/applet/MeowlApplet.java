@@ -178,28 +178,49 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
      * Unwraps an encrypted inner APDU, dispatches it via {@link #dispatchInner}, and re-wraps the
      * inner response. Inner-APDU layout matches the outer frame: {@code [CLA INS P1 P2 LC data]}.
      * Handlers whose response overlaps the input must stage the input via {@link #innerScratch}.
+     *
+     * <p>The unwrapped plaintext (PIN bytes for {@code SETUP} / {@code VERIFY_PIN}, the seed for
+     * {@code IMPORT_SEED}, the BIP-32 path + digest for {@code SIGN_*}, …) is wiped from the APDU
+     * buffer in this method's {@code finally} regardless of whether {@link #dispatchInner} returns
+     * normally or throws. Centralising the wipe here is the single source of truth that closes
+     * NEWAUDIT-005 (per-handler PIN/PUK wipe gaps) and NEWAUDIT-007 (residual plaintext after a
+     * torn handler) at the same point.
      */
     private short handleOpenSecureChannel(APDU apdu, byte[] buffer) {
         short lc = apdu.setIncomingAndReceive();
         short plainLen = secureChannel.unwrap(buffer, ISO7816.OFFSET_CDATA, lc);
-        if (plainLen < 5) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        try {
+            if (plainLen < 5) {
+                ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+            }
+            short innerOff = ISO7816.OFFSET_CDATA;
+            byte innerCla = buffer[innerOff];
+            byte innerIns = buffer[(short) (innerOff + 1)];
+            byte innerP1 = buffer[(short) (innerOff + 2)];
+            byte innerP2 = buffer[(short) (innerOff + 3)];
+            short innerLc = (short) (buffer[(short) (innerOff + 4)] & 0xFF);
+            if ((short) (5 + innerLc) != plainLen) {
+                ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+            }
+            if (innerCla != Constants.CLA_MEOWL) {
+                ISOException.throwIt(Constants.SW_CLA_NOT_SUPPORTED);
+            }
+            short innerDataOff = (short) (innerOff + 5);
+            short respLen =
+                    dispatchInner(buffer, innerIns, innerP1, innerP2, innerDataOff, innerLc);
+            return secureChannel.wrap(buffer, ISO7816.OFFSET_CDATA, respLen);
+        } finally {
+            // Wipe the unwrapped inner-APDU plaintext window. This covers every secret that
+            // could be staged into the APDU buffer by SC.unwrap — PIN/PUK on SETUP /
+            // VERIFY_PIN / CHANGE_PIN / CHANGE_PUK / UNBLOCK_PIN, the BIP-39 seed on
+            // IMPORT_SEED, the BIP-32 path + digest on SIGN_ECDSA_K1 / SIGN_SCHNORR_K1 /
+            // SIGN_ED25519, and PKI cert chunks on IMPORT_PKI_CERT. The cleanup happens
+            // unconditionally so a thrown handler cannot leave plaintext lingering for the
+            // next session to partially overwrite.
+            if (plainLen > 0) {
+                Util.arrayFillNonAtomic(buffer, ISO7816.OFFSET_CDATA, plainLen, (byte) 0);
+            }
         }
-        short innerOff = ISO7816.OFFSET_CDATA;
-        byte innerCla = buffer[innerOff];
-        byte innerIns = buffer[(short) (innerOff + 1)];
-        byte innerP1 = buffer[(short) (innerOff + 2)];
-        byte innerP2 = buffer[(short) (innerOff + 3)];
-        short innerLc = (short) (buffer[(short) (innerOff + 4)] & 0xFF);
-        if ((short) (5 + innerLc) != plainLen) {
-            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
-        }
-        if (innerCla != Constants.CLA_MEOWL) {
-            ISOException.throwIt(Constants.SW_CLA_NOT_SUPPORTED);
-        }
-        short innerDataOff = (short) (innerOff + 5);
-        short respLen = dispatchInner(buffer, innerIns, innerP1, innerP2, innerDataOff, innerLc);
-        return secureChannel.wrap(buffer, ISO7816.OFFSET_CDATA, respLen);
     }
 
     private short dispatchInner(
@@ -473,8 +494,8 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
         masterSeed.importSeed(buffer, (short) (dataOff + 1), seedLen);
         state.transitionToInTx(LifecycleState.SEEDED);
         JCSystem.commitTransaction();
-        // Overwrite the seed bytes in the APDU buffer before the response goes out.
-        Util.arrayFillNonAtomic(buffer, (short) (dataOff + 1), seedLen, (byte) 0);
+        // Seed bytes get wiped centrally by handleOpenSecureChannel's finally; no per-handler
+        // wipe needed here.
         return 0;
     }
 
