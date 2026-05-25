@@ -78,15 +78,24 @@ public final class Bip32 {
      */
     public short derivePath(
             byte[] pathBuf, short pathOff, short depth, byte[] outBuf, short outOff) {
-        walkPathToLeaf(pathBuf, pathOff, depth);
+        try {
+            walkPathToLeaf(pathBuf, pathOff, depth);
 
-        short pubLen = computeCompressedPubkey(state, STATE_K_OFF, state, STATE_PUB_OFF);
-        Util.arrayCopyNonAtomic(state, STATE_PUB_OFF, outBuf, outOff, pubLen);
-        Util.arrayCopyNonAtomic(
-                state, STATE_C_OFF, outBuf, (short) (outOff + pubLen), Constants.CHAIN_CODE_LEN);
-
-        wipeTransientSecrets();
-        return (short) (pubLen + Constants.CHAIN_CODE_LEN);
+            short pubLen = computeCompressedPubkey(state, STATE_K_OFF, state, STATE_PUB_OFF);
+            Util.arrayCopyNonAtomic(state, STATE_PUB_OFF, outBuf, outOff, pubLen);
+            Util.arrayCopyNonAtomic(
+                    state,
+                    STATE_C_OFF,
+                    outBuf,
+                    (short) (outOff + pubLen),
+                    Constants.CHAIN_CODE_LEN);
+            return (short) (pubLen + Constants.CHAIN_CODE_LEN);
+        } finally {
+            // Wipe even when walkPathToLeaf or computeCompressedPubkey throws so a partial
+            // walk cannot leave the leaf scalar in state[] or the secp256k1 scalarKey slot
+            // (NEWAUDIT-002).
+            wipeTransientSecrets();
+        }
     }
 
     /**
@@ -98,20 +107,40 @@ public final class Bip32 {
      */
     public short deriveLeafScalar(
             byte[] pathBuf, short pathOff, short depth, byte[] outBuf, short outOff) {
-        walkPathToLeaf(pathBuf, pathOff, depth);
-        Util.arrayCopyNonAtomic(state, STATE_K_OFF, outBuf, outOff, Constants.EC_SCALAR_LEN);
-        wipeTransientSecrets();
-        return Constants.EC_SCALAR_LEN;
+        try {
+            walkPathToLeaf(pathBuf, pathOff, depth);
+            Util.arrayCopyNonAtomic(state, STATE_K_OFF, outBuf, outOff, Constants.EC_SCALAR_LEN);
+            return Constants.EC_SCALAR_LEN;
+        } finally {
+            // Same wipe-on-throw contract as derivePath (NEWAUDIT-002).
+            wipeTransientSecrets();
+        }
     }
 
     /**
      * Uncompressed encoding {@code 0x04 ‖ x ‖ y} of {@code scalar · G}. Exposed for {@link Schnorr}
      * which needs the {@code y}-coordinate parity.
      *
+     * <p><b>Caller responsibility:</b> after the final {@code scalarMultG} on a code path, invoke
+     * {@link #wipeEc()} in a {@code finally} block so the secp256k1 EC private-key slot does not
+     * retain the last scalar. {@link EcdsaK1} and {@link Ed25519} satisfy this via their own {@code
+     * signKey.clearKey()} / {@code ec.wipe()}; {@link Schnorr}, the original caller of this method,
+     * calls {@link #wipeEc()} directly (NEWAUDIT-001 / NEWAUDIT-010).
+     *
      * @return {@link Constants#EC_POINT_UNCOMPRESSED_LEN}
      */
     public short scalarMultG(byte[] scalar, short scalarOff, byte[] outBuf, short outOff) {
         return secp256k1Ec.multiplyG(scalar, scalarOff, Constants.EC_SCALAR_LEN, outBuf, outOff);
+    }
+
+    /**
+     * Erases the shared secp256k1 EC scalar slot. Intended for callers that drive {@link
+     * #scalarMultG} directly and need to clear the slot in their own {@code finally} — today that
+     * is {@link Schnorr#signDigest}. The internal walk paths in this class already wipe via {@link
+     * #wipeTransientSecrets()}.
+     */
+    void wipeEc() {
+        secp256k1Ec.wipe();
     }
 
     /**

@@ -281,7 +281,12 @@ public final class Schnorr {
 
             return Constants.SIG_LEN_R_S;
         } finally {
+            // Wipe the scratch and the shared secp256k1 scalar slot. The slot last held the
+            // BIP-340 ephemeral nonce k' (step 8 R = k' · G); leaving it resident until the
+            // next setS() overwrite or deselect would be a defence-in-depth gap parallel to
+            // EcdsaK1.signKey.clearKey() and Ed25519.ec.wipe() (NEWAUDIT-001).
             Util.arrayFillNonAtomic(scratch, (short) 0, SCRATCH_LEN, (byte) 0);
+            bip32.wipeEc();
         }
     }
 
