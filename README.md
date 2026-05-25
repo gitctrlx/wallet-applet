@@ -48,10 +48,10 @@ Tests are split into two tracks via JUnit tags:
 | Task | Scope | Status |
 | --- | --- | --- |
 | `./gradlew :tests:test` | Pure unit tests + simulator-safe assertions (`HmacSha512Test`, `BarrettTest`, `BigNatTest`, `Fp25519Test` arithmetic, `BoundsTest`, `ApduTlvTest`, `SchnorrTagHashTest`, `SecureChannelStripPkcs5Test`, `LifecycleStateTest.IsLegalForward`, …) | ✅ Default; runs in CI |
-| `./gradlew :tests:realCardTest -Preader=NAME` | `@Tag("real-card")` suites driven over PCSC by `RealCardClient`: `MeowlAppletTest`, `SecureChannelTest`, `SchnorrK1Test`, `EcdsaK1Test`, `Ed25519SigningTest`, `HdDerivationTest`, `PersonalisationTest`, `ResetToFactoryTest`, `Wei25519Test`, `BenchmarkSuite`, `LifecycleStateTest.Stateful`, `Fp25519Test.Multiplicative.inv` | ✅ Opt-in; requires a J3R180 with the applet pre-installed on the named PCSC reader |
+| `./gradlew :tests:realCardTest -Preader=NAME` | `@Tag("real-card")` suites driven over PCSC by `RealCardClient`: `MeowlAppletTest`, `SecureChannelTest`, `SchnorrK1Test`, `EcdsaK1Test`, `Ed25519SigningTest`, `HdDerivationTest`, `PersonalisationTest`, `BenchmarkSuite` | ✅ Opt-in; requires a J3R180 with the applet pre-installed on the named PCSC reader |
 | `./gradlew :tools:realCardTest -Preader=NAME` | `SecureChannelClientIT` against the same physical card — verifies the host-side `SecureChannelClient` MEAP-2 implementation byte-for-byte against the applet | ✅ Opt-in; same prerequisites as `:tests:realCardTest` |
 
-Until the real-card backend lands, **every release tag is gated on a manual `./gradlew :tools:run --args="bench"` run against a real J3R180** plus a structural smoke test through the `meowl` CLI. The simulator alone is not a sufficient correctness target — the [`:applet:Fp25519Inv`](applet/src/main/java/social/meowl/applet/Fp25519Inv.java) RSA path and [`:applet:EcPoint`](applet/src/main/java/social/meowl/applet/EcPoint.java) transient EC key allocation only function on the real chip.
+Real-card execution is the canonical correctness gate, not the simulator. The [`:applet:Fp25519Inv`](applet/src/main/java/social/meowl/applet/Fp25519Inv.java) RSA-NOPAD inverter and [`:applet:EcPoint`](applet/src/main/java/social/meowl/applet/EcPoint.java) transient EC key allocation only function on the real chip; jcardsim short-circuits both. Every release candidate is therefore gated on `:tests:realCardTest` plus `:tools:realCardTest` against a physical J3R180 paired with an ACR1552U-MF (or equivalent PCSC reader).
 
 ## Host-side CLI (`meowl`)
 
