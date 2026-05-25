@@ -22,8 +22,8 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider;
  *   <li><b>Extract</b>: {@code K_extract = sha256(salt)[0..16]} when the salt exceeds 16 bytes,
  *       else the salt zero-padded to 16 bytes. Then {@code PRK = AES-CMAC(K_extract, IKM)} (16
  *       bytes).
- *   <li><b>Expand</b>: HKDF-shaped iteration over AES-CMAC; {@code T(i) = AES-CMAC(PRK, T(i-1) ‖
- *       info ‖ counter_byte_i)}, {@code OKM = T(1) ‖ T(2) ‖ … ‖ T(N)}.
+ *   <li><b>Expand</b>: NIST SP 800-108 KBKDF feedback-mode iteration over AES-CMAC; {@code T(i) =
+ *       AES-CMAC(PRK, T(i-1) ‖ info ‖ counter_byte_i)}, {@code OKM = T(1) ‖ T(2) ‖ … ‖ T(N)}.
  * </ul>
  *
  * <p>Implementation: BouncyCastle's {@code AESCMAC} via {@link Mac#getInstance(String,

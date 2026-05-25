@@ -8,7 +8,6 @@ import apdu4j.core.APDUBIBO;
 import apdu4j.core.BIBOException;
 import apdu4j.core.CommandAPDU;
 import apdu4j.core.ResponseAPDU;
-import social.meowl.tools.core.MeowlAid;
 import social.meowl.tools.core.MeowlSw;
 
 /**
@@ -30,15 +29,7 @@ public final class MeowlSession {
 
     public static final int P1_SELECT_BY_DF = 0x04;
 
-    /**
-     * SELECTs the meowl applet at its default AID, asserting success. Returns the FCI bytes the
-     * card emitted (typically empty or a small TLV blob).
-     */
-    public static byte[] selectDefault(APDUBIBO bibo) throws BIBOException {
-        return select(bibo, MeowlAid.defaultBytes());
-    }
-
-    /** Like {@link #selectDefault} but with a caller-supplied AID. */
+    /** SELECTs the meowl applet at the supplied AID, asserting success. */
     public static byte[] select(APDUBIBO bibo, byte[] aid) throws BIBOException {
         ResponseAPDU resp =
                 bibo.transmit(new CommandAPDU(CLA_ISO, INS_SELECT, P1_SELECT_BY_DF, 0x00, aid));

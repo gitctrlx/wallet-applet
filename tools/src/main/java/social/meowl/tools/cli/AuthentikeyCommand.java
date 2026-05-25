@@ -30,8 +30,6 @@ import social.meowl.tools.transport.CardTransport;
         description = "Returns the card's 33-byte compressed authentikey public key.")
 public final class AuthentikeyCommand implements Callable<Integer> {
 
-    private static final byte CLA_MEOWL = (byte) 0x80;
-
     @ParentCommand private MeowlCli parent;
 
     @Mixin public AidOption aid = new AidOption();
@@ -56,7 +54,10 @@ public final class AuthentikeyCommand implements Callable<Integer> {
         ResponseAPDU resp =
                 bibo.transmit(
                         new CommandAPDU(
-                                CLA_MEOWL & 0xFF, MeowlInsn.GET_AUTHENTIKEY.value() & 0xFF, 0, 0));
+                                MeowlInsn.CLA_MEOWL & 0xFF,
+                                MeowlInsn.GET_AUTHENTIKEY.value() & 0xFF,
+                                0,
+                                0));
         if (!MeowlSw.isSuccess(resp.getSW())) {
             throw new ProtocolException(resp.getSW(), "GET_AUTHENTIKEY failed");
         }

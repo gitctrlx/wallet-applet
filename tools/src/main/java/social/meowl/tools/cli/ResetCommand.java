@@ -37,8 +37,6 @@ import social.meowl.tools.transport.CardTransport;
                         + " completion. Requires --confirm.")
 public final class ResetCommand implements Callable<Integer> {
 
-    private static final byte CLA_MEOWL = (byte) 0x80;
-
     /**
      * Mirrors {@code Constants.RESET_REQUIRED_INVOCATIONS}; bumping this on the card requires
      * bumping it here too.
@@ -94,7 +92,7 @@ public final class ResetCommand implements Callable<Integer> {
             ResponseAPDU resp =
                     bibo.transmit(
                             new CommandAPDU(
-                                    CLA_MEOWL & 0xFF,
+                                    MeowlInsn.CLA_MEOWL & 0xFF,
                                     MeowlInsn.RESET_TO_FACTORY.value() & 0xFF,
                                     0,
                                     0));

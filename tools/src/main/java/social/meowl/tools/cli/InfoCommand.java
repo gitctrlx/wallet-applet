@@ -45,8 +45,6 @@ import social.meowl.tools.transport.CardTransport;
         description = "Returns the applet's TLV-encoded capability and identity profile.")
 public final class InfoCommand implements Callable<Integer> {
 
-    private static final byte CLA_MEOWL = (byte) 0x80;
-
     private static final byte TAG_PROTOCOL_VERSION = 0x01;
     private static final byte TAG_APPLET_VERSION = 0x02;
     private static final byte TAG_LIFECYCLE_STATE = 0x03;
@@ -74,7 +72,11 @@ public final class InfoCommand implements Callable<Integer> {
         MeowlSession.select(bibo, aid.bytes());
         ResponseAPDU resp =
                 bibo.transmit(
-                        new CommandAPDU(CLA_MEOWL & 0xFF, MeowlInsn.GET_INFO.value() & 0xFF, 0, 0));
+                        new CommandAPDU(
+                                MeowlInsn.CLA_MEOWL & 0xFF,
+                                MeowlInsn.GET_INFO.value() & 0xFF,
+                                0,
+                                0));
         if (!MeowlSw.isSuccess(resp.getSW())) {
             throw new ProtocolException(resp.getSW(), "GET_INFO failed");
         }
