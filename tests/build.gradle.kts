@@ -58,11 +58,8 @@ tasks.test {
 // surfaces. The applet must already be installed on the card.
 //
 // Usage:
-//   ./gradlew :tests:realCardTest                     # first PCSC terminal found
-//   ./gradlew :tests:realCardTest -Preader=NAME       # explicit reader by name
-//   ./gradlew :tests:realCardTest -PuseSimulator      # force simulator backend
-//                                                     #   (most suites still fail
-//                                                     #    by design — see README)
+//   ./gradlew :tests:realCardTest                # first PCSC terminal found
+//   ./gradlew :tests:realCardTest -Preader=NAME  # explicit reader by name
 tasks.register<Test>("realCardTest") {
     description = "Runs @Tag(\"real-card\") integration tests against a real J3R180 via PCSC."
     group = "verification"
@@ -76,11 +73,6 @@ tasks.register<Test>("realCardTest") {
         showStandardStreams = true
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
-    // Default backend is `real`; opt-out via `-PuseSimulator` is provided so the
-    // task can also exercise the SimulatorCardClient path (e.g. for sanity-checking
-    // the CardClient framework itself once a J3R180-faithful simulator exists).
-    val backend = if (project.hasProperty("useSimulator")) "simulator" else "real"
-    systemProperty("cardBackend", backend)
     // Forward -Dbench=true to the forked test JVM so BenchmarkSuite (gated on the
     // system property *and* `real-card` tag) runs only when explicitly requested.
     System.getProperty("bench")?.let { systemProperty("bench", it) }

@@ -10,17 +10,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigInteger;
 import java.security.MessageDigest;
-import java.security.SecureRandom;
 import java.security.Security;
 import java.util.Arrays;
-import javax.crypto.Cipher;
-import javax.crypto.Mac;
-import javax.crypto.spec.IvParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
-import org.bouncycastle.asn1.x9.X9ECParameters;
-import org.bouncycastle.crypto.ec.CustomNamedCurves;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.math.ec.ECPoint;
 import org.junit.jupiter.api.AfterEach;
@@ -32,7 +25,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import social.meowl.applet.cardclient.CardClient;
 import social.meowl.applet.cardclient.CardClientFactory;
-import social.meowl.applet.sc.KdfCmacHost;
+import social.meowl.applet.testkit.HostSession;
+import social.meowl.applet.testkit.MeowlFixtures;
+import social.meowl.applet.testkit.TestConstants;
 
 /**
  * End-to-end tests for the {@code SIGN_SCHNORR_K1} primitive — BIP-340 Schnorr signing under a
@@ -51,31 +46,16 @@ import social.meowl.applet.sc.KdfCmacHost;
 @Tag("real-card")
 class SchnorrK1Test {
 
-    private static final byte[] APPLET_AID_BYTES = {
-        (byte) 0xF0, 0x6D, 0x65, 0x6F, 0x77, 0x6C, 0x01
-    };
-
-    private static final int CLA = Constants.CLA_MEOWL & 0xFF;
-    private static final int INS_INIT_SC = Constants.INS_INIT_SECURE_CHANNEL & 0xFF;
-    private static final int INS_OPEN_SC = Constants.INS_OPEN_SECURE_CHANNEL & 0xFF;
-
-    private static final X9ECParameters SECP256K1 = CustomNamedCurves.getByName("secp256k1");
-    private static final BigInteger CURVE_P = SECP256K1.getCurve().getField().getCharacteristic();
-    private static final BigInteger CURVE_N = SECP256K1.getN();
-    private static final byte[] KDF_INFO = "meowl-sc-v1".getBytes();
-    private static final SecureRandom RANDOM = new SecureRandom();
-
-    private static final byte[] DEFAULT_PIN = "123456".getBytes();
-    private static final byte[] DEFAULT_PUK = "ABCDEFGH".getBytes();
-
-    /** BIP-32 test vector 1 seed (16 bytes). */
-    private static final byte[] BIP32_VECTOR_1_SEED = hex("000102030405060708090a0b0c0d0e0f");
+    private static final BigInteger CURVE_P =
+            TestConstants.SECP256K1.getCurve().getField().getCharacteristic();
+    private static final BigInteger CURVE_N = TestConstants.SECP256K1.getN();
 
     private static final byte[] SAMPLE_DIGEST =
-            hex("a591a6d40bf420404a011733cfb7b190d62c65bf0bcda32b57b277d9ad9f146e");
+            TestConstants.parseHex(
+                    "a591a6d40bf420404a011733cfb7b190d62c65bf0bcda32b57b277d9ad9f146e");
 
     private CardClient card;
-    private Session session;
+    private HostSession session;
 
     @BeforeAll
     static void registerProvider() {
@@ -86,16 +66,23 @@ class SchnorrK1Test {
 
     @BeforeEach
     void setUp() throws Exception {
-        card = CardClientFactory.create(APPLET_AID_BYTES);
-        session = openSession();
-        bringToSetupDoneAndVerifyPin();
-        sendInnerExpectOk(
-                Constants.INS_IMPORT_SEED, (byte) 0, (byte) 0, prefixLen(BIP32_VECTOR_1_SEED));
+        card = CardClientFactory.create(TestConstants.APPLET_AID_BYTES);
+        session = MeowlFixtures.bringToSetupDoneAndVerifyPin(card);
+        session.sendInnerExpectOk(
+                Constants.INS_IMPORT_SEED,
+                (byte) 0,
+                (byte) 0,
+                MeowlFixtures.prefixLen(TestConstants.BIP32_VECTOR_1_SEED));
     }
 
     @AfterEach
     void tearDown() {
         if (card != null) {
+            try {
+                MeowlFixtures.resetCard(card);
+            } catch (Exception ignored) {
+                // best-effort reset; the next test's @BeforeEach will surface real problems
+            }
             card.close();
         }
     }
@@ -159,7 +146,7 @@ class SchnorrK1Test {
             byte[] xOnlyPub = xOnlyPubkey(path);
             for (int i = 0; i < 5; i++) {
                 byte[] digest = new byte[Constants.DIGEST_LEN];
-                RANDOM.nextBytes(digest);
+                TestConstants.RANDOM.nextBytes(digest);
                 byte[] sig = signSchnorr(path, digest);
                 assertTrue(Bip340.verify(xOnlyPub, digest, sig), "iteration " + i);
             }
@@ -193,7 +180,7 @@ class SchnorrK1Test {
             byte[] xOnlyPub = xOnlyPubkey(path);
             for (int i = 0; i < 5; i++) {
                 byte[] digest = new byte[Constants.DIGEST_LEN];
-                RANDOM.nextBytes(digest);
+                TestConstants.RANDOM.nextBytes(digest);
                 byte[] sig = signSchnorr(path, digest);
                 // BIP-340 forces y(R) even; verify() implicitly checks this — verify it again
                 // here for clarity by lifting r and confirming the lifted-x point has even y.
@@ -243,7 +230,8 @@ class SchnorrK1Test {
         @DisplayName("digest shorter than 32 bytes is rejected with SW_WRONG_LENGTH")
         void digestTooShort() {
             byte[] req = encodeSignRequest(new int[] {0}, new byte[16]);
-            ResponseAPDU r = sendInner(Constants.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, req);
+            ResponseAPDU r =
+                    session.sendInner(Constants.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, req);
             assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, r.getSW());
         }
 
@@ -251,7 +239,8 @@ class SchnorrK1Test {
         @DisplayName("Empty request is rejected with SW_WRONG_LENGTH")
         void emptyRequest() {
             ResponseAPDU r =
-                    sendInner(Constants.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, new byte[0]);
+                    session.sendInner(
+                            Constants.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, new byte[0]);
             assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, r.getSW());
         }
 
@@ -260,7 +249,8 @@ class SchnorrK1Test {
         void truncatedPath() {
             byte[] req = new byte[1 + 4 + Constants.DIGEST_LEN];
             req[0] = 2; // declared depth = 2, but we only supply one 4-byte index
-            ResponseAPDU r = sendInner(Constants.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, req);
+            ResponseAPDU r =
+                    session.sendInner(Constants.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, req);
             assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, r.getSW());
         }
     }
@@ -272,11 +262,13 @@ class SchnorrK1Test {
         @Test
         @DisplayName("SIGN_SCHNORR_K1 before SEEDED is rejected with SW_LIFECYCLE_INVALID")
         void signBeforeSeeded() throws Exception {
-            // Discard the seeded card from @BeforeEach and bring up a fresh one without a seed.
+            // @BeforeEach left the card SEEDED — drive RESET_TO_FACTORY so the rebuilt session
+            // can re-run bringToSetupDoneAndVerifyPin from UNINITIALIZED, then stop short of
+            // IMPORT_SEED so the sign attempt actually hits the lifecycle guard.
+            MeowlFixtures.resetCard(card);
             card.close();
-            card = CardClientFactory.create(APPLET_AID_BYTES);
-            session = openSession();
-            bringToSetupDoneAndVerifyPin();
+            card = CardClientFactory.create(TestConstants.APPLET_AID_BYTES);
+            session = MeowlFixtures.bringToSetupDoneAndVerifyPin(card);
             ResponseAPDU r = signSchnorrResp(new int[] {0}, SAMPLE_DIGEST);
             assertEquals(Constants.SW_LIFECYCLE_INVALID & 0xFFFF, r.getSW());
         }
@@ -284,7 +276,7 @@ class SchnorrK1Test {
         @Test
         @DisplayName("SIGN_SCHNORR_K1 without a verified PIN is rejected (after SC re-handshake)")
         void signWithoutPinIsRejected() throws Exception {
-            session = openSession();
+            session = HostSession.open(card);
             ResponseAPDU r = signSchnorrResp(new int[] {0}, SAMPLE_DIGEST);
             assertEquals(Constants.SW_SECURITY_STATUS_NOT_SATISFIED & 0xFFFF, r.getSW());
         }
@@ -297,7 +289,7 @@ class SchnorrK1Test {
         @Test
         @DisplayName("CAP_K1_SCHNORR bit is advertised in GET_INFO")
         void capK1SchnorrIsAdvertised() throws Exception {
-            byte[] tlv = transmit(Constants.INS_GET_INFO & 0xFF, 0, 0, null).getData();
+            byte[] tlv = transmitOuter(Constants.INS_GET_INFO & 0xFF, 0, 0, null).getData();
             short caps = readCapabilities(tlv);
             assertNotEquals(
                     (short) 0,
@@ -321,10 +313,14 @@ class SchnorrK1Test {
         @Test
         @DisplayName("Vector 0 — known-good (pk, m, sig) verifies")
         void vector0Verifies() {
-            byte[] pk = hex("F9308A019258C31049344F85F89D5229B531C845836F99B08601F113BCE036F9");
-            byte[] m = hex("0000000000000000000000000000000000000000000000000000000000000000");
+            byte[] pk =
+                    TestConstants.parseHex(
+                            "F9308A019258C31049344F85F89D5229B531C845836F99B08601F113BCE036F9");
+            byte[] m =
+                    TestConstants.parseHex(
+                            "0000000000000000000000000000000000000000000000000000000000000000");
             byte[] sig =
-                    hex(
+                    TestConstants.parseHex(
                             "E907831F80848D1069A5371B402410364BDF1C5F8307B0084C55F1CE2DCA8215"
                                 + "25F66A4A85EA8B71E482A74F382D2CE5EBEEE8FDB2172F477DF4900D310536C0");
             assertTrue(Bip340.verify(pk, m, sig), "BIP-340 vector 0 must verify");
@@ -333,10 +329,14 @@ class SchnorrK1Test {
         @Test
         @DisplayName("Vector 5 — tampered sig must be rejected (bit flipped in r)")
         void vector5TamperedFails() {
-            byte[] pk = hex("F9308A019258C31049344F85F89D5229B531C845836F99B08601F113BCE036F9");
-            byte[] m = hex("0000000000000000000000000000000000000000000000000000000000000000");
+            byte[] pk =
+                    TestConstants.parseHex(
+                            "F9308A019258C31049344F85F89D5229B531C845836F99B08601F113BCE036F9");
+            byte[] m =
+                    TestConstants.parseHex(
+                            "0000000000000000000000000000000000000000000000000000000000000000");
             byte[] sig =
-                    hex(
+                    TestConstants.parseHex(
                             "E907831F80848D1069A5371B402410364BDF1C5F8307B0084C55F1CE2DCA8215"
                                 + "25F66A4A85EA8B71E482A74F382D2CE5EBEEE8FDB2172F477DF4900D310536C0");
             sig[0] ^= 0x01;
@@ -346,10 +346,14 @@ class SchnorrK1Test {
         @Test
         @DisplayName("Vector — wrong pubkey must reject an otherwise-valid signature")
         void wrongPubkeyFails() {
-            byte[] pk = hex("F9308A019258C31049344F85F89D5229B531C845836F99B08601F113BCE036F9");
-            byte[] m = hex("0000000000000000000000000000000000000000000000000000000000000000");
+            byte[] pk =
+                    TestConstants.parseHex(
+                            "F9308A019258C31049344F85F89D5229B531C845836F99B08601F113BCE036F9");
+            byte[] m =
+                    TestConstants.parseHex(
+                            "0000000000000000000000000000000000000000000000000000000000000000");
             byte[] sig =
-                    hex(
+                    TestConstants.parseHex(
                             "E907831F80848D1069A5371B402410364BDF1C5F8307B0084C55F1CE2DCA8215"
                                 + "25F66A4A85EA8B71E482A74F382D2CE5EBEEE8FDB2172F477DF4900D310536C0");
             pk[31] ^= 0x01;
@@ -361,19 +365,19 @@ class SchnorrK1Test {
 
     private byte[] xOnlyPubkey(int[] path) {
         byte[] req = encodeXpubRequest(Constants.CURVE_SECP256K1, path);
-        byte[] resp = sendInnerExpectOk(Constants.INS_EXPORT_XPUB, (byte) 0, (byte) 0, req);
+        byte[] resp = session.sendInnerExpectOk(Constants.INS_EXPORT_XPUB, (byte) 0, (byte) 0, req);
         // EXPORT_XPUB returns 33-byte compressed P (0x02|0x03 || x); BIP-340 strips the prefix.
         return Arrays.copyOfRange(resp, 1, Constants.EC_POINT_COMPRESSED_LEN);
     }
 
     private byte[] signSchnorr(int[] path, byte[] digest) {
         byte[] req = encodeSignRequest(path, digest);
-        return sendInnerExpectOk(Constants.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, req);
+        return session.sendInnerExpectOk(Constants.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, req);
     }
 
     private ResponseAPDU signSchnorrResp(int[] path, byte[] digest) {
         byte[] req = encodeSignRequest(path, digest);
-        return sendInner(Constants.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, req);
+        return session.sendInner(Constants.INS_SIGN_SCHNORR_K1, (byte) 0, (byte) 0, req);
     }
 
     private static byte[] encodeSignRequest(int[] path, byte[] digest) {
@@ -425,7 +429,8 @@ class SchnorrK1Test {
                             concat(concat(Arrays.copyOfRange(sig64, 0, 32), xOnlyPk), m));
             BigInteger e = new BigInteger(1, eBytes).mod(CURVE_N);
             // R = s*G - e*P
-            ECPoint R = SECP256K1.getG().multiply(s).subtract(P.multiply(e)).normalize();
+            ECPoint R =
+                    TestConstants.SECP256K1.getG().multiply(s).subtract(P.multiply(e)).normalize();
             if (R.isInfinity()) return false;
             if (R.getAffineYCoord().toBigInteger().testBit(0)) return false; // y(R) must be even
             return R.getAffineXCoord().toBigInteger().equals(r);
@@ -443,7 +448,7 @@ class SchnorrK1Test {
             BigInteger y = c.modPow(CURVE_P.add(BigInteger.ONE).shiftRight(2), CURVE_P);
             if (!y.modPow(BigInteger.TWO, CURVE_P).equals(c)) return null;
             if (y.testBit(0)) y = CURVE_P.subtract(y); // pick the even-y root
-            return SECP256K1.getCurve().createPoint(x, y);
+            return TestConstants.SECP256K1.getCurve().createPoint(x, y);
         }
 
         private static byte[] taggedHash(String tag, byte[] msg) {
@@ -486,226 +491,11 @@ class SchnorrK1Test {
         throw new IllegalStateException("capabilities TLV not found");
     }
 
-    /*  Generic helpers — identical in spirit to those in EcdsaK1Test. Kept duplicated rather
-     *  than extracted to a shared base class so each end-to-end test file remains
-     *  self-contained.  */
-
-    private void bringToSetupDoneAndVerifyPin() throws Exception {
-        byte[] cert = new byte[64];
-        for (int i = 0; i < cert.length; i++) cert[i] = (byte) i;
-        sendInnerExpectOk(
-                Constants.INS_IMPORT_PKI_CERT,
-                Constants.PKI_IMPORT_P1_INIT,
-                (byte) 0,
-                shortBE((short) cert.length));
-        byte[] writePayload = new byte[2 + cert.length];
-        System.arraycopy(cert, 0, writePayload, 2, cert.length);
-        sendInnerExpectOk(
-                Constants.INS_IMPORT_PKI_CERT,
-                Constants.PKI_IMPORT_P1_WRITE,
-                (byte) 0,
-                writePayload);
-        sendInnerExpectOk(
-                Constants.INS_IMPORT_PKI_CERT,
-                Constants.PKI_IMPORT_P1_FINALIZE,
-                (byte) 0,
-                new byte[0]);
-        sendInnerExpectOk(Constants.INS_LOCK_PKI, (byte) 0, (byte) 0, new byte[0]);
-        session = openSession();
-        sendInnerExpectOk(
-                Constants.INS_SETUP, (byte) 0, (byte) 0, encodeSetup(DEFAULT_PIN, DEFAULT_PUK));
-        assertEquals(
-                0x9000,
-                sendInner(Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, DEFAULT_PIN).getSW());
-    }
-
-    private byte[] sendInnerExpectOk(byte ins, byte p1, byte p2, byte[] data) {
-        ResponseAPDU r = sendInner(ins, p1, p2, data);
-        assertEquals(0x9000, r.getSW(), "inner INS 0x" + Integer.toHexString(ins & 0xFF));
-        try {
-            return session.decryptFromCard(r.getData());
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private ResponseAPDU sendInner(byte ins, byte p1, byte p2, byte[] data) {
-        try {
-            byte[] inner = innerApdu(ins, p1, p2, data);
-            byte[] envelope = session.encryptForCard(inner);
-            return transmit(INS_OPEN_SC, 0x00, 0x00, envelope);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private static byte[] innerApdu(byte ins, byte p1, byte p2, byte[] data) {
-        byte[] out = new byte[5 + data.length];
-        out[0] = Constants.CLA_MEOWL;
-        out[1] = ins;
-        out[2] = p1;
-        out[3] = p2;
-        out[4] = (byte) data.length;
-        System.arraycopy(data, 0, out, 5, data.length);
-        return out;
-    }
-
-    private static byte[] encodeSetup(byte[] pin, byte[] puk) {
-        byte[] out = new byte[1 + pin.length + 1 + puk.length];
-        out[0] = (byte) pin.length;
-        System.arraycopy(pin, 0, out, 1, pin.length);
-        out[1 + pin.length] = (byte) puk.length;
-        System.arraycopy(puk, 0, out, 1 + pin.length + 1, puk.length);
-        return out;
-    }
-
-    private static byte[] prefixLen(byte[] data) {
-        byte[] out = new byte[1 + data.length];
-        out[0] = (byte) data.length;
-        System.arraycopy(data, 0, out, 1, data.length);
-        return out;
-    }
-
-    private static byte[] shortBE(short v) {
-        return new byte[] {(byte) (v >> 8), (byte) (v & 0xFF)};
-    }
-
-    private static byte[] hex(String h) {
-        h = h.replace(" ", "");
-        byte[] out = new byte[h.length() / 2];
-        for (int i = 0; i < out.length; i++) {
-            out[i] = (byte) Integer.parseInt(h.substring(i * 2, i * 2 + 2), 16);
-        }
-        return out;
-    }
-
-    private Session openSession() {
-        BigInteger clientPriv;
-        ECPoint clientPub;
-        do {
-            byte[] cand = new byte[32];
-            RANDOM.nextBytes(cand);
-            clientPriv = new BigInteger(1, cand);
-        } while (clientPriv.signum() == 0 || clientPriv.compareTo(SECP256K1.getN()) >= 0);
-        clientPub = SECP256K1.getG().multiply(clientPriv).normalize();
-        byte[] clientPubEnc = clientPub.getEncoded(false);
-
-        ResponseAPDU resp = transmit(INS_INIT_SC, 0x00, 0x00, clientPubEnc);
-        assertEquals(0x9000, resp.getSW(), "handshake");
-        byte[] body = resp.getData();
-        byte[] cardEphPub = Arrays.copyOfRange(body, 0, Constants.EC_POINT_UNCOMPRESSED_LEN);
-
-        ECPoint cardPub = SECP256K1.getCurve().decodePoint(cardEphPub).normalize();
-        ECPoint sharedPoint = cardPub.multiply(clientPriv).normalize();
-        byte[] sharedX = bigIntToFixed(sharedPoint.getAffineXCoord().toBigInteger(), 32);
-        byte[] clientX = Arrays.copyOfRange(clientPubEnc, 1, 33);
-        byte[] cardX = Arrays.copyOfRange(cardEphPub, 1, 33);
-        byte[] salt = concat(clientX, cardX);
-        byte[] prk = KdfCmacHost.extract(salt, sharedX);
-        byte[] okm = KdfCmacHost.expand(prk, KDF_INFO, 32 + 16 + 16);
-        return new Session(
-                Arrays.copyOfRange(okm, 0, 32),
-                Arrays.copyOfRange(okm, 32, 48),
-                Arrays.copyOfRange(okm, 48, 64));
-    }
-
-    private ResponseAPDU transmit(int ins, int p1, int p2, byte[] data) {
+    private ResponseAPDU transmitOuter(int ins, int p1, int p2, byte[] data) {
         CommandAPDU cmd =
                 data == null
-                        ? new CommandAPDU(CLA, ins, p1, p2)
-                        : new CommandAPDU(CLA, ins, p1, p2, data);
+                        ? new CommandAPDU(TestConstants.CLA, ins, p1, p2)
+                        : new CommandAPDU(TestConstants.CLA, ins, p1, p2, data);
         return card.transmit(cmd);
-    }
-
-    private static byte[] concat(byte[] a, byte[] b) {
-        byte[] out = new byte[a.length + b.length];
-        System.arraycopy(a, 0, out, 0, a.length);
-        System.arraycopy(b, 0, out, a.length, b.length);
-        return out;
-    }
-
-    private static byte[] bigIntToFixed(BigInteger n, int len) {
-        byte[] raw = n.toByteArray();
-        if (raw.length == len) return raw;
-        byte[] out = new byte[len];
-        if (raw.length > len) System.arraycopy(raw, raw.length - len, out, 0, len);
-        else System.arraycopy(raw, 0, out, len - raw.length, raw.length);
-        return out;
-    }
-
-    private static final class Session {
-        final byte[] kEnc;
-        final byte[] kMac;
-        final byte[] ivBase;
-        long counter;
-
-        Session(byte[] kEnc, byte[] kMac, byte[] ivBase) {
-            this.kEnc = kEnc;
-            this.kMac = kMac;
-            this.ivBase = ivBase;
-            this.counter = 0L;
-        }
-
-        byte[] encryptForCard(byte[] plaintext) throws Exception {
-            counter++;
-            byte[] iv = new byte[Constants.SC_BLOCK_LEN];
-            for (int i = 0; i < 8; i++) {
-                iv[Constants.SC_BLOCK_LEN - 1 - i] = (byte) ((counter >>> (8 * i)) & 0xFF);
-            }
-            byte[] padded = pkcs5Pad(plaintext);
-            Cipher c = Cipher.getInstance("AES/CBC/NoPadding");
-            c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(kEnc, "AES"), new IvParameterSpec(iv));
-            byte[] ct = c.doFinal(padded);
-
-            int lc = iv.length + ct.length + Constants.SC_MAC_LEN;
-            byte[] header = {(byte) CLA, (byte) INS_OPEN_SC, 0x00, 0x00, (byte) lc};
-            Mac m = Mac.getInstance("AESCMAC", BouncyCastleProvider.PROVIDER_NAME);
-            m.init(new SecretKeySpec(kMac, "AES"));
-            m.update(header);
-            m.update(iv);
-            m.update(ct);
-            byte[] tag = m.doFinal();
-
-            byte[] out = new byte[lc];
-            System.arraycopy(iv, 0, out, 0, iv.length);
-            System.arraycopy(ct, 0, out, iv.length, ct.length);
-            System.arraycopy(tag, 0, out, iv.length + ct.length, tag.length);
-            return out;
-        }
-
-        byte[] decryptFromCard(byte[] envelope) throws Exception {
-            byte[] iv = Arrays.copyOfRange(envelope, 0, Constants.SC_BLOCK_LEN);
-            byte[] ct =
-                    Arrays.copyOfRange(
-                            envelope,
-                            Constants.SC_BLOCK_LEN,
-                            envelope.length - Constants.SC_MAC_LEN);
-            byte[] tag =
-                    Arrays.copyOfRange(
-                            envelope, envelope.length - Constants.SC_MAC_LEN, envelope.length);
-            Mac m = Mac.getInstance("AESCMAC", BouncyCastleProvider.PROVIDER_NAME);
-            m.init(new SecretKeySpec(kMac, "AES"));
-            m.update((byte) 0xFF);
-            m.update(iv);
-            m.update(ct);
-            byte[] expected = m.doFinal();
-            if (!Arrays.equals(expected, tag)) {
-                throw new IllegalStateException("outbound MAC mismatch");
-            }
-            Cipher c = Cipher.getInstance("AES/CBC/NoPadding");
-            c.init(Cipher.DECRYPT_MODE, new SecretKeySpec(kEnc, "AES"), new IvParameterSpec(iv));
-            byte[] padded = c.doFinal(ct);
-            int padLen = padded[padded.length - 1] & 0xFF;
-            return Arrays.copyOfRange(padded, 0, padded.length - padLen);
-        }
-
-        private static byte[] pkcs5Pad(byte[] in) {
-            int rem = in.length % Constants.SC_BLOCK_LEN;
-            int pad = Constants.SC_BLOCK_LEN - rem;
-            byte[] out = new byte[in.length + pad];
-            System.arraycopy(in, 0, out, 0, in.length);
-            for (int i = in.length; i < out.length; i++) out[i] = (byte) pad;
-            return out;
-        }
     }
 }

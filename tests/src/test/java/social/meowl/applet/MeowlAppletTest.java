@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import social.meowl.applet.cardclient.CardClient;
 import social.meowl.applet.cardclient.CardClientFactory;
+import social.meowl.applet.testkit.MeowlFixtures;
 
 /**
  * Integration tests for the always-reachable outer-frame INS surface of the meowl applet: {@code
@@ -65,6 +66,11 @@ class MeowlAppletTest {
     @AfterEach
     void tearDown() {
         if (card != null) {
+            try {
+                MeowlFixtures.resetCard(card);
+            } catch (Exception ignored) {
+                // best-effort reset; the next test's @BeforeEach will surface real problems
+            }
             card.close();
         }
     }

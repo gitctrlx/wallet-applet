@@ -33,6 +33,7 @@ import org.junit.jupiter.api.Test;
 import social.meowl.applet.cardclient.CardClient;
 import social.meowl.applet.cardclient.CardClientFactory;
 import social.meowl.applet.sc.KdfCmacHost;
+import social.meowl.applet.testkit.MeowlFixtures;
 
 /**
  * End-to-end Secure Channel tests driving MeowlApplet through {@link CardClient}.
@@ -75,6 +76,11 @@ class SecureChannelTest {
     @AfterEach
     void tearDown() {
         if (card != null) {
+            try {
+                MeowlFixtures.resetCard(card);
+            } catch (Exception ignored) {
+                // best-effort reset; the next test's @BeforeEach will surface real problems
+            }
             card.close();
         }
     }

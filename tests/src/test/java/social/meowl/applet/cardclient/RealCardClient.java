@@ -12,14 +12,14 @@ import javax.smartcardio.CardTerminal;
 import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
 import javax.smartcardio.TerminalFactory;
-import social.meowl.applet.Constants;
 
 /**
  * {@link CardClient} backed by a PCSC-attached physical card. The applet under test must already be
  * installed on the card; this client only opens a channel and runs ISO 7816 SELECT.
  *
  * <p>The reader is selected by name via {@code -DcardReader=...}; if unset, the first terminal
- * reported by {@link TerminalFactory#getDefault()} is used.
+ * reporting a card present is used (so dual-interface readers such as the ACR1552 1S, which expose
+ * an always-empty SAM slot alongside the PICC slot, pick the slot the J3R180 actually sits on).
  *
  * <p>Each {@link #connect} call performs:
  *
@@ -28,9 +28,8 @@ import social.meowl.applet.Constants;
  *   <li>{@code SELECT aid} — must return {@code 0x9000}, otherwise the constructor throws.
  * </ol>
  *
- * <p>Test isolation between calls is the test's responsibility (typically {@code RESET_TO_FACTORY}
- * inside an {@code @AfterEach}). The card itself persists state across tests, unlike the simulator
- * which is fresh on every {@link SimulatorCardClient#installFresh} call.
+ * <p>Persistent-state isolation between tests is the test's responsibility — see {@code
+ * MeowlFixtures.resetCard()} in the testkit, which the suites invoke from {@code @AfterEach}.
  */
 public final class RealCardClient implements CardClient {
 
@@ -38,16 +37,9 @@ public final class RealCardClient implements CardClient {
     private final CardChannel channel;
 
     /**
-     * Connects to a PCSC reader, opens a channel, SELECTs {@code aidBytes}, and drives a complete
-     * {@code RESET_TO_FACTORY} sequence so the applet's persistent lifecycle is wiped back to
-     * {@code UNINITIALIZED}. The wipe matches the {@link SimulatorCardClient#installFresh}
-     * fresh-install semantics: every {@code @BeforeEach} starts on the same lifecycle state, so
-     * cross-test EEPROM pollution (which {@link Card#disconnect}{@code (true)} cannot clear) cannot
-     * bleed between {@code @Test} methods.
-     *
-     * <p>The wipe is idempotent — on a card already in {@code UNINITIALIZED} the four invocations
-     * still emit the canonical countdown SW progression (0x6FA3 → 0x6FA2 → 0x6FA1 → 0x6FA0) but the
-     * terminal wipe touches no live persistent state.
+     * Connects to a PCSC reader, opens a channel, and SELECTs {@code aidBytes}. Persistent state
+     * isolation between tests is delegated to the test's {@code @AfterEach} via {@code
+     * MeowlFixtures.resetCard()}.
      *
      * @param aidBytes target applet AID
      * @param terminalName reader name (e.g. {@code "ACR1552U-MF"}); {@code null} = first available
@@ -64,30 +56,9 @@ public final class RealCardClient implements CardClient {
                 throw new IllegalStateException(
                         "SELECT failed: SW=0x" + Integer.toHexString(select.getSW()));
             }
-            wipePersistentState(channel);
             return new RealCardClient(card, channel);
         } catch (CardException e) {
             throw new RuntimeException("real card connect failed", e);
-        }
-    }
-
-    /**
-     * Drives {@link Constants#RESET_REQUIRED_INVOCATIONS} consecutive {@code RESET_TO_FACTORY}
-     * APDUs. The applet's multi-step trigger replies with {@code SW_RESET_COUNTDOWN_BASE +
-     * remaining} for the first {@code n − 1} calls and {@code SW_RESET_COUNTDOWN_BASE + 0} on the
-     * terminal call (which performs the wipe). We do not assert the SW values here — the lifecycle
-     * post-condition (everything back to UNINITIALIZED) is what the per-test {@code @BeforeEach}
-     * relies on, and that holds whether or not the wipe actually had work to do.
-     */
-    private static void wipePersistentState(CardChannel channel) throws CardException {
-        CommandAPDU reset =
-                new CommandAPDU(
-                        Constants.CLA_MEOWL & 0xFF,
-                        Constants.INS_RESET_TO_FACTORY & 0xFF,
-                        0x00,
-                        0x00);
-        for (int i = 0; i < Constants.RESET_REQUIRED_INVOCATIONS; i++) {
-            channel.transmit(reset);
         }
     }
 
@@ -98,6 +69,16 @@ public final class RealCardClient implements CardClient {
             if (terminals.isEmpty()) {
                 throw new IllegalStateException(
                         "no PCSC terminals; specify one with -DcardReader=...");
+            }
+            // Prefer a terminal that reports a card; on dual-interface readers (e.g. ACR1552 1S
+            // exposes a SAM slot + a PICC slot) the SAM slot is always empty, so blindly taking
+            // terminals.get(0) yields SCARD_W_REMOVED_CARD even though the J3R180 is sitting on
+            // PICC. Fall back to the first terminal when none reports a card so the original
+            // diagnostics ("No card present") still surface naturally.
+            for (CardTerminal t : terminals) {
+                if (t.isCardPresent()) {
+                    return t;
+                }
             }
             return terminals.get(0);
         }
@@ -125,9 +106,8 @@ public final class RealCardClient implements CardClient {
     /**
      * Disconnects with {@code reset = true} so the ICC reset propagates a {@code CLEAR_ON_RESET}
      * wipe — the per-deselect counter that {@code RESET_TO_FACTORY} relies on returns to its
-     * install-time value, matching the {@link SimulatorCardClient#installFresh} fresh-card
-     * semantics. Tests that need persistent state to survive across {@code @BeforeEach} cycles must
-     * drive {@code RESET_TO_FACTORY} explicitly inside an {@code @AfterEach}.
+     * install-time value. Tests that need persistent state cleared must drive {@code
+     * RESET_TO_FACTORY} explicitly via {@code MeowlFixtures.resetCard()} before close.
      */
     @Override
     public void close() {
