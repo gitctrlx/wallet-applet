@@ -123,25 +123,36 @@ public final class Fp25519Inv {
         if (BigNat.ctIsZero(a, aOff, Fp25519.LEN) != 0) {
             ISOException.throwIt(Constants.SW_INTERNAL_ERROR);
         }
-        short inOff = scOff;
-        short outBufOff = (short) (scOff + RSA_BYTE_LEN);
-        Util.arrayFillNonAtomic(scratch, inOff, PADDED_OFFSET, (byte) 0);
-        Util.arrayCopyNonAtomic(a, aOff, scratch, (short) (inOff + PADDED_OFFSET), Fp25519.LEN);
+        try {
+            short inOff = scOff;
+            short outBufOff = (short) (scOff + RSA_BYTE_LEN);
+            Util.arrayFillNonAtomic(scratch, inOff, PADDED_OFFSET, (byte) 0);
+            Util.arrayCopyNonAtomic(a, aOff, scratch, (short) (inOff + PADDED_OFFSET), Fp25519.LEN);
 
-        // Re-set modulus/exponent on every call: J3R180 discards them across deselect, mirroring
-        // the JCMathLib JCOP4_P71 DEFERRED_INITIALIZATION semantics.
-        rsaKey.setModulus(P_PADDED, (short) 0, RSA_BYTE_LEN);
-        rsaKey.setExponent(P_MINUS_2_PADDED, (short) 0, RSA_BYTE_LEN);
-        rsaCipher.init(rsaKey, Cipher.MODE_DECRYPT);
-        short produced = rsaCipher.doFinal(scratch, inOff, RSA_BYTE_LEN, scratch, outBufOff);
-        if (produced != RSA_BYTE_LEN) {
-            short shift = (short) (RSA_BYTE_LEN - produced);
+            // Re-set modulus/exponent on every call: J3R180 discards them across deselect,
+            // mirroring the JCMathLib JCOP4_P71 DEFERRED_INITIALIZATION semantics.
+            rsaKey.setModulus(P_PADDED, (short) 0, RSA_BYTE_LEN);
+            rsaKey.setExponent(P_MINUS_2_PADDED, (short) 0, RSA_BYTE_LEN);
+            rsaCipher.init(rsaKey, Cipher.MODE_DECRYPT);
+            short produced = rsaCipher.doFinal(scratch, inOff, RSA_BYTE_LEN, scratch, outBufOff);
+            if (produced != RSA_BYTE_LEN) {
+                // Right-align the engine output. NEWAUDIT-004: a forward Util.arrayCopyNonAtomic
+                // with overlapping src/dst was relying on JC-implementation-defined overlap
+                // semantics. Walking the source backwards is unambiguous regardless of the
+                // platform's copy direction.
+                short shift = (short) (RSA_BYTE_LEN - produced);
+                for (short i = (short) (produced - 1); i >= 0; i--) {
+                    scratch[(short) (outBufOff + shift + i)] = scratch[(short) (outBufOff + i)];
+                }
+                Util.arrayFillNonAtomic(scratch, outBufOff, shift, (byte) 0);
+            }
             Util.arrayCopyNonAtomic(
-                    scratch, outBufOff, scratch, (short) (outBufOff + shift), produced);
-            Util.arrayFillNonAtomic(scratch, outBufOff, shift, (byte) 0);
+                    scratch, (short) (outBufOff + PADDED_OFFSET), out, outOff, Fp25519.LEN);
+        } finally {
+            // Wipe scratch unconditionally so a CryptoException out of rsaCipher.doFinal cannot
+            // leave plaintext input `a` (32 bytes at scOff + PADDED_OFFSET) or its padding
+            // resident in the workspace (NEWAUDIT-003).
+            Util.arrayFillNonAtomic(scratch, scOff, SCRATCH_LEN, (byte) 0);
         }
-        Util.arrayCopyNonAtomic(
-                scratch, (short) (outBufOff + PADDED_OFFSET), out, outOff, Fp25519.LEN);
-        Util.arrayFillNonAtomic(scratch, scOff, SCRATCH_LEN, (byte) 0);
     }
 }

@@ -339,27 +339,33 @@ public final class Wei25519 {
         short denOff = (short) (scratchOff + DEN_OFF);
         short invScrOff = (short) (scratchOff + INV_SCRATCH_OFF);
 
-        // u = X_wei − a/3 (mod p)
-        Fp25519.sub(wei, xWeiOff, A_DIV_3, (short) 0, scratch, uOff);
+        try {
+            // u = X_wei − a/3 (mod p)
+            Fp25519.sub(wei, xWeiOff, A_DIV_3, (short) 0, scratch, uOff);
 
-        // x_ed = c · u · Y_wei⁻¹ (mod p)
-        inv.inv(wei, yWeiOff, scratch, yInvOff, scratch, invScrOff);
-        Fp25519.mul(scratch, uOff, EDWARDS_C, (short) 0, scratch, xEdOff, scratch, invScrOff);
-        Fp25519.mul(scratch, xEdOff, scratch, yInvOff, scratch, xEdOff, scratch, invScrOff);
+            // x_ed = c · u · Y_wei⁻¹ (mod p)
+            inv.inv(wei, yWeiOff, scratch, yInvOff, scratch, invScrOff);
+            Fp25519.mul(scratch, uOff, EDWARDS_C, (short) 0, scratch, xEdOff, scratch, invScrOff);
+            Fp25519.mul(scratch, xEdOff, scratch, yInvOff, scratch, xEdOff, scratch, invScrOff);
 
-        // y_ed = (u − 1) · (u + 1)⁻¹ (mod p)
-        Fp25519.decrement(scratch, uOff, scratch, numOff);
-        Fp25519.increment(scratch, uOff, scratch, denOff);
-        inv.inv(scratch, denOff, scratch, denOff, scratch, invScrOff);
-        Fp25519.mul(scratch, numOff, scratch, denOff, scratch, denOff, scratch, invScrOff);
+            // y_ed = (u − 1) · (u + 1)⁻¹ (mod p)
+            Fp25519.decrement(scratch, uOff, scratch, numOff);
+            Fp25519.increment(scratch, uOff, scratch, denOff);
+            inv.inv(scratch, denOff, scratch, denOff, scratch, invScrOff);
+            Fp25519.mul(scratch, numOff, scratch, denOff, scratch, denOff, scratch, invScrOff);
 
-        // Output: y_ed as little-endian + parity(x_ed) packed into bit 7 of byte 31.
-        for (short i = 0; i < Fp25519.LEN; i++) {
-            out[(short) (outOff + i)] = scratch[(short) (denOff + Fp25519.LEN - 1 - i)];
+            // Output: y_ed as little-endian + parity(x_ed) packed into bit 7 of byte 31.
+            for (short i = 0; i < Fp25519.LEN; i++) {
+                out[(short) (outOff + i)] = scratch[(short) (denOff + Fp25519.LEN - 1 - i)];
+            }
+            byte parityBit = (byte) ((scratch[(short) (xEdOff + Fp25519.LEN - 1)] & 0x01) << 7);
+            out[(short) (outOff + Fp25519.LEN - 1)] |= parityBit;
+        } finally {
+            // Today the only callers (Ed25519.publicKey / Ed25519.sign) wipe the same buffer in
+            // their outer finally, so this is defence-in-depth. Keeping the wipe local stops a
+            // future caller that does not bring its own outer wipe from leaking u / y_inv /
+            // x_ed / num / den scratch slots on an exception (NEWAUDIT-006).
+            Util.arrayFillNonAtomic(scratch, scratchOff, ENCODE_SCRATCH_LEN, (byte) 0);
         }
-        byte parityBit = (byte) ((scratch[(short) (xEdOff + Fp25519.LEN - 1)] & 0x01) << 7);
-        out[(short) (outOff + Fp25519.LEN - 1)] |= parityBit;
-
-        Util.arrayFillNonAtomic(scratch, scratchOff, ENCODE_SCRATCH_LEN, (byte) 0);
     }
 }
