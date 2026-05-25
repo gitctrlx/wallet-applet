@@ -65,12 +65,6 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
     testImplementation(libs.apdu4j.core) // MockBIBO for replay tests
     testImplementation(libs.bouncycastle.prov)
-
-    // Optional integration tests against the real applet running in JCardSim. Tools'
-    // SecureChannelClient is verified end-to-end here against the same applet that ships in
-    // the CAP — no separate "host-only" reference implementation is allowed to drift.
-    testImplementation(libs.jcardsim)
-    testImplementation(project(":applet"))
 }
 
 application {
@@ -111,9 +105,6 @@ tasks.test {
 // Usage:
 //   ./gradlew :tools:realCardTest                     # first PCSC terminal found
 //   ./gradlew :tools:realCardTest -Preader=NAME       # explicit reader by name
-//   ./gradlew :tools:realCardTest -PuseSimulator      # force simulator backend
-//                                                     #   (most cases still fail by design;
-//                                                     #    useful only for fixture sanity)
 tasks.register<Test>("realCardTest") {
     description = "Runs @Tag(\"real-card\") integration tests against a real J3R180 via PCSC."
     group = "verification"
@@ -127,8 +118,7 @@ tasks.register<Test>("realCardTest") {
         showStandardStreams = true
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
-    val backend = if (project.hasProperty("useSimulator")) "simulator" else "real"
-    systemProperty("cardBackend", backend)
+    systemProperty("cardBackend", "real")
     project.findProperty("reader")?.let { systemProperty("cardReader", it.toString()) }
 }
 

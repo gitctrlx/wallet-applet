@@ -16,10 +16,7 @@ import apdu4j.core.BIBO;
 import apdu4j.core.BIBOException;
 import apdu4j.core.CommandAPDU;
 import apdu4j.core.ResponseAPDU;
-import com.licel.jcardsim.smartcardio.CardSimulator;
-import com.licel.jcardsim.utils.AIDUtil;
 import java.util.List;
-import javacard.framework.AID;
 import javax.smartcardio.Card;
 import javax.smartcardio.CardChannel;
 import javax.smartcardio.CardException;
@@ -30,52 +27,34 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import social.meowl.applet.MeowlApplet;
 import social.meowl.tools.core.MeowlAid;
 
 /**
  * End-to-end integration tests for {@link SecureChannelClient}.
  *
- * <p>Backend selection is driven by two system properties:
+ * <p>Backend: PCSC-attached real J3R180 only. The Phase-1 single-target hardening (transient EC
+ * keys + prime-modulus RSA inverter) takes the applet outside jcardsim's surface, so a simulator
+ * backend would have to fail every crypto-bearing test by design — pretending to support it was a
+ * net source of confusion. The reader is selected by name via {@code -DcardReader=NAME} (verbatim
+ * PCSC name); when unset, the first terminal returned by {@link TerminalFactory#getDefault()} wins.
  *
- * <ul>
- *   <li>{@code -DcardBackend=simulator} — install {@code MeowlApplet} into a fresh jcardsim {@code
- *       CardSimulator}. After the Phase-1 single-target hardening this no longer works (transient
- *       EC keys + prime-modulus RSA are out of jcardsim's surface) so the simulator backend is
- *       preserved only for sanity-checking the test fixture itself; expect every crypto-bearing
- *       test to fail with {@code SystemException}.
- *   <li>{@code -DcardBackend=real} — connect to a PCSC-attached J3R180. The reader is selected by
- *       name via {@code -DcardReader=NAME} (substring match against the JDK reader list); if unset,
- *       the first terminal returned by {@link TerminalFactory#getDefault()} wins.
- * </ul>
- *
- * <p>Default backend is {@code simulator} so {@code :tools:test} (which excludes the {@code
- * real-card} tag entirely) and {@code :tools:realCardTest} can both inspect the suite without
- * needing a card present at compile time. The Gradle {@code realCardTest} task overrides the
- * default to {@code real}.
+ * <p>This class is tagged {@code real-card} so it never runs under {@code :tools:test}; it is
+ * scheduled exclusively by {@code :tools:realCardTest}, which itself only fires when a developer
+ * opts in with the Gradle property. Compilation is unconditional so the test still type-checks in
+ * CI.
  */
 @Tag("real-card")
 class SecureChannelClientIT {
 
-    private static final String PROP_BACKEND = "cardBackend";
     private static final String PROP_READER = "cardReader";
 
-    private CardSimulator simulator;
     private Card realCard;
     private APDUBIBO bibo;
 
     @BeforeEach
     void setUp() {
-        if ("real".equalsIgnoreCase(System.getProperty(PROP_BACKEND, "simulator"))) {
-            this.realCard = connectRealCard(System.getProperty(PROP_READER));
-            this.bibo = new APDUBIBO(realCardBibo(realCard.getBasicChannel()));
-        } else {
-            this.simulator = new CardSimulator();
-            AID aid = AIDUtil.create(MeowlAid.defaultBytes());
-            simulator.installApplet(aid, MeowlApplet.class);
-            simulator.selectApplet(aid);
-            this.bibo = new APDUBIBO(simulatorBibo(simulator));
-        }
+        this.realCard = connectRealCard(System.getProperty(PROP_READER));
+        this.bibo = new APDUBIBO(realCardBibo(realCard.getBasicChannel()));
     }
 
     @AfterEach
@@ -90,8 +69,6 @@ class SecureChannelClientIT {
             }
             realCard = null;
         }
-        // CardSimulator has no per-instance close; setUp creates a fresh one each time.
-        simulator = null;
         bibo = null;
     }
 
@@ -221,26 +198,6 @@ class SecureChannelClientIT {
                 bibo.transmit(new CommandAPDU(SecureChannelClient.CLA_MEOWL, 0x02, 0x00, 0x00));
         assertEquals(0x9000, resp.getSW());
         return resp.getData();
-    }
-
-    /**
-     * Wraps a JCardSim {@link CardSimulator} into a {@link BIBO}. JCardSim's transmit is purely
-     * synchronous; we adapt by routing each transceive through {@code transmitCommand}.
-     */
-    private static BIBO simulatorBibo(CardSimulator sim) {
-        return new BIBO() {
-            @Override
-            public byte[] transceive(byte[] command) {
-                javax.smartcardio.CommandAPDU cmd = new javax.smartcardio.CommandAPDU(command);
-                javax.smartcardio.ResponseAPDU resp = sim.transmitCommand(cmd);
-                return resp.getBytes();
-            }
-
-            @Override
-            public void close() {
-                // JCardSim has no per-channel close concept; the simulator outlives the BIBO.
-            }
-        };
     }
 
     /**
