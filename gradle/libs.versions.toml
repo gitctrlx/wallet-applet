@@ -27,13 +27,16 @@ jackson-jr   = "2.19.1"
 
 # Testing.
 junit = "6.0.3"
+jqwik = "1.9.2"
 
-# Static analysis / formatting.
+# Static analysis / formatting / supply-chain.
 spotless           = "8.5.1"
 google-java-format = "1.35.0"
 ktlint             = "1.8.0"
 foojay-resolver    = "1.0.0"
 cyclonedx          = "3.2.4"
+spotbugs           = "6.0.27"
+owasp-dep-check    = "11.1.1"
 
 [libraries]
 ant-javacard      = { module = "com.github.martinpaljak:ant-javacard",     version.ref = "ant-javacard" }
@@ -54,7 +57,12 @@ junit-bom               = { module = "org.junit:junit-bom",                versi
 junit-jupiter           = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 
+# Property-based testing (Phase 3 of the Q2-2026 refactor).
+jqwik                   = { module = "net.jqwik:jqwik",                    version.ref = "jqwik" }
+
 [plugins]
 spotless          = { id = "com.diffplug.spotless",                           version.ref = "spotless" }
 foojay-resolver   = { id = "org.gradle.toolchains.foojay-resolver-convention", version.ref = "foojay-resolver" }
 cyclonedx         = { id = "org.cyclonedx.bom",                               version.ref = "cyclonedx" }
+spotbugs          = { id = "com.github.spotbugs",                             version.ref = "spotbugs" }
+owasp-dep-check   = { id = "org.owasp.dependencycheck",                       version.ref = "owasp-dep-check" }
