@@ -325,12 +325,16 @@ public final class SecureChannel {
         short ctOffset = (short) (ivOffset + Constants.SC_BLOCK_LEN);
         short macOffset = (short) (ctOffset + ctLen);
 
-        // Replay defence before MAC verification: reject non-monotonic IVs cheaply. IV bytes
-        // are public, so a non-constant-time compare is fine. Critically, this branch does NOT
-        // reset() the session: an attacker without K_mac could otherwise replay any captured
-        // envelope to wipe the session keys, a free DoS lever. The MAC-verification failure
-        // path below is still a session-killer because at that point the attacker either holds
-        // K_mac or is corrupting in flight — a genuine integrity event, not just replay.
+        // Replay defence before MAC verification: reject non-monotonic IVs cheaply. The IV
+        // bytes themselves are public, so the comparison's data-dependent timing is not a
+        // secret-leak channel; we still use constant-time compare16 because the rest of this
+        // class speaks one defence-in-depth dialect (BigNat.ctEquals, stripPkcs5) and a stray
+        // ternary here would be the first non-constant-time branch on a security-sensitive
+        // path. Critically, this branch does NOT reset() the session: an attacker without
+        // K_mac could otherwise replay any captured envelope to wipe the session keys, a free
+        // DoS lever. The MAC-verification failure path below is still a session-killer because
+        // at that point the attacker either holds K_mac or is corrupting in flight — a genuine
+        // integrity event, not just replay.
         if (compare16(apduBuffer, ivOffset, lastInboundIv, (short) 0) <= 0) {
             ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
         }
