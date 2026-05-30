@@ -20,9 +20,9 @@ import javacard.framework.Util;
  *
  * <p>A non-hardened index (top bit clear) raises {@link Constants#SW_CONDITIONS_NOT_SATISFIED} —
  * the safe reading of SLIP-10's "non-hardened derivation is not defined". The two derivation entry
- * points sitting on top of the shared walk are {@link #deriveChainCode} (chain code only) and
- * {@link #deriveLeafKey} (32-byte secret-key seed, used by {@code SIGN_ED25519} and the Ed25519
- * branch of {@code EXPORT_XPUB}).
+ * points sitting on top of the shared walk are {@link #deriveLeafKey} (32-byte secret-key seed,
+ * used by {@code SIGN_ED25519}) and {@link #deriveLeafKeyAndChainCode} (leaf key ‖ chain code from
+ * a single walk, used by the Ed25519 branch of {@code EXPORT_XPUB}).
  */
 public final class Slip10 {
 
@@ -54,31 +54,51 @@ public final class Slip10 {
     }
 
     /**
-     * Derives the SLIP-10 Ed25519 chain code at the given hardened-only path.
-     *
-     * @return 32
-     */
-    public short deriveChainCode(
-            byte[] pathBuf, short pathOff, short depth, byte[] outBuf, short outOff) {
-        walkPath(pathBuf, pathOff, depth);
-        Util.arrayCopyNonAtomic(state, STATE_C_OFF, outBuf, outOff, Constants.CHAIN_CODE_LEN);
-        wipeWalkState();
-        return Constants.CHAIN_CODE_LEN;
-    }
-
-    /**
      * Derives the SLIP-10 Ed25519 leaf private key at the given hardened-only path. The chain code
-     * is wiped along with the rest of the walk state; invoke {@link #deriveChainCode} on the same
-     * path if both halves are needed.
+     * is wiped along with the rest of the walk state; use {@link #deriveLeafKeyAndChainCode} when
+     * both halves are needed.
+     *
+     * <p>The {@code try/finally} guarantees {@link #wipeWalkState()} runs even when {@link
+     * #walkPath} throws on a non-hardened index, so a partial walk cannot leave the SLIP-10 master
+     * (the entire Ed25519 wallet root) or an ancestor private key resident in {@link #state}
+     * (NEWAUDIT-002, mirroring {@link Bip32#deriveLeafScalar}).
      *
      * @return 32
      */
     public short deriveLeafKey(
             byte[] pathBuf, short pathOff, short depth, byte[] outBuf, short outOff) {
-        walkPath(pathBuf, pathOff, depth);
-        Util.arrayCopyNonAtomic(state, STATE_K_OFF, outBuf, outOff, Constants.EC_SCALAR_LEN);
-        wipeWalkState();
-        return Constants.EC_SCALAR_LEN;
+        try {
+            walkPath(pathBuf, pathOff, depth);
+            Util.arrayCopyNonAtomic(state, STATE_K_OFF, outBuf, outOff, Constants.EC_SCALAR_LEN);
+            return Constants.EC_SCALAR_LEN;
+        } finally {
+            wipeWalkState();
+        }
+    }
+
+    /**
+     * Derives the SLIP-10 Ed25519 leaf key and chain code in a single walk, writing {@code
+     * [leaf_key(32) ‖ chain_code(32)]} to {@code outBuf}. The Ed25519 branch of {@code EXPORT_XPUB}
+     * needs both halves; one walk instead of two halves the HMAC-SHA-512 chain cost (mirroring
+     * {@link Bip32#derivePath}). Same wipe-on-throw contract as {@link #deriveLeafKey}.
+     *
+     * @return 64
+     */
+    public short deriveLeafKeyAndChainCode(
+            byte[] pathBuf, short pathOff, short depth, byte[] outBuf, short outOff) {
+        try {
+            walkPath(pathBuf, pathOff, depth);
+            Util.arrayCopyNonAtomic(state, STATE_K_OFF, outBuf, outOff, Constants.EC_SCALAR_LEN);
+            Util.arrayCopyNonAtomic(
+                    state,
+                    STATE_C_OFF,
+                    outBuf,
+                    (short) (outOff + Constants.EC_SCALAR_LEN),
+                    Constants.CHAIN_CODE_LEN);
+            return (short) (Constants.EC_SCALAR_LEN + Constants.CHAIN_CODE_LEN);
+        } finally {
+            wipeWalkState();
+        }
     }
 
     private void walkPath(byte[] pathBuf, short pathOff, short depth) {
@@ -100,9 +120,15 @@ public final class Slip10 {
         }
     }
 
-    /** Wipes the entire walk-state scratch in one shot. */
+    /**
+     * Wipes the entire walk-state scratch plus the shared HMAC engine's key slot. {@link #ckdPriv}
+     * keys the HMAC on the running chain code, so without the {@link HmacSha512#reset()} the last
+     * level's chain code would linger in the engine's {@code padded} buffer past the walk
+     * (NEWAUDIT-008).
+     */
     private void wipeWalkState() {
         Util.arrayFillNonAtomic(state, (short) 0, STATE_LEN, (byte) 0);
+        hmac.reset();
     }
 
     private void ckdPriv(byte[] pathBuf, short idxOff) {

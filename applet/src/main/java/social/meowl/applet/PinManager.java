@@ -19,7 +19,9 @@ import javacard.framework.OwnerPIN;
  *       the low nibble (ISO 7816-4); exhausted counter → {@link Constants#SW_AUTH_BLOCKED}.
  *   <li>Length-policy violations return {@link Constants#SW_WRONG_LENGTH} and do <em>not</em>
  *       consume a retry — they are host-side protocol errors, not guesses.
- *   <li>{@link #unblockPin} consumes a PUK attempt even when the new PIN fails policy.
+ *   <li>{@link #unblockPin} validates the new-PIN length before it touches the PUK, so a malformed
+ *       new PIN is a host-side protocol error that does NOT consume a PUK attempt — same ordering
+ *       as {@link #changePin}.
  * </ul>
  *
  * <p>Every entry point validates length bounds before invoking {@link OwnerPIN#check}, which would
@@ -126,9 +128,12 @@ public final class PinManager {
     }
 
     /**
-     * Unblocks the PIN after exhausted retries. Requires the PUK to verify and the new PIN to
-     * satisfy the PIN policy. A PUK attempt is consumed regardless of whether the new PIN passes
-     * the policy check.
+     * Unblocks the PIN after exhausted retries. The new-PIN length policy is checked BEFORE the PUK
+     * so a malformed new PIN — a host-side protocol error — does not burn one of the scarce PUK
+     * attempts; a wrong PUK still consumes one. This mirrors {@link #changePin}, which validates
+     * the new-PIN length before verifying the old PIN. Ordering the length gate first leaks nothing
+     * about the PUK: the {@code SW_WRONG_LENGTH} path never reaches {@link OwnerPIN#check}, so a
+     * malformed new PIN cannot be used to probe the PUK without spending an attempt.
      */
     public void unblockPin(
             byte[] pukBuf,
@@ -141,9 +146,9 @@ public final class PinManager {
         if (pin.getTriesRemaining() != 0) {
             ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
         }
+        requireLengthPolicy(newPinLen, Constants.PIN_MIN_LEN, Constants.PIN_MAX_LEN);
         verifyOwnerPin(
                 puk, pukBuf, pukOffset, pukLen, Constants.PUK_MIN_LEN, Constants.PUK_MAX_LEN);
-        requireLengthPolicy(newPinLen, Constants.PIN_MIN_LEN, Constants.PIN_MAX_LEN);
         JCSystem.beginTransaction();
         pin.update(newPinBuf, newPinOffset, (byte) newPinLen);
         pin.resetAndUnblock();

@@ -557,27 +557,29 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
 
     /**
      * Ed25519 branch of {@link #handleExportXpub}. Returns {@code [pubkey_LE(32), chain_code(32)]}
-     * with the pubkey derived on-card from the SLIP-10 leaf private key. The path is staged inside
-     * {@link #innerScratch} so we can write the pubkey to the APDU buffer before reading the path a
-     * second time to recover the chain code (the path lives in the same APDU buffer region we
-     * overwrite with the response).
+     * with the pubkey derived on-card from the SLIP-10 leaf private key. A single {@link
+     * Slip10#deriveLeafKeyAndChainCode} walk yields both the leaf key (consumed by {@link
+     * Ed25519#publicKey}) and the chain code; staging the path in {@link #innerScratch} keeps it
+     * clear of the APDU-buffer region the response overwrites.
      */
     private short handleExportXpubEd25519(byte[] buffer, short pathOff, short depth) {
         short pathLen = (short) (depth * Bip32.INDEX_LEN);
-        Util.arrayCopyNonAtomic(buffer, pathOff, innerScratch, (short) 32, pathLen);
+        // Stage the path at innerScratch[64..] so the [leaf_key(32) ‖ chain_code(32)] output of the
+        // single SLIP-10 walk lands in innerScratch[0..64] without trampling the input.
+        Util.arrayCopyNonAtomic(buffer, pathOff, innerScratch, (short) 64, pathLen);
         try {
-            slip10.deriveLeafKey(innerScratch, (short) 32, depth, innerScratch, (short) 0);
+            slip10.deriveLeafKeyAndChainCode(
+                    innerScratch, (short) 64, depth, innerScratch, (short) 0);
             short pkLen = ed25519.publicKey(innerScratch, (short) 0, buffer, ISO7816.OFFSET_CDATA);
-            short ccLen =
-                    slip10.deriveChainCode(
-                            innerScratch,
-                            (short) 32,
-                            depth,
-                            buffer,
-                            (short) (ISO7816.OFFSET_CDATA + pkLen));
-            return (short) (pkLen + ccLen);
+            Util.arrayCopyNonAtomic(
+                    innerScratch,
+                    (short) 32,
+                    buffer,
+                    (short) (ISO7816.OFFSET_CDATA + pkLen),
+                    Constants.CHAIN_CODE_LEN);
+            return (short) (pkLen + Constants.CHAIN_CODE_LEN);
         } finally {
-            Util.arrayFillNonAtomic(innerScratch, (short) 0, (short) (32 + pathLen), (byte) 0);
+            Util.arrayFillNonAtomic(innerScratch, (short) 0, (short) (64 + pathLen), (byte) 0);
         }
     }
 

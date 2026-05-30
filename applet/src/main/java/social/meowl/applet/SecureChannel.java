@@ -286,8 +286,13 @@ public final class SecureChannel {
                     hsScratch, HS_CARD_PUB, apduBuffer, (short) 0, CLIENT_EPH_PUB_LEN);
             Util.setShort(apduBuffer, CLIENT_EPH_PUB_LEN, sigLen);
 
-            // Wipe the scratch material we no longer need.
+            // Wipe the handshake scratch, then reset the KDF so its transient PRK does not outlive
+            // the handshake: PRK alone re-derives K_enc/K_mac, and the KDF's SHA-256 scratch tail
+            // still holds the last OKM block (IV_base). The live session keys persist in their own
+            // AESKey slots and SC.okm keeps IV_base for the outbound IV, so this only drops the
+            // redundant KDF-internal copies (NEWAUDIT-009).
             Util.arrayFillNonAtomic(hsScratch, (short) 0, HS_SCRATCH_LEN, (byte) 0);
+            kdf.reset();
 
             return (short) (sigOffset + sigLen);
         } catch (ISOException e) {

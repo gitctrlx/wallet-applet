@@ -162,11 +162,14 @@ public final class Bip32 {
     /**
      * Wipes every BIP-32 walk-state slot: the leaf scalar, the chain code (defence-in-depth — chain
      * code + parent pubkey derives all siblings), the last HMAC-SHA-512 output, the uncompressed
-     * pubkey scratch, and the {@link EcPoint}'s {@code scalarKey} cell.
+     * pubkey scratch, the {@link EcPoint}'s {@code scalarKey} cell, and the shared HMAC engine's
+     * {@code padded} key slot — {@link #ckdPriv} keys the HMAC on the running chain code, which
+     * would otherwise linger in the engine past the walk (NEWAUDIT-008).
      */
     private void wipeTransientSecrets() {
         Util.arrayFillNonAtomic(state, (short) 0, STATE_LEN, (byte) 0);
         secp256k1Ec.wipe();
+        hmac.reset();
     }
 
     /**
