@@ -188,6 +188,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     private short handleOpenSecureChannel(APDU apdu, byte[] buffer) {
         short lc = apdu.setIncomingAndReceive();
         short plainLen = secureChannel.unwrap(buffer, ISO7816.OFFSET_CDATA, lc);
+        short envelopeLen = 0;
         try {
             if (plainLen < 5) {
                 ISOException.throwIt(Constants.SW_WRONG_LENGTH);
@@ -207,17 +208,25 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
             short innerDataOff = (short) (innerOff + 5);
             short respLen =
                     dispatchInner(buffer, innerIns, innerP1, innerP2, innerDataOff, innerLc);
-            return secureChannel.wrap(buffer, ISO7816.OFFSET_CDATA, respLen);
+            envelopeLen = secureChannel.wrap(buffer, ISO7816.OFFSET_CDATA, respLen);
+            return envelopeLen;
         } finally {
-            // Wipe the unwrapped inner-APDU plaintext window. This covers every secret that
-            // could be staged into the APDU buffer by SC.unwrap — PIN/PUK on SETUP /
-            // VERIFY_PIN / CHANGE_PIN / CHANGE_PUK / UNBLOCK_PIN, the BIP-39 seed on
-            // IMPORT_SEED, the BIP-32 path + digest on SIGN_ECDSA_K1 / SIGN_SCHNORR_K1 /
-            // SIGN_ED25519, and PKI cert chunks on IMPORT_PKI_CERT. The cleanup happens
-            // unconditionally so a thrown handler cannot leave plaintext lingering for the
-            // next session to partially overwrite.
-            if (plainLen > 0) {
-                Util.arrayFillNonAtomic(buffer, ISO7816.OFFSET_CDATA, plainLen, (byte) 0);
+            // Wipe the unwrapped inner-APDU plaintext that SC.unwrap staged into the buffer —
+            // PIN/PUK on SETUP / VERIFY_PIN / CHANGE_PIN / CHANGE_PUK / UNBLOCK_PIN, the BIP-39
+            // seed on IMPORT_SEED, the BIP-32 path + digest on the SIGN_* opcodes, PKI cert
+            // chunks on IMPORT_PKI_CERT — covering both NEWAUDIT-005 (per-handler wipe gaps) and
+            // NEWAUDIT-007 (residual plaintext after a torn handler) at one point.
+            //
+            // SC.wrap has already overwritten buffer[0..envelopeLen) with the outbound
+            // IV‖ciphertext‖MAC, so those bytes hold ciphertext, not plaintext: wiping them would
+            // corrupt the response (zeroing the outbound IV breaks the host MAC check on every
+            // reply). Wipe only the request-plaintext tail that lies BEYOND the envelope. On an
+            // exception path envelopeLen stays 0, so the whole inner-plaintext window is wiped.
+            short reqEnd = (short) (ISO7816.OFFSET_CDATA + plainLen);
+            short wipeFrom =
+                    envelopeLen > ISO7816.OFFSET_CDATA ? envelopeLen : ISO7816.OFFSET_CDATA;
+            if (reqEnd > wipeFrom) {
+                Util.arrayFillNonAtomic(buffer, wipeFrom, (short) (reqEnd - wipeFrom), (byte) 0);
             }
         }
     }
