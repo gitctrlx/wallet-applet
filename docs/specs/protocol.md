@@ -5,35 +5,26 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # meowl-applet wire protocol
 
-The sole normative specification for the meowl hardware-wallet applet. It defines the
-externally-observable contract a host SDK must implement: APDU framing, the Secure Channel,
-the lifecycle state machine, PIN/PUK, HD derivation, signing, and status words.
+The sole normative specification for the meowl hardware-wallet applet. It defines the externally-observable contract a host SDK must implement: APDU framing, the Secure Channel, the lifecycle state machine, PIN/PUK, HD derivation, signing, and status words.
 
-The applet sources under `applet/` and the test suite under `tests/` are the ultimate source of
-truth. Where this document and the code disagree, **the code wins** — fix the document, not the
-code. The reference host SDK in `tools/` is the canonical worked example of every flow below.
+The applet sources under `applet/` and the test suite under `tests/` are the ultimate source of truth. Where this document and the code disagree, **the code wins** — fix the document, not the code. The reference host SDK in `tools/` is the canonical worked example of every flow below.
 
 ## Conventions
 
-`‖` is concatenation; `[a..b)` is a half-open byte range; `x(n)` is an `n`-byte field. Every
-multi-byte integer is **big-endian** unless stated otherwise. All lengths are in bytes.
+`‖` is concatenation; `[a..b)` is a half-open byte range; `x(n)` is an `n`-byte field. Every multi-byte integer is **big-endian** unless stated otherwise. All lengths are in bytes.
 
 ## 1. APDU framing
 
 Every command uses `CLA = 0x80`; any other class byte returns `6E00`. There are two frames:
 
-- **Outer frame** — a raw APDU sent directly to the card. Only the discovery, reset and
-  Secure-Channel opcodes are reachable here.
-- **Inner frame** — an APDU carried inside an `OPEN_SECURE_CHANNEL` envelope (§6). Every
-  secret-touching opcode is inner-band and is reachable *only* through the Secure Channel.
+- **Outer frame** — a raw APDU sent directly to the card. Only the discovery, reset and Secure-Channel opcodes are reachable here.
+- **Inner frame** — an APDU carried inside an `OPEN_SECURE_CHANNEL` envelope (§6). Every secret-touching opcode is inner-band and is reachable *only* through the Secure Channel.
 
-An inner-band INS sent on the outer frame returns `6D00`, identical to an unallocated INS, so the
-outer surface never reveals which inner handlers exist.
+An inner-band INS sent on the outer frame returns `6D00`, identical to an unallocated INS, so the outer surface never reveals which inner handlers exist.
 
 ## 2. Instruction set
 
-`P1`/`P2` are `0x00` unless a command assigns them (noted below). "Gate" is the lifecycle
-precondition (§4); "PIN" marks commands that also require the session PIN flag (§7).
+`P1`/`P2` are `0x00` unless a command assigns them (noted below). "Gate" is the lifecycle precondition (§4); "PIN" marks commands that also require the session PIN flag (§7).
 
 | INS | Name | Frame | Gate | PIN |
 | --- | --- | --- | --- | --- |
@@ -61,8 +52,7 @@ precondition (§4); "PIN" marks commands that also require the session PIN flag 
 
 ## 3. Status words
 
-Every response ends with a two-byte big-endian status word. Hosts MUST treat anything other than
-`9000` as a failure.
+Every response ends with a two-byte big-endian status word. Hosts MUST treat anything other than `9000` as a failure.
 
 | SW | Meaning |
 | --- | --- |
@@ -84,13 +74,18 @@ Every response ends with a two-byte big-endian status word. Hosts MUST treat any
 
 ## 4. Lifecycle
 
-The applet is a four-state forward-only FSM. The `authentikey` (§5) is generated at install and
-survives every transition, including reset.
+The applet is a four-state forward-only FSM. The `authentikey` (§5) is generated at install and survives every transition, including reset.
 
-```text
-UNINITIALIZED ──LOCK_PKI──▶ PERSONALIZED ──SETUP──▶ SETUP_DONE ──IMPORT/GENERATE_SEED──▶ SEEDED
-      ▲                                                                                     │
-      └──────────────────────────── RESET_TO_FACTORY ──────────────────────────────────────┘
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> UNINITIALIZED
+    UNINITIALIZED --> PERSONALIZED: LOCK_PKI
+    PERSONALIZED --> SETUP_DONE: SETUP
+    SETUP_DONE --> SEEDED: IMPORT_SEED / GENERATE_SEED
+    PERSONALIZED --> UNINITIALIZED: RESET_TO_FACTORY
+    SETUP_DONE --> UNINITIALIZED: RESET_TO_FACTORY
+    SEEDED --> UNINITIALIZED: RESET_TO_FACTORY
 ```
 
 | State | Value | Meaning |
@@ -100,18 +95,13 @@ UNINITIALIZED ──LOCK_PKI──▶ PERSONALIZED ──SETUP──▶ SETUP_DO
 | `SETUP_DONE` | `0x02` | User PIN and PUK provisioned; no seed. |
 | `SEEDED` | `0x03` | Master seed loaded; derivation and signing are enabled. |
 
-Forward edges advance exactly one state; the only retrograde edge is reset. A command issued in the
-wrong state returns `6FB0`.
+Forward edges advance exactly one state; the only retrograde edge is reset. A command issued in the wrong state returns `6FB0`.
 
-`RESET_TO_FACTORY` must be invoked **four consecutive times** with no other command in between (any
-other APDU rearms the counter). Each invocation returns `6FA3`, `6FA2`, `6FA1`, then `6FA0`; the
-fourth performs the wipe atomically — PIN/PUK, PKI certificate, master seed and lifecycle are
-cleared, the authentikey is kept — and the card returns to `UNINITIALIZED`.
+`RESET_TO_FACTORY` must be invoked **four consecutive times** with no other command in between (any other APDU rearms the counter). Each invocation returns `6FA3`, `6FA2`, `6FA1`, then `6FA0`; the fourth performs the wipe atomically — PIN/PUK, PKI certificate, master seed and lifecycle are cleared, the authentikey is kept — and the card returns to `UNINITIALIZED`.
 
 ## 5. Identity and discovery
 
-The `authentikey` is a persistent secp256k1 keypair, generated once at install, never rotated, and
-preserved across reset. It anchors card identity and signs the Secure Channel handshake.
+The `authentikey` is a persistent secp256k1 keypair, generated once at install, never rotated, and preserved across reset. It anchors card identity and signs the Secure Channel handshake.
 
 `GET_AUTHENTIKEY` returns the 33-byte compressed authentikey public key.
 
@@ -138,15 +128,11 @@ The capability bitmask advertises the implemented feature set. The current build
 | 7 | `0x0080` | BIP-32 secp256k1 derivation |
 | 8 | `0x0100` | SLIP-10 Ed25519 derivation |
 
-`GET_INFO` is intentionally unauthenticated so a host can identify the card before opening a
-channel.
+`GET_INFO` is intentionally unauthenticated so a host can identify the card before opening a channel.
 
 ## 6. Secure Channel
 
-The Secure Channel gives confidentiality, integrity, card authentication and forward secrecy over a
-one-roundtrip ephemeral-ECDH handshake plus an authenticated record layer. Its cipher suite is
-secp256k1 ECDH (`ALG_EC_SVDP_DH_PLAIN_XY`), an AES-CMAC-128 KBKDF, AES-256-CBC with PKCS#5 padding,
-and a full 16-byte AES-CMAC-128 tag.
+The Secure Channel gives confidentiality, integrity, card authentication and forward secrecy over a one-roundtrip ephemeral-ECDH handshake plus an authenticated record layer. Its cipher suite is secp256k1 ECDH (`ALG_EC_SVDP_DH_PLAIN_XY`), an AES-CMAC-128 KBKDF, AES-256-CBC with PKCS#5 padding, and a full 16-byte AES-CMAC-128 tag.
 
 ### 6.1 Handshake — `INIT_SECURE_CHANNEL` (`0x10`)
 
@@ -156,10 +142,7 @@ Inbound data is the host ephemeral public key, SEC1-uncompressed:
 client_eph_pub : 65   ; 0x04 ‖ x ‖ y on secp256k1
 ```
 
-A wrong length returns `6700`; a non-`0x04` prefix or an off-curve point returns `6FB2` (the applet
-maps every exception out of the native ECDH to `6FB2` and never leaks the silicon exception type).
-The card tears down any prior session and the PIN flag, generates a fresh ephemeral keypair, then
-responds:
+A wrong length returns `6700`; a non-`0x04` prefix or an off-curve point returns `6FB2` (the applet maps every exception out of the native ECDH to `6FB2` and never leaks the silicon exception type). The card tears down any prior session and the PIN flag, generates a fresh ephemeral keypair, then responds:
 
 ```text
 card_eph_pub : 65            ; SEC1-uncompressed
@@ -167,13 +150,11 @@ sig_len      : 2             ; big-endian length of sig
 sig          : sig_len (≤72) ; DER ECDSA-SHA-256 over (card_eph_pub ‖ client_eph_pub)
 ```
 
-The host MUST verify `sig` against the authentikey from `GET_INFO` before deriving session keys, and
-SHOULD pin the authentikey on first use to reject counterfeit cards.
+The host MUST verify `sig` against the authentikey from `GET_INFO` before deriving session keys, and SHOULD pin the authentikey on first use to reject counterfeit cards.
 
 ### 6.2 Key derivation
 
-Both sides compute `shared = ECDH(eph_priv, peer_eph_pub)` and run an HKDF-shaped AES-CMAC KBKDF
-over its x-coordinate:
+Both sides compute `shared = ECDH(eph_priv, peer_eph_pub)` and run an HKDF-shaped AES-CMAC KBKDF over its x-coordinate:
 
 ```text
 salt      = client_eph_pub_x ‖ card_eph_pub_x          ; 64
@@ -200,12 +181,7 @@ ciphertext = AES-256-CBC(K_enc, IV, inner_apdu ‖ pkcs5_pad)
 MAC        = AES-CMAC-128(K_mac, [CLA INS P1 P2 LC] ‖ IV ‖ ciphertext)
 ```
 
-The card processes it in this order: reject lengths below `48` with `6700`; reject `IV ≤
-last_inbound_IV` with `6FB2`; verify the MAC with a constant-time comparison (`6FB2` on mismatch);
-commit the new `last_inbound_IV`; AES-decrypt and strip PKCS#5 padding (`6FB2` on a malformed pad);
-dispatch the inner APDU. MAC-then-decrypt ordering plus the constant-time compare close the
-padding-oracle surface. `IV` is a 16-byte big-endian counter the host MUST strictly increase on
-every envelope, including retries.
+The card processes it in this order: reject lengths below `48` with `6700`; reject `IV ≤ last_inbound_IV` with `6FB2`; verify the MAC with a constant-time comparison (`6FB2` on mismatch); commit the new `last_inbound_IV`; AES-decrypt and strip PKCS#5 padding (`6FB2` on a malformed pad); dispatch the inner APDU. MAC-then-decrypt ordering plus the constant-time compare close the padding-oracle surface. `IV` is a 16-byte big-endian counter the host MUST strictly increase on every envelope, including retries.
 
 Outbound envelope, emitted whether or not the inner handler succeeded:
 
@@ -215,17 +191,11 @@ IV  = IV_base XOR outbound_counter
 MAC = AES-CMAC-128(K_mac, 0xFF ‖ IV ‖ ciphertext)
 ```
 
-The `0xFF` direction tag prevents a card response from being replayed as a host command. If the
-inner handler throws, the inner status word is surfaced as the outer status word with an empty body,
-so the encrypted layer is invisible to a passive observer. An inbound MAC failure returns a bare
-`6FB2` with no envelope.
+The `0xFF` direction tag prevents a card response from being replayed as a host command. If the inner handler throws, the inner status word is surfaced as the outer status word with an empty body, so the encrypted layer is invisible to a passive observer. An inbound MAC failure returns a bare `6FB2` with no envelope.
 
 ### 6.4 Session scope
 
-`K_enc`, `K_mac`, `IV_base`, the replay counters and the PIN flag are session-scoped transient
-state. They are cleared on card deselect, on a fresh `INIT_SECURE_CHANNEL`, on a completed reset, and
-on any record-layer cryptographic failure. A host MUST therefore re-run `VERIFY_PIN` after any of
-those events.
+`K_enc`, `K_mac`, `IV_base`, the replay counters and the PIN flag are session-scoped transient state. They are cleared on card deselect, on a fresh `INIT_SECURE_CHANNEL`, on a completed reset, and on any record-layer cryptographic failure. A host MUST therefore re-run `VERIFY_PIN` after any of those events.
 
 ## 7. PIN and PUK
 
@@ -236,9 +206,7 @@ The card holds one user PIN and one unblock PUK, each backed by a JavaCard `Owne
 | PIN | 4 | 16 | 3 |
 | PUK | 8 | 32 | 5 |
 
-A length outside policy returns `6700` and does **not** consume a retry — it is a host-side protocol
-error, not a guess. A wrong-but-well-formed value returns `63Cn`; an exhausted counter returns
-`6983`. `VERIFY_PIN` sets the session PIN flag (§6.4) on success.
+A length outside policy returns `6700` and does **not** consume a retry — it is a host-side protocol error, not a guess. A wrong-but-well-formed value returns `63Cn`; an exhausted counter returns `6983`. `VERIFY_PIN` sets the session PIN flag (§6.4) on success.
 
 Inner data layouts:
 
@@ -250,14 +218,11 @@ CHANGE_PUK   : oldLen(1) ‖ oldPUK ‖ newLen(1) ‖ newPUK   ; requires PIN fl
 UNBLOCK_PIN  : pukLen(1) ‖ PUK ‖ newPinLen(1) ‖ newPIN
 ```
 
-`CHANGE_PIN` and `UNBLOCK_PIN` validate the **new** value's length policy *before* verifying the old
-secret, so a mistyped new PIN returns `6700` without consuming a retry of the old PIN or the scarce
-PUK. `UNBLOCK_PIN` is only accepted once the PIN counter has reached zero.
+`CHANGE_PIN` and `UNBLOCK_PIN` validate the **new** value's length policy *before* verifying the old secret, so a mistyped new PIN returns `6700` without consuming a retry of the old PIN or the scarce PUK. `UNBLOCK_PIN` is accepted only once the PIN counter has reached zero; calling it earlier returns `6985`.
 
 ## 8. PKI personalisation
 
-Manufacturer personalisation runs in `UNINITIALIZED`. The host builds a CSR from the authentikey,
-obtains a certificate, imports it in chunks, then locks the card into `PERSONALIZED`.
+Manufacturer personalisation runs in `UNINITIALIZED`. The host builds a CSR from the authentikey, obtains a certificate, imports it in chunks, then locks the card into `PERSONALIZED`.
 
 ```text
 EXPORT_PKI_PUBKEY  : (no data)                 → compressed authentikey (33)
@@ -270,26 +235,20 @@ EXPORT_PKI_CERT    : offset(2) ‖ requestedLen(2)  → certTotalLen(2) ‖ wind
 LOCK_PKI           : (no data)                 ; requires a staged cert → PERSONALIZED
 ```
 
-A certificate is at most 1024 bytes. `EXPORT_PKI_CERT` is allowed in any post-personalisation state
-so a host can verify the card before unlocking the PIN flow; its response leads with the total
-length so the host knows when to stop paging.
+A certificate is at most 1024 bytes. `EXPORT_PKI_CERT` is allowed in any post-personalisation state so a host can verify the card before unlocking the PIN flow; its response leads with the total length so the host knows when to stop paging.
 
 ## 9. Seed and HD derivation
 
-A seed is installed once in `SETUP_DONE`, advancing the card to `SEEDED`. Both seed commands require
-the PIN flag.
+A seed is installed once in `SETUP_DONE`, advancing the card to `SEEDED`. Both seed commands require the PIN flag.
 
 ```text
 IMPORT_SEED   : seedLen(1) ‖ seed         ; seedLen ∈ [16, 64]
 GENERATE_SEED : (no data)                 → seed(64)   ; returned once, for backup
 ```
 
-`GENERATE_SEED` returns the raw 64-byte seed exactly once so the host can render a backup; after that
-only public material ever leaves the card.
+`GENERATE_SEED` returns the raw 64-byte seed exactly once so the host can render a backup; after that only public material ever leaves the card.
 
-A derivation path is `depth(1) ‖ index(4)×depth`, each index big-endian; an index with the high bit
-set is hardened. `depth` is at most 8. SLIP-10 (Ed25519) accepts **hardened indices only** — a
-non-hardened index returns `6985`.
+A derivation path is `depth(1) ‖ index(4)×depth`, each index big-endian; an index with the high bit set is hardened. `depth` is at most 8. SLIP-10 (Ed25519) accepts **hardened indices only** — a non-hardened index returns `6985`.
 
 ```text
 EXPORT_XPUB : curve(1) ‖ depth(1) ‖ path(4×depth)
@@ -301,8 +260,7 @@ A curve byte other than `0x00`/`0x01` returns `6A86`.
 
 ## 10. Signing
 
-All signers take a derivation path and produce a fixed-length signature. ECDSA and Schnorr sign a
-host-supplied 32-byte digest; Ed25519 signs a raw message (RFC 8032 hashes it on-card).
+All signers take a derivation path and produce a fixed-length signature. ECDSA and Schnorr sign a host-supplied 32-byte digest; Ed25519 signs a raw message (RFC 8032 hashes it on-card).
 
 ```text
 SIGN_ECDSA_K1   : depth(1) ‖ path(4×depth) ‖ digest(32)  → r(32) ‖ s(32)
@@ -310,9 +268,6 @@ SIGN_SCHNORR_K1 : depth(1) ‖ path(4×depth) ‖ digest(32)  → R(32) ‖ s(32
 SIGN_ED25519    : depth(1) ‖ path(4×depth) ‖ message(*)  → R(32) ‖ S(32)
 ```
 
-- **ECDSA** (secp256k1) — `s` is normalised to the low half of the curve order (BIP-62 / EIP-2). The
-  recovery byte, if a host needs one, is computed host-side.
-- **Schnorr** (BIP-340) — `R` is the x-only nonce point. The nonce mixes on-card auxiliary
-  randomness, so signatures over the same input differ between calls yet always verify.
-- **Ed25519** (RFC 8032) — `R` is the compressed Edwards point, `S` the little-endian scalar. The
-  nonce is derived from `SHA-512(prefix ‖ M)`, so signing is deterministic.
+- **ECDSA** (secp256k1) — `s` is normalised to the low half of the curve order (BIP-62 / EIP-2). The recovery byte, if a host needs one, is computed host-side.
+- **Schnorr** (BIP-340) — `R` is the x-only nonce point. The nonce mixes on-card auxiliary randomness, so signatures over the same input differ between calls yet always verify.
+- **Ed25519** (RFC 8032) — `R` is the compressed Edwards point, `S` the little-endian scalar. The nonce is derived from `SHA-512(prefix ‖ M)`, so signing is deterministic.
