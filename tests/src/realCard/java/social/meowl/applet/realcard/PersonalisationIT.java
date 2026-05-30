@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: 2026 meowl.social contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-package social.meowl.applet;
+package social.meowl.applet.realcard;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -19,20 +19,21 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import social.meowl.applet.cardclient.RealCardClient;
-import social.meowl.applet.testkit.HostSession;
-import social.meowl.applet.testkit.MeowlFixtures;
-import social.meowl.applet.testkit.TestConstants;
+import social.meowl.applet.Constants;
+import social.meowl.applet.LifecycleState;
+import social.meowl.applet.realcard.support.ApduCodec;
+import social.meowl.applet.realcard.support.CardLifecycle;
+import social.meowl.applet.realcard.support.HostSession;
+import social.meowl.applet.realcard.support.RealCardClient;
+import social.meowl.applet.realcard.support.TestConstants;
 
 /**
  * End-to-end tests for the personalisation flow — PIN/PUK setup plus PKI manufacturer-cert import
  * and lock. All these INS are reachable only through the Secure Channel envelope, so every test
  * opens a {@link HostSession} first and dispatches inner APDUs via {@code OPEN_SECURE_CHANNEL}.
  */
-@Tag("real-card")
-class PersonalisationTest {
+class PersonalisationIT {
 
     private RealCardClient card;
     private HostSession session;
@@ -54,7 +55,7 @@ class PersonalisationTest {
     void tearDown() {
         if (card != null) {
             try {
-                MeowlFixtures.resetCard(card);
+                CardLifecycle.resetCard(card);
             } catch (Exception ignored) {
                 // best-effort reset; the next test's @BeforeEach will surface real problems
             }
@@ -102,7 +103,7 @@ class PersonalisationTest {
                     Constants.INS_IMPORT_PKI_CERT,
                     Constants.PKI_IMPORT_P1_INIT,
                     (byte) 0,
-                    MeowlFixtures.shortBE((short) cert.length));
+                    ApduCodec.shortBE((short) cert.length));
 
             // WRITE in 200-byte chunks
             int written = 0;
@@ -171,7 +172,7 @@ class PersonalisationTest {
                     Constants.INS_IMPORT_PKI_CERT,
                     Constants.PKI_IMPORT_P1_INIT,
                     (byte) 0,
-                    MeowlFixtures.shortBE((short) 100));
+                    ApduCodec.shortBE((short) 100));
             session.sendInnerExpectOk(
                     Constants.INS_IMPORT_PKI_CERT,
                     Constants.PKI_IMPORT_P1_FINALIZE,
@@ -213,7 +214,7 @@ class PersonalisationTest {
                             Constants.INS_IMPORT_PKI_CERT,
                             Constants.PKI_IMPORT_P1_INIT,
                             (byte) 0,
-                            MeowlFixtures.shortBE((short) 100));
+                            ApduCodec.shortBE((short) 100));
             assertEquals(Constants.SW_LIFECYCLE_INVALID & 0xFFFF, resp.getSW());
         }
 
@@ -224,7 +225,7 @@ class PersonalisationTest {
                     Constants.INS_IMPORT_PKI_CERT,
                     Constants.PKI_IMPORT_P1_INIT,
                     (byte) 0,
-                    MeowlFixtures.shortBE(Constants.PKI_CERT_MAX_LEN));
+                    ApduCodec.shortBE(Constants.PKI_CERT_MAX_LEN));
 
             byte[] payload = new byte[] {0x7F, (byte) 0xFF, 0x01};
             ResponseAPDU resp =
@@ -260,10 +261,9 @@ class PersonalisationTest {
                     Constants.INS_SETUP,
                     (byte) 0,
                     (byte) 0,
-                    MeowlFixtures.encodeSetup(
-                            TestConstants.DEFAULT_PIN, TestConstants.DEFAULT_PUK));
+                    ApduCodec.encodeSetup(TestConstants.DEFAULT_PIN, TestConstants.DEFAULT_PUK));
             byte[] info =
-                    MeowlFixtures.transmitOuter(card, Constants.INS_GET_INFO & 0xFF, 0, 0, null)
+                    CardLifecycle.transmitOuter(card, Constants.INS_GET_INFO & 0xFF, 0, 0, null)
                             .getData();
             byte lifecycle = readLifecycleFromInfoTlv(info);
             assertEquals(LifecycleState.SETUP_DONE, lifecycle);
@@ -276,14 +276,13 @@ class PersonalisationTest {
                     Constants.INS_SETUP,
                     (byte) 0,
                     (byte) 0,
-                    MeowlFixtures.encodeSetup(
-                            TestConstants.DEFAULT_PIN, TestConstants.DEFAULT_PUK));
+                    ApduCodec.encodeSetup(TestConstants.DEFAULT_PIN, TestConstants.DEFAULT_PUK));
             ResponseAPDU second =
                     session.sendInner(
                             Constants.INS_SETUP,
                             (byte) 0,
                             (byte) 0,
-                            MeowlFixtures.encodeSetup(
+                            ApduCodec.encodeSetup(
                                     TestConstants.DEFAULT_PIN, TestConstants.DEFAULT_PUK));
             assertEquals(
                     Constants.SW_LIFECYCLE_INVALID & 0xFFFF,
@@ -298,8 +297,7 @@ class PersonalisationTest {
                     Constants.INS_SETUP,
                     (byte) 0,
                     (byte) 0,
-                    MeowlFixtures.encodeSetup(
-                            TestConstants.DEFAULT_PIN, TestConstants.DEFAULT_PUK));
+                    ApduCodec.encodeSetup(TestConstants.DEFAULT_PIN, TestConstants.DEFAULT_PUK));
             ResponseAPDU r =
                     session.sendInner(
                             Constants.INS_VERIFY_PIN,
@@ -316,8 +314,7 @@ class PersonalisationTest {
                     Constants.INS_SETUP,
                     (byte) 0,
                     (byte) 0,
-                    MeowlFixtures.encodeSetup(
-                            TestConstants.DEFAULT_PIN, TestConstants.DEFAULT_PUK));
+                    ApduCodec.encodeSetup(TestConstants.DEFAULT_PIN, TestConstants.DEFAULT_PUK));
             ResponseAPDU r =
                     session.sendInner(
                             Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, "999999".getBytes());
@@ -335,8 +332,7 @@ class PersonalisationTest {
                     Constants.INS_SETUP,
                     (byte) 0,
                     (byte) 0,
-                    MeowlFixtures.encodeSetup(
-                            TestConstants.DEFAULT_PIN, TestConstants.DEFAULT_PUK));
+                    ApduCodec.encodeSetup(TestConstants.DEFAULT_PIN, TestConstants.DEFAULT_PUK));
             for (int i = 0; i < Constants.PIN_RETRY_LIMIT; i++) {
                 session.sendInner(
                         Constants.INS_VERIFY_PIN, (byte) 0, (byte) 0, "999999".getBytes());
@@ -357,8 +353,7 @@ class PersonalisationTest {
                     Constants.INS_SETUP,
                     (byte) 0,
                     (byte) 0,
-                    MeowlFixtures.encodeSetup(
-                            TestConstants.DEFAULT_PIN, TestConstants.DEFAULT_PUK));
+                    ApduCodec.encodeSetup(TestConstants.DEFAULT_PIN, TestConstants.DEFAULT_PUK));
             // Exhaust the PIN counter.
             for (int i = 0; i < Constants.PIN_RETRY_LIMIT; i++) {
                 session.sendInner(
@@ -386,8 +381,7 @@ class PersonalisationTest {
                     Constants.INS_SETUP,
                     (byte) 0,
                     (byte) 0,
-                    MeowlFixtures.encodeSetup(
-                            TestConstants.DEFAULT_PIN, TestConstants.DEFAULT_PUK));
+                    ApduCodec.encodeSetup(TestConstants.DEFAULT_PIN, TestConstants.DEFAULT_PUK));
             // Send a clearly-too-short PIN. Must return SW_WRONG_LENGTH.
             byte[] tooShort = new byte[] {0x31, 0x32, 0x33};
             assertEquals(
@@ -424,8 +418,7 @@ class PersonalisationTest {
                     Constants.INS_SETUP,
                     (byte) 0,
                     (byte) 0,
-                    MeowlFixtures.encodeSetup(
-                            TestConstants.DEFAULT_PIN, TestConstants.DEFAULT_PUK));
+                    ApduCodec.encodeSetup(TestConstants.DEFAULT_PIN, TestConstants.DEFAULT_PUK));
             byte[] tooLong = new byte[Constants.PIN_MAX_LEN + 1];
             for (int i = 0; i < tooLong.length; i++) {
                 tooLong[i] = (byte) '0';
@@ -446,8 +439,7 @@ class PersonalisationTest {
                     Constants.INS_SETUP,
                     (byte) 0,
                     (byte) 0,
-                    MeowlFixtures.encodeSetup(
-                            TestConstants.DEFAULT_PIN, TestConstants.DEFAULT_PUK));
+                    ApduCodec.encodeSetup(TestConstants.DEFAULT_PIN, TestConstants.DEFAULT_PUK));
             // Verify PIN inside the current Secure Channel.
             assertEquals(
                     0x9000,
@@ -488,8 +480,7 @@ class PersonalisationTest {
                     Constants.INS_SETUP,
                     (byte) 0,
                     (byte) 0,
-                    MeowlFixtures.encodeSetup(
-                            TestConstants.DEFAULT_PIN, TestConstants.DEFAULT_PUK));
+                    ApduCodec.encodeSetup(TestConstants.DEFAULT_PIN, TestConstants.DEFAULT_PUK));
             byte[] newPin = "654321".getBytes();
             session.sendInnerExpectOk(
                     Constants.INS_CHANGE_PIN,
@@ -549,7 +540,7 @@ class PersonalisationTest {
                 Constants.INS_IMPORT_PKI_CERT,
                 Constants.PKI_IMPORT_P1_INIT,
                 (byte) 0,
-                MeowlFixtures.shortBE((short) cert.length));
+                ApduCodec.shortBE((short) cert.length));
         int written = 0;
         while (written < cert.length) {
             int chunkLen = Math.min(Constants.PKI_CERT_CHUNK_MAX_LEN, cert.length - written);

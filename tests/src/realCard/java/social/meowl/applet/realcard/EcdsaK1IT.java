@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: 2026 meowl.social contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-package social.meowl.applet;
+package social.meowl.applet.realcard;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -22,12 +22,13 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import social.meowl.applet.cardclient.RealCardClient;
-import social.meowl.applet.testkit.HostSession;
-import social.meowl.applet.testkit.MeowlFixtures;
-import social.meowl.applet.testkit.TestConstants;
+import social.meowl.applet.Constants;
+import social.meowl.applet.realcard.support.ApduCodec;
+import social.meowl.applet.realcard.support.CardLifecycle;
+import social.meowl.applet.realcard.support.HostSession;
+import social.meowl.applet.realcard.support.RealCardClient;
+import social.meowl.applet.realcard.support.TestConstants;
 
 /**
  * End-to-end tests for the {@code SIGN_ECDSA_K1} primitive — secp256k1 ECDSA signing under a
@@ -43,8 +44,7 @@ import social.meowl.applet.testkit.TestConstants;
  *   <li>{@code s ≤ ⌊n/2⌋} (proving the on-card low-{@code s} normalisation per BIP-62 / EIP-2).
  * </ol>
  */
-@Tag("real-card")
-class EcdsaK1Test {
+class EcdsaK1IT {
 
     private static final ECDomainParameters DOMAIN =
             new ECDomainParameters(
@@ -71,20 +71,20 @@ class EcdsaK1Test {
     @BeforeEach
     void setUp() throws Exception {
         card = RealCardClient.connect(TestConstants.APPLET_AID_BYTES);
-        session = MeowlFixtures.bringToSetupDoneAndVerifyPin(card);
+        session = CardLifecycle.bringToSetupDoneAndVerifyPin(card);
         // SIGN_ECDSA_K1 needs a seeded card; install vector 1 seed before each test.
         session.sendInnerExpectOk(
                 Constants.INS_IMPORT_SEED,
                 (byte) 0,
                 (byte) 0,
-                MeowlFixtures.prefixLen(TestConstants.BIP32_VECTOR_1_SEED));
+                ApduCodec.prefixLen(TestConstants.BIP32_VECTOR_1_SEED));
     }
 
     @AfterEach
     void tearDown() {
         if (card != null) {
             try {
-                MeowlFixtures.resetCard(card);
+                CardLifecycle.resetCard(card);
             } catch (Exception ignored) {
                 // best-effort reset; the next test's @BeforeEach will surface real problems
             }
@@ -218,7 +218,7 @@ class EcdsaK1Test {
         @Test
         @DisplayName("digest shorter than 32 bytes is rejected with SW_WRONG_LENGTH")
         void digestTooShort() {
-            byte[] req = MeowlFixtures.encodeSignRequest(new int[] {0}, new byte[16]);
+            byte[] req = ApduCodec.encodeSignRequest(new int[] {0}, new byte[16]);
             ResponseAPDU r =
                     session.sendInner(Constants.INS_SIGN_ECDSA_K1, (byte) 0, (byte) 0, req);
             assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, r.getSW());
@@ -254,10 +254,10 @@ class EcdsaK1Test {
             // The @BeforeEach left the card SEEDED; drive RESET_TO_FACTORY so the rebuilt session
             // can re-run bringToSetupDoneAndVerifyPin from UNINITIALIZED, then stop at SETUP_DONE
             // (i.e. NOT seed it) so the sign attempt actually hits the lifecycle guard.
-            MeowlFixtures.resetCard(card);
+            CardLifecycle.resetCard(card);
             card.close();
             card = RealCardClient.connect(TestConstants.APPLET_AID_BYTES);
-            session = MeowlFixtures.bringToSetupDoneAndVerifyPin(card);
+            session = CardLifecycle.bringToSetupDoneAndVerifyPin(card);
             // Do NOT import a seed: lifecycle is SETUP_DONE, not SEEDED.
             ResponseAPDU r = signEcdsaResp(new int[] {0}, SAMPLE_DIGEST);
             assertEquals(Constants.SW_LIFECYCLE_INVALID & 0xFFFF, r.getSW());
@@ -281,9 +281,9 @@ class EcdsaK1Test {
         @DisplayName("CAP_K1_ECDSA bit is now advertised in GET_INFO")
         void capK1EcdsaIsAdvertised() throws Exception {
             byte[] tlv =
-                    MeowlFixtures.transmitOuter(card, Constants.INS_GET_INFO & 0xFF, 0, 0, null)
+                    CardLifecycle.transmitOuter(card, Constants.INS_GET_INFO & 0xFF, 0, 0, null)
                             .getData();
-            short caps = MeowlFixtures.readCapabilities(tlv);
+            short caps = ApduCodec.readCapabilities(tlv);
             assertNotEquals(
                     (short) 0,
                     (short) (caps & Constants.CAP_K1_ECDSA),
@@ -294,18 +294,18 @@ class EcdsaK1Test {
     /*  ECDSA-specific helpers.  */
 
     private byte[] derivePubkey(int[] path) {
-        byte[] req = MeowlFixtures.encodeXpubRequest(Constants.CURVE_SECP256K1, path);
+        byte[] req = ApduCodec.encodeXpubRequest(Constants.CURVE_SECP256K1, path);
         byte[] resp = session.sendInnerExpectOk(Constants.INS_EXPORT_XPUB, (byte) 0, (byte) 0, req);
         return Arrays.copyOfRange(resp, 0, Constants.EC_POINT_COMPRESSED_LEN);
     }
 
     private byte[] signEcdsa(int[] path, byte[] digest) {
-        byte[] req = MeowlFixtures.encodeSignRequest(path, digest);
+        byte[] req = ApduCodec.encodeSignRequest(path, digest);
         return session.sendInnerExpectOk(Constants.INS_SIGN_ECDSA_K1, (byte) 0, (byte) 0, req);
     }
 
     private ResponseAPDU signEcdsaResp(int[] path, byte[] digest) {
-        byte[] req = MeowlFixtures.encodeSignRequest(path, digest);
+        byte[] req = ApduCodec.encodeSignRequest(path, digest);
         return session.sendInner(Constants.INS_SIGN_ECDSA_K1, (byte) 0, (byte) 0, req);
     }
 

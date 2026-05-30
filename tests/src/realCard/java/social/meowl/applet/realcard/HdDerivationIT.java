@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: 2026 meowl.social contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-package social.meowl.applet;
+package social.meowl.applet.realcard;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -17,20 +17,22 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import social.meowl.applet.cardclient.RealCardClient;
-import social.meowl.applet.testkit.HostSession;
-import social.meowl.applet.testkit.MeowlFixtures;
-import social.meowl.applet.testkit.TestConstants;
+import social.meowl.applet.Constants;
+import social.meowl.applet.Ed25519;
+import social.meowl.applet.LifecycleState;
+import social.meowl.applet.realcard.support.ApduCodec;
+import social.meowl.applet.realcard.support.CardLifecycle;
+import social.meowl.applet.realcard.support.HostSession;
+import social.meowl.applet.realcard.support.RealCardClient;
+import social.meowl.applet.realcard.support.TestConstants;
 
 /**
  * End-to-end HD derivation tests — master seed import, card-generated seed, BIP-32 secp256k1
  * derivation verified against the official BIP-32 vectors, and SLIP-10 Ed25519 derivation verified
  * against the official SLIP-10 vectors.
  */
-@Tag("real-card")
-class HdDerivationTest {
+class HdDerivationIT {
 
     /** BIP-32 test vector 1 seed (16 bytes). */
     private static final byte[] BIP32_VECTOR_1_SEED = TestConstants.BIP32_VECTOR_1_SEED;
@@ -65,14 +67,14 @@ class HdDerivationTest {
     void setUp() throws Exception {
         card = RealCardClient.connect(TestConstants.APPLET_AID_BYTES);
         // Walk the card to SETUP_DONE: install a tiny PKI cert, lock, run SETUP, verify PIN.
-        session = MeowlFixtures.bringToSetupDoneAndVerifyPin(card);
+        session = CardLifecycle.bringToSetupDoneAndVerifyPin(card);
     }
 
     @AfterEach
     void tearDown() {
         if (card != null) {
             try {
-                MeowlFixtures.resetCard(card);
+                CardLifecycle.resetCard(card);
             } catch (Exception ignored) {
                 // best-effort reset; the next test's @BeforeEach will surface real problems
             }
@@ -91,9 +93,9 @@ class HdDerivationTest {
                     Constants.INS_IMPORT_SEED,
                     (byte) 0,
                     (byte) 0,
-                    MeowlFixtures.prefixLen(BIP32_VECTOR_1_SEED));
+                    ApduCodec.prefixLen(BIP32_VECTOR_1_SEED));
             byte[] info =
-                    MeowlFixtures.transmitOuter(card, Constants.INS_GET_INFO & 0xFF, 0, 0, null)
+                    CardLifecycle.transmitOuter(card, Constants.INS_GET_INFO & 0xFF, 0, 0, null)
                             .getData();
             assertEquals(LifecycleState.SEEDED, readLifecycleFromInfoTlv(info));
         }
@@ -105,13 +107,13 @@ class HdDerivationTest {
                     Constants.INS_IMPORT_SEED,
                     (byte) 0,
                     (byte) 0,
-                    MeowlFixtures.prefixLen(BIP32_VECTOR_1_SEED));
+                    ApduCodec.prefixLen(BIP32_VECTOR_1_SEED));
             ResponseAPDU r =
                     session.sendInner(
                             Constants.INS_IMPORT_SEED,
                             (byte) 0,
                             (byte) 0,
-                            MeowlFixtures.prefixLen(BIP32_VECTOR_1_SEED));
+                            ApduCodec.prefixLen(BIP32_VECTOR_1_SEED));
             // Lifecycle FSM rejects this because state == SEEDED, not SETUP_DONE.
             assertEquals(Constants.SW_LIFECYCLE_INVALID & 0xFFFF, r.getSW());
         }
@@ -125,7 +127,7 @@ class HdDerivationTest {
                             Constants.INS_IMPORT_SEED,
                             (byte) 0,
                             (byte) 0,
-                            MeowlFixtures.prefixLen(tooShort));
+                            ApduCodec.prefixLen(tooShort));
             assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, r.getSW());
         }
 
@@ -144,7 +146,7 @@ class HdDerivationTest {
             assertNotEquals(0, acc, "generated seed must contain entropy");
 
             byte[] info =
-                    MeowlFixtures.transmitOuter(card, Constants.INS_GET_INFO & 0xFF, 0, 0, null)
+                    CardLifecycle.transmitOuter(card, Constants.INS_GET_INFO & 0xFF, 0, 0, null)
                             .getData();
             assertEquals(LifecycleState.SEEDED, readLifecycleFromInfoTlv(info));
         }
@@ -160,7 +162,7 @@ class HdDerivationTest {
                     Constants.INS_IMPORT_SEED,
                     (byte) 0,
                     (byte) 0,
-                    MeowlFixtures.prefixLen(BIP32_VECTOR_1_SEED));
+                    ApduCodec.prefixLen(BIP32_VECTOR_1_SEED));
         }
 
         @Test
@@ -238,7 +240,7 @@ class HdDerivationTest {
                     Constants.INS_IMPORT_SEED,
                     (byte) 0,
                     (byte) 0,
-                    MeowlFixtures.prefixLen(BIP32_VECTOR_1_SEED));
+                    ApduCodec.prefixLen(BIP32_VECTOR_1_SEED));
         }
 
         @Test
@@ -294,7 +296,7 @@ class HdDerivationTest {
                     Constants.INS_IMPORT_SEED,
                     (byte) 0,
                     (byte) 0,
-                    MeowlFixtures.prefixLen(BIP32_VECTOR_2_SEED));
+                    ApduCodec.prefixLen(BIP32_VECTOR_2_SEED));
         }
 
         @Test
@@ -353,7 +355,7 @@ class HdDerivationTest {
                     Constants.INS_IMPORT_SEED,
                     (byte) 0,
                     (byte) 0,
-                    MeowlFixtures.prefixLen(BIP32_VECTOR_3_SEED));
+                    ApduCodec.prefixLen(BIP32_VECTOR_3_SEED));
         }
 
         @Test
@@ -395,7 +397,7 @@ class HdDerivationTest {
                     Constants.INS_IMPORT_SEED,
                     (byte) 0,
                     (byte) 0,
-                    MeowlFixtures.prefixLen(BIP32_VECTOR_2_SEED));
+                    ApduCodec.prefixLen(BIP32_VECTOR_2_SEED));
         }
 
         @Test
@@ -439,7 +441,7 @@ class HdDerivationTest {
                     Constants.INS_IMPORT_SEED,
                     (byte) 0,
                     (byte) 0,
-                    MeowlFixtures.prefixLen(BIP32_VECTOR_1_SEED));
+                    ApduCodec.prefixLen(BIP32_VECTOR_1_SEED));
         }
 
         @Test
@@ -499,7 +501,7 @@ class HdDerivationTest {
                     Constants.INS_IMPORT_SEED,
                     (byte) 0,
                     (byte) 0,
-                    MeowlFixtures.prefixLen(BIP32_VECTOR_1_SEED));
+                    ApduCodec.prefixLen(BIP32_VECTOR_1_SEED));
         }
 
         @Test
@@ -553,7 +555,7 @@ class HdDerivationTest {
                             Constants.INS_IMPORT_SEED,
                             (byte) 0,
                             (byte) 0,
-                            MeowlFixtures.prefixLen(BIP32_VECTOR_1_SEED));
+                            ApduCodec.prefixLen(BIP32_VECTOR_1_SEED));
             assertEquals(Constants.SW_SECURITY_STATUS_NOT_SATISFIED & 0xFFFF, r.getSW());
         }
 
@@ -564,7 +566,7 @@ class HdDerivationTest {
                     Constants.INS_IMPORT_SEED,
                     (byte) 0,
                     (byte) 0,
-                    MeowlFixtures.prefixLen(BIP32_VECTOR_1_SEED));
+                    ApduCodec.prefixLen(BIP32_VECTOR_1_SEED));
             // SC re-handshake invalidates the PIN session.
             session = HostSession.open(card);
             ResponseAPDU r = exportXpubResp(Constants.CURVE_SECP256K1, new int[] {});

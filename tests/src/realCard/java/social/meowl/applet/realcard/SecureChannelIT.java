@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: 2026 meowl.social contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-package social.meowl.applet;
+package social.meowl.applet.realcard;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -28,11 +28,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import social.meowl.applet.cardclient.RealCardClient;
-import social.meowl.applet.sc.KdfCmacHost;
-import social.meowl.applet.testkit.MeowlFixtures;
+import social.meowl.applet.Constants;
+import social.meowl.applet.realcard.support.CardLifecycle;
+import social.meowl.applet.realcard.support.KdfCmacHost;
+import social.meowl.applet.realcard.support.RealCardClient;
 
 /**
  * End-to-end Secure Channel tests driving MeowlApplet through {@link RealCardClient}.
@@ -41,8 +41,7 @@ import social.meowl.applet.testkit.MeowlFixtures;
  * the envelope round-trip (encrypt, MAC, IV monotonicity, replay defense). Tagged {@code real-card}
  * because the post-Phase-1 applet only installs on real J3R180 silicon.
  */
-@Tag("real-card")
-class SecureChannelTest {
+class SecureChannelIT {
 
     private static final byte[] APPLET_AID_BYTES = {
         (byte) 0xF0, 0x6D, 0x65, 0x6F, 0x77, 0x6C, 0x01
@@ -76,7 +75,7 @@ class SecureChannelTest {
     void tearDown() {
         if (card != null) {
             try {
-                MeowlFixtures.resetCard(card);
+                CardLifecycle.resetCard(card);
             } catch (Exception ignored) {
                 // best-effort reset; the next test's @BeforeEach will surface real problems
             }

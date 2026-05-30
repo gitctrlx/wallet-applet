@@ -19,6 +19,15 @@ java {
         )
 }
 
+// The PCSC-backed integration suites live in their own `realCard` source set so they stay both
+// physically and compile-isolated from the jcardsim-backed unit tests in `src/test`. The unit tests
+// need package-private access to applet internals (hence they share package `social.meowl.applet`),
+// whereas the integration suites are pure black-box APDU drivers in `social.meowl.applet.realcard`.
+val realCard: SourceSet by sourceSets.creating
+
+configurations["realCardImplementation"].extendsFrom(configurations["testImplementation"])
+configurations["realCardRuntimeOnly"].extendsFrom(configurations["testRuntimeOnly"])
+
 dependencies {
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
@@ -37,14 +46,11 @@ dependencies {
     testImplementation(project(":applet"))
 }
 
-// Default `test` task: pure unit tests only. Tests tagged `real-card` are excluded
-// because the J3R180-aligned applet (Fp25519Inv RSA-only, EcPoint transient-only EC
-// keys) cannot install on jcardsim — those tests must run against actual silicon. See
-// `realCardTest` below.
+// Default `test` task: the jcardsim-backed unit suites in `src/test`. The PCSC integration suites
+// live in the separate `realCard` source set (see `realCardTest`), so no tag filtering is needed —
+// the two test kinds are split by source set, not by annotation.
 tasks.test {
-    useJUnitPlatform {
-        excludeTags("real-card")
-    }
+    useJUnitPlatform()
     testLogging {
         events("passed", "failed", "skipped")
         showStandardStreams = true
@@ -52,22 +58,20 @@ tasks.test {
     }
 }
 
-// Opt-in `realCardTest` task: runs the @Tag("real-card") suites against a physical
-// J3R180 via PCSC. Drives `RealCardClient` from `social.meowl.applet.cardclient`,
-// which talks to `javax.smartcardio` over whatever PCSC reader the environment
-// surfaces. The applet must already be installed on the card.
+// Opt-in `realCardTest` task: compiles and runs the `realCard` source set against a physical J3R180
+// via PCSC. Drives `RealCardClient` from `social.meowl.applet.realcard.support`, which talks to
+// `javax.smartcardio` over whatever PCSC reader the environment surfaces. The applet must already be
+// installed on the card.
 //
 // Usage:
 //   ./gradlew :tests:realCardTest                # first PCSC terminal found
 //   ./gradlew :tests:realCardTest -Preader=NAME  # explicit reader by name
 tasks.register<Test>("realCardTest") {
-    description = "Runs @Tag(\"real-card\") integration tests against a real J3R180 via PCSC."
+    description = "Runs the real-card integration suites (src/realCard) against a J3R180 via PCSC."
     group = "verification"
-    testClassesDirs = sourceSets["test"].output.classesDirs
-    classpath = sourceSets["test"].runtimeClasspath
-    useJUnitPlatform {
-        includeTags("real-card")
-    }
+    testClassesDirs = realCard.output.classesDirs
+    classpath = realCard.runtimeClasspath
+    useJUnitPlatform()
     testLogging {
         events("passed", "failed", "skipped")
         showStandardStreams = true

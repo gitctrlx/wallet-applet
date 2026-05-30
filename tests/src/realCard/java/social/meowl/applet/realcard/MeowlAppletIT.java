@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: 2026 meowl.social contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-package social.meowl.applet;
+package social.meowl.applet.realcard;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -17,25 +17,25 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import social.meowl.applet.cardclient.RealCardClient;
-import social.meowl.applet.testkit.MeowlFixtures;
+import social.meowl.applet.Constants;
+import social.meowl.applet.LifecycleState;
+import social.meowl.applet.realcard.support.CardLifecycle;
+import social.meowl.applet.realcard.support.RealCardClient;
 
 /**
  * Integration tests for the always-reachable outer-frame INS surface of the meowl applet: {@code
  * GET_INFO}, {@code GET_AUTHENTIKEY} and the multi-step {@code RESET_TO_FACTORY} trigger.
  *
  * <p>Drives the applet through {@link RealCardClient} over PCSC. The post-Phase-1 applet only
- * installs on real J3R180 silicon, so this suite carries {@code @Tag("real-card")} and only the
- * {@code :tests:realCardTest} task picks it up.
+ * installs on real J3R180 silicon, so this suite lives in the {@code realCard} source set and only
+ * the {@code :tests:realCardTest} task compiles and runs it.
  *
  * <p>Each test starts from a freshly-selected applet: {@code @BeforeEach} opens a fresh PCSC
  * channel and {@link #tearDown} disconnects with {@code reset = true} so the {@code CLEAR_ON_RESET}
  * counter (and therefore the {@code RESET_TO_FACTORY} state machine) is restored between tests.
  */
-@Tag("real-card")
-class MeowlAppletTest {
+class MeowlAppletIT {
 
     private static final byte[] APPLET_AID_BYTES = {
         (byte) 0xF0, 0x6D, 0x65, 0x6F, 0x77, 0x6C, 0x01
@@ -63,7 +63,7 @@ class MeowlAppletTest {
     void tearDown() {
         if (card != null) {
             try {
-                MeowlFixtures.resetCard(card);
+                CardLifecycle.resetCard(card);
             } catch (Exception ignored) {
                 // best-effort reset; the next test's @BeforeEach will surface real problems
             }

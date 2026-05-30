@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: 2026 meowl.social contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-package social.meowl.applet;
+package social.meowl.applet.realcard;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -27,12 +27,14 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import social.meowl.applet.cardclient.RealCardClient;
-import social.meowl.applet.testkit.HostSession;
-import social.meowl.applet.testkit.MeowlFixtures;
-import social.meowl.applet.testkit.TestConstants;
+import social.meowl.applet.Constants;
+import social.meowl.applet.Ed25519;
+import social.meowl.applet.realcard.support.ApduCodec;
+import social.meowl.applet.realcard.support.CardLifecycle;
+import social.meowl.applet.realcard.support.HostSession;
+import social.meowl.applet.realcard.support.RealCardClient;
+import social.meowl.applet.realcard.support.TestConstants;
 
 /**
  * End-to-end tests for the {@code SIGN_ED25519} primitive — RFC 8032 Ed25519 signing under a
@@ -44,17 +46,14 @@ import social.meowl.applet.testkit.TestConstants;
  * aux randomness), so the test also pins the {@code (sk, M) → sig} mapping against itself across
  * repeated calls.
  *
- * <p>The SLIP-10 vector 1 seed is also exercised by {@link HdDerivationTest} so the public-key half
+ * <p>The SLIP-10 vector 1 seed is also exercised by {@link HdDerivationIT} so the public-key half
  * can be cross-checked against the official SLIP-10 reference vectors — the same pubkeys {@link
- * HdDerivationTest} expects from {@code EXPORT_XPUB} are the ones whose signatures the JDK verifier
+ * HdDerivationIT} expects from {@code EXPORT_XPUB} are the ones whose signatures the JDK verifier
  * accepts here, closing the loop {@code seed → SLIP-10 → leaf k → A = s·B → sign}.
  */
-@Tag("real-card")
-class Ed25519SigningTest {
+class Ed25519SigningIT {
 
-    /**
-     * SLIP-10 Vector 1 seed — identical to BIP-32 Vector 1, reused from {@link HdDerivationTest}.
-     */
+    /** SLIP-10 Vector 1 seed — identical to BIP-32 Vector 1, reused from {@link HdDerivationIT}. */
     private static final byte[] SLIP10_VECTOR_1_SEED = TestConstants.BIP32_VECTOR_1_SEED;
 
     /** A short, fixed sample payload used by most non-edge tests. */
@@ -88,19 +87,19 @@ class Ed25519SigningTest {
     @BeforeEach
     void setUp() throws Exception {
         card = RealCardClient.connect(TestConstants.APPLET_AID_BYTES);
-        session = MeowlFixtures.bringToSetupDoneAndVerifyPin(card);
+        session = CardLifecycle.bringToSetupDoneAndVerifyPin(card);
         session.sendInnerExpectOk(
                 Constants.INS_IMPORT_SEED,
                 (byte) 0,
                 (byte) 0,
-                MeowlFixtures.prefixLen(SLIP10_VECTOR_1_SEED));
+                ApduCodec.prefixLen(SLIP10_VECTOR_1_SEED));
     }
 
     @AfterEach
     void tearDown() {
         if (card != null) {
             try {
-                MeowlFixtures.resetCard(card);
+                CardLifecycle.resetCard(card);
             } catch (Exception ignored) {
                 // best-effort reset; the next test's @BeforeEach will surface real problems
             }
@@ -320,10 +319,10 @@ class Ed25519SigningTest {
             // @BeforeEach left the card SEEDED — drive RESET_TO_FACTORY so the rebuilt session
             // can re-run bringToSetupDoneAndVerifyPin from UNINITIALIZED, then stop short of
             // IMPORT_SEED so the sign attempt actually hits the lifecycle guard.
-            MeowlFixtures.resetCard(card);
+            CardLifecycle.resetCard(card);
             card.close();
             card = RealCardClient.connect(TestConstants.APPLET_AID_BYTES);
-            session = MeowlFixtures.bringToSetupDoneAndVerifyPin(card);
+            session = CardLifecycle.bringToSetupDoneAndVerifyPin(card);
             ResponseAPDU r = signEd25519Resp(new int[] {0x80000000}, SAMPLE_MESSAGE);
             assertEquals(Constants.SW_LIFECYCLE_INVALID & 0xFFFF, r.getSW());
         }
@@ -390,9 +389,9 @@ class Ed25519SigningTest {
         @DisplayName("CAP_ED25519 bit is advertised in GET_INFO")
         void capEd25519IsAdvertised() throws Exception {
             byte[] tlv =
-                    MeowlFixtures.transmitOuter(card, Constants.INS_GET_INFO & 0xFF, 0, 0, null)
+                    CardLifecycle.transmitOuter(card, Constants.INS_GET_INFO & 0xFF, 0, 0, null)
                             .getData();
-            short caps = MeowlFixtures.readCapabilities(tlv);
+            short caps = ApduCodec.readCapabilities(tlv);
             assertNotEquals(
                     (short) 0,
                     (short) (caps & Constants.CAP_ED25519),
@@ -403,19 +402,19 @@ class Ed25519SigningTest {
     /*  Ed25519-specific helpers.  */
 
     private byte[] ed25519Pubkey(int[] path) {
-        byte[] req = MeowlFixtures.encodeXpubRequest(Constants.CURVE_ED25519, path);
+        byte[] req = ApduCodec.encodeXpubRequest(Constants.CURVE_ED25519, path);
         byte[] resp = session.sendInnerExpectOk(Constants.INS_EXPORT_XPUB, (byte) 0, (byte) 0, req);
         // Response: pubkey(32) || chain_code(32). We only need the pubkey for verification.
         return Arrays.copyOfRange(resp, 0, Ed25519.PUBLIC_KEY_LEN);
     }
 
     private byte[] signEd25519(int[] path, byte[] msg) {
-        byte[] req = MeowlFixtures.encodeSignRequest(path, msg);
+        byte[] req = ApduCodec.encodeSignRequest(path, msg);
         return session.sendInnerExpectOk(Constants.INS_SIGN_ED25519, (byte) 0, (byte) 0, req);
     }
 
     private ResponseAPDU signEd25519Resp(int[] path, byte[] msg) {
-        byte[] req = MeowlFixtures.encodeSignRequest(path, msg);
+        byte[] req = ApduCodec.encodeSignRequest(path, msg);
         return session.sendInner(Constants.INS_SIGN_ED25519, (byte) 0, (byte) 0, req);
     }
 
