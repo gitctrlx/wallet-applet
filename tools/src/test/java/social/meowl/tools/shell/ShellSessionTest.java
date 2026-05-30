@@ -6,6 +6,7 @@ package social.meowl.tools.shell;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import apdu4j.core.APDUBIBO;
@@ -139,6 +140,39 @@ class ShellSessionTest {
 
         assertTrue(stderr.toString(StandardCharsets.UTF_8).contains("no Secure Channel"));
         assertFalse(stdout.toString(StandardCharsets.UTF_8).contains("<--"));
+    }
+
+    @Test
+    @DisplayName("`reset` refuses non-countdown status words")
+    void resetRefusesNonCountdownStatusWords() {
+        MockBIBO mock = MockBIBO.with("00A4040007F06D656F776C01", "9000").then("80030000", "6D00");
+        ByteArrayOutputStream sink = new ByteArrayOutputStream();
+        ShellSession session = newSession(mock, sink);
+
+        ShellSession.ShellException ex =
+                assertThrows(ShellSession.ShellException.class, () -> session.execute("reset"));
+
+        assertTrue(ex.getMessage().contains("RESET_TO_FACTORY step 1"), ex.getMessage());
+        assertFalse(sink.toString(StandardCharsets.UTF_8).contains("factory reset complete"));
+    }
+
+    @Test
+    @DisplayName("`reset` requires the final countdown status to be 6FA0")
+    void resetRequiresFinalCountdownZero() {
+        MockBIBO mock =
+                MockBIBO.with("00A4040007F06D656F776C01", "9000")
+                        .then("80030000", "6FA3")
+                        .then("80030000", "6FA2")
+                        .then("80030000", "6FA1")
+                        .then("80030000", "6FA1");
+        ByteArrayOutputStream sink = new ByteArrayOutputStream();
+        ShellSession session = newSession(mock, sink);
+
+        ShellSession.ShellException ex =
+                assertThrows(ShellSession.ShellException.class, () -> session.execute("reset"));
+
+        assertTrue(ex.getMessage().contains("did not complete"), ex.getMessage());
+        assertFalse(sink.toString(StandardCharsets.UTF_8).contains("factory reset complete"));
     }
 
     @Test

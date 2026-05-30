@@ -229,9 +229,9 @@ public final class BigNat {
      * subtraction is always computed; only the per-byte write is mask-selected, so wall-clock is
      * independent of {@code mask}.
      *
-     * <p>Caller MUST ensure {@code 0 ≤ a < m} on entry; the result inherits that invariant. Used by
-     * {@link Schnorr} to flip the secret-derived nonce on the y-parity bit, and by ECDSA's
-     * low-{@code s} normalisation.
+     * <p>Caller MUST ensure {@code 0 < a < m} on entry when {@code mask == -1}; otherwise {@code a
+     * == 0} would produce the non-canonical value {@code m}. Used by {@link Schnorr} to flip the
+     * secret-derived nonce on the y-parity bit, and by ECDSA's low-{@code s} normalisation.
      */
     public static void ctSelectNeg(
             byte[] a, short aOff, byte[] m, short mOff, short size, short mask) {

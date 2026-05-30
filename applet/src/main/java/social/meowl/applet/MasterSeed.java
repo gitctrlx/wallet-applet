@@ -247,23 +247,17 @@ public final class MasterSeed {
     }
 
     /**
-     * Reset-to-factory hook: clears the seeded flag. Caller MUST hold a {@link
-     * JCSystem#beginTransaction()} block; bundled with PIN/PUK, PKI cert and lifecycle wipes into
-     * the single atomic reset-to-factory commit driven by {@link MeowlApplet#wipe()}.
-     *
-     * <p>The master-material EEPROM cells are intentionally NOT zeroed here: every read path
-     * ({@link #copyBip32MasterTo}, {@link #copySlip10MasterTo}, and the signing primitives behind
-     * them) gates on {@link #requireSeeded}, so a wiped master is unreachable via the API even
-     * while the bytes linger in EEPROM. The next {@code IMPORT_SEED} or {@code GENERATE_SEED}
-     * overwrites those cells in full before flipping {@code seededFlag} back on, so old key
-     * material cannot survive a subsequent personalisation cycle. Skipping the 128-byte non-atomic
-     * fill is what keeps the wipe transaction within the T=1 BWT on contactless — the earlier
-     * {@code arrayFillNonAtomic} pair regularly pushed the commit past the reader's timeout window
-     * on J3R180, leaving lifecycle stuck in {@code SEEDED} and breaking the next test's
-     * PERSONALIZED→UNINITIALIZED precondition.
+     * Reset-to-factory hook: closes the seeded gate. Caller MUST hold a {@link
+     * JCSystem#beginTransaction()} block; physical EEPROM clearing is performed after the atomic
+     * gate commit by {@link #wipeKeyMaterialNonAtomic()}.
      */
     public void wipeInTx() {
         seededFlag[0] = 0;
+    }
+
+    void wipeKeyMaterialNonAtomic() {
+        Util.arrayFillNonAtomic(bip32Material, (short) 0, MASTER_LEN, (byte) 0);
+        Util.arrayFillNonAtomic(slip10Material, (short) 0, MASTER_LEN, (byte) 0);
     }
 
     private void hmacInto(

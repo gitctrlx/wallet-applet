@@ -222,12 +222,15 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
             // corrupt the response (zeroing the outbound IV breaks the host MAC check on every
             // reply). Wipe only the request-plaintext tail that lies BEYOND the envelope. On an
             // exception path envelopeLen stays 0, so the whole inner-plaintext window is wiped.
-            short reqEnd = (short) (ISO7816.OFFSET_CDATA + plainLen);
-            short wipeFrom =
-                    envelopeLen > ISO7816.OFFSET_CDATA ? envelopeLen : ISO7816.OFFSET_CDATA;
-            if (reqEnd > wipeFrom) {
-                Util.arrayFillNonAtomic(buffer, wipeFrom, (short) (reqEnd - wipeFrom), (byte) 0);
-            }
+            wipeSecureChannelRequestTail(buffer, plainLen, envelopeLen);
+        }
+    }
+
+    static void wipeSecureChannelRequestTail(byte[] buffer, short plainLen, short envelopeLen) {
+        short reqEnd = (short) (ISO7816.OFFSET_CDATA + plainLen);
+        short wipeFrom = envelopeLen > ISO7816.OFFSET_CDATA ? envelopeLen : ISO7816.OFFSET_CDATA;
+        if (reqEnd > wipeFrom) {
+            Util.arrayFillNonAtomic(buffer, wipeFrom, (short) (reqEnd - wipeFrom), (byte) 0);
         }
     }
 
@@ -679,22 +682,24 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     }
 
     /**
-     * Reset-to-factory wipe. Per {@code docs/specs/meap-4.md} the authentikey is preserved;
-     * everything else — Secure Channel session, PIN/PUK, PKI cert, master seed, lifecycle state —
-     * is destroyed.
+     * Reset-to-factory wipe. Per {@code docs/specs/meap-4.md} the authentikey is preserved; Secure
+     * Channel state, PIN/PUK gates, PKI cert state, master-seed gates and lifecycle state are
+     * reset.
      *
-     * <p>The four persistent wipes commit inside a single {@link JCSystem#beginTransaction()} block
-     * so a torn power-off cannot land on a half-wiped card. The Secure Channel reset is outside the
-     * transaction because it only touches transient (CLEAR_ON_DESELECT) state.
+     * <p>The persistent gates commit inside a single {@link JCSystem#beginTransaction()} block so a
+     * torn power-off cannot leave host-visible state half-reset. Master key material is physically
+     * cleared after that commit to avoid enlarging the EEPROM transaction.
      */
     @Override
     public void wipe() {
         secureChannel.reset();
+        pinManager.clearSession();
         JCSystem.beginTransaction();
         pinManager.wipeInTx();
         pkiManager.wipeInTx();
         masterSeed.wipeInTx();
         state.resetInTx();
         JCSystem.commitTransaction();
+        masterSeed.wipeKeyMaterialNonAtomic();
     }
 }

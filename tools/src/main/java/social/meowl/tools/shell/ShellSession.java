@@ -27,6 +27,8 @@ import social.meowl.tools.proto.SecureChannelClient;
  */
 public final class ShellSession {
 
+    private static final int RESET_REQUIRED_INVOCATIONS = 4;
+
     private final APDUBIBO bibo;
     private final PrintWriter out;
     private final PrintWriter err;
@@ -171,7 +173,8 @@ public final class ShellSession {
 
     private void runReset() throws BIBOException {
         ensureSelected();
-        for (int i = 0; i < 4; i++) {
+        int last = 0;
+        for (int i = 0; i < RESET_REQUIRED_INVOCATIONS; i++) {
             ResponseAPDU resp =
                     bibo.transmit(
                             new CommandAPDU(
@@ -179,7 +182,15 @@ public final class ShellSession {
                                     MeowlInsn.RESET_TO_FACTORY.value() & 0xFF,
                                     0,
                                     0));
-            out.println("  " + MeowlSw.describe(resp.getSW()));
+            last = resp.getSW();
+            if ((last & 0xFFF0) != MeowlSw.RESET_COUNTDOWN_BASE) {
+                throw new ShellException(
+                        "RESET_TO_FACTORY step " + (i + 1) + " returned " + MeowlSw.describe(last));
+            }
+            out.println("  " + MeowlSw.describe(last));
+        }
+        if ((last & 0x000F) != 0) {
+            throw new ShellException("RESET_TO_FACTORY did not complete the wipe");
         }
         out.println("OK (factory reset complete)");
         sc = null;
