@@ -10,7 +10,6 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import java.security.Security;
 import java.util.Arrays;
-import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.junit.jupiter.api.AfterEach;
@@ -93,7 +92,9 @@ class HdDerivationTest {
                     (byte) 0,
                     (byte) 0,
                     MeowlFixtures.prefixLen(BIP32_VECTOR_1_SEED));
-            byte[] info = transmitOuter(Constants.INS_GET_INFO & 0xFF, 0, 0, null).getData();
+            byte[] info =
+                    MeowlFixtures.transmitOuter(card, Constants.INS_GET_INFO & 0xFF, 0, 0, null)
+                            .getData();
             assertEquals(LifecycleState.SEEDED, readLifecycleFromInfoTlv(info));
         }
 
@@ -142,7 +143,9 @@ class HdDerivationTest {
             }
             assertNotEquals(0, acc, "generated seed must contain entropy");
 
-            byte[] info = transmitOuter(Constants.INS_GET_INFO & 0xFF, 0, 0, null).getData();
+            byte[] info =
+                    MeowlFixtures.transmitOuter(card, Constants.INS_GET_INFO & 0xFF, 0, 0, null)
+                            .getData();
             assertEquals(LifecycleState.SEEDED, readLifecycleFromInfoTlv(info));
         }
     }
@@ -606,13 +609,5 @@ class HdDerivationTest {
             i += len;
         }
         throw new IllegalStateException("lifecycle TLV not found");
-    }
-
-    private ResponseAPDU transmitOuter(int ins, int p1, int p2, byte[] data) {
-        CommandAPDU cmd =
-                data == null
-                        ? new CommandAPDU(TestConstants.CLA, ins, p1, p2)
-                        : new CommandAPDU(TestConstants.CLA, ins, p1, p2, data);
-        return card.transmit(cmd);
     }
 }

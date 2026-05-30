@@ -21,7 +21,7 @@ import picocli.CommandLine;
  * Smoke tests over the {@link MeowlCli} command tree. These tests do <em>not</em> exercise card I/O
  * — they only verify that the picocli model is well-formed: every subcommand registers, every
  * option parses, and {@code --help} renders without throwing. Catching this kind of structural
- * regression at unit-test speed is a high-value safety net for a 13-subcommand surface.
+ * regression at unit-test speed is a high-value safety net for a 12-subcommand surface.
  */
 class CommandTreeTest {
 

@@ -449,5 +449,4 @@ class SchnorrK1Test {
         for (byte b : in) sb.append(String.format("%02x", b & 0xFF));
         return sb.toString();
     }
-
 }

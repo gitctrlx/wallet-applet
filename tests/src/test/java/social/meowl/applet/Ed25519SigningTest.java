@@ -487,5 +487,4 @@ class Ed25519SigningTest {
             return false;
         }
     }
-
 }

@@ -605,5 +605,4 @@ class PersonalisationTest {
         v.update(digest);
         return v.verify(sig);
     }
-
 }
