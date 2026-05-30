@@ -43,12 +43,13 @@ class CommandTreeTest {
     }
 
     @Test
-    @DisplayName("the gp subtree exposes list / install / uninstall")
+    @DisplayName("the gp subtree exposes info / list / install / uninstall")
     void gpSubtree() {
         CommandLine root = MeowlCli.commandLine();
         CommandLine gp = root.getSubcommands().get("gp");
         assertNotNull(gp);
         Map<String, CommandLine> sub = gp.getSubcommands();
+        assertTrue(sub.containsKey("info"));
         assertTrue(sub.containsKey("list"));
         assertTrue(sub.containsKey("install"));
         assertTrue(sub.containsKey("uninstall"));
@@ -81,7 +82,7 @@ class CommandTreeTest {
     }
 
     @Test
-    @DisplayName("`meowl gp --help` lists list / install / uninstall")
+    @DisplayName("`meowl gp --help` lists info / list / install / uninstall")
     void gpHelp() {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         CommandLine cl = MeowlCli.commandLine();
@@ -89,6 +90,7 @@ class CommandTreeTest {
         int exit = cl.execute("gp", "--help");
         assertEquals(0, exit);
         String rendered = out.toString(StandardCharsets.UTF_8);
+        assertTrue(rendered.contains("info"), rendered);
         assertTrue(rendered.contains("list"), rendered);
         assertTrue(rendered.contains("install"), rendered);
         assertTrue(rendered.contains("uninstall"), rendered);

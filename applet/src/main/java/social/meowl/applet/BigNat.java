@@ -32,8 +32,7 @@ import javacard.framework.Util;
  * </ul>
  *
  * <p>Variable-time modular reduction is intentionally absent — use {@link Barrett} (constant-time,
- * pre-computed μ) for any {@code x mod m} where {@code x} or {@code m} is secret-derived. The v1
- * {@code Bignat.mod} long-division kernel was the source of audit finding A-16 and is gone.
+ * pre-computed μ) for any {@code x mod m} where {@code x} or {@code m} is secret-derived.
  */
 public final class BigNat {
 

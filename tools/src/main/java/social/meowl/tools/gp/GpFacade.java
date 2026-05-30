@@ -5,11 +5,15 @@
 package social.meowl.tools.gp;
 
 import apdu4j.core.APDUBIBO;
+import apdu4j.core.CommandAPDU;
+import apdu4j.core.ResponseAPDU;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
+import java.util.OptionalLong;
 import pro.javacard.capfile.AID;
 import pro.javacard.capfile.CAPFile;
 import pro.javacard.gp.GPCardKeys;
@@ -52,12 +56,41 @@ public final class GpFacade {
                 prefs,
                 bibo -> {
                     GPSession gp = openSession(bibo);
-                    GPRegistry registry = gp.getRegistry();
-                    List<Entry> applets = collect(registry.allApplets());
-                    List<Entry> packages = collect(registry.allPackages());
-                    List<Entry> domains = collect(registry.allDomains());
-                    return new InventoryReport(applets, packages, domains);
+                    return inventoryOf(gp);
                 });
+    }
+
+    /**
+     * Returns the registry inventory plus, when the card supports the GlobalPlatform {@code GET
+     * DATA FF21} ("Card Resources Information") tag, free-memory counters for the persistent and
+     * transient pools. JCOP4 / J3R180 ship support for FF21; older cards may return {@code 6A88}
+     * ("referenced data not found") in which case the memory block is reported absent.
+     */
+    public InfoReport info() {
+        return CardTransport.run(
+                prefs,
+                bibo -> {
+                    GPSession gp = openSession(bibo);
+                    InventoryReport inventory = inventoryOf(gp);
+                    Optional<MemoryReport> memory = queryMemory(gp);
+                    return new InfoReport(inventory, memory);
+                });
+    }
+
+    private static InventoryReport inventoryOf(GPSession gp) {
+        GPRegistry registry = gp.getRegistry();
+        List<Entry> applets = collect(registry.allApplets());
+        List<Entry> packages = collect(registry.allPackages());
+        List<Entry> domains = collect(registry.allDomains());
+        return new InventoryReport(applets, packages, domains);
+    }
+
+    private static Optional<MemoryReport> queryMemory(GPSession gp) {
+        ResponseAPDU r = gp.transmit(new CommandAPDU(0x80, 0xCA, 0xFF, 0x21, 256));
+        if (r.getSW() != GPSession.SW_NO_ERROR) {
+            return Optional.empty();
+        }
+        return MemoryReport.parse(r.getData());
     }
 
     /**
@@ -148,6 +181,103 @@ public final class GpFacade {
 
     /** Outcome of an {@link #install(Path)} call. */
     public record InstallResult(AID packageAid, AID classAid, AID instanceAid) {}
+
+    /** Combined inventory + free-memory snapshot returned by {@link #info()}. */
+    public record InfoReport(InventoryReport inventory, Optional<MemoryReport> memory) {}
+
+    /**
+     * Free-memory counters returned by {@code GET DATA FF21} (GP 2.3 §11.3). Each field is empty if
+     * the card omits the corresponding inner TLV (cards may report only a subset).
+     */
+    public record MemoryReport(
+            OptionalLong freePersistentBytes,
+            OptionalInt freeTransientResetBytes,
+            OptionalInt freeTransientDeselectBytes) {
+
+        private static final int OUTER_TAG = 0xFF21;
+        private static final int TAG_PERSISTENT = 0xC0;
+        private static final int TAG_TRANSIENT_RESET = 0xC1;
+        private static final int TAG_TRANSIENT_DESELECT = 0xC2;
+
+        /**
+         * Parses a {@code FF21} response. Returns {@link Optional#empty()} when the blob is
+         * truncated, mistyped, or otherwise unparseable so the caller can degrade gracefully
+         * instead of surfacing a stack trace for a missing-feature card.
+         */
+        public static Optional<MemoryReport> parse(byte[] blob) {
+            if (blob == null || blob.length < 4) {
+                return Optional.empty();
+            }
+            int pos = 0;
+            int tag = ((blob[pos] & 0xFF) << 8) | (blob[pos + 1] & 0xFF);
+            if (tag != OUTER_TAG) {
+                return Optional.empty();
+            }
+            pos += 2;
+            int outerLen = readBerLength(blob, pos);
+            if (outerLen < 0) {
+                return Optional.empty();
+            }
+            pos += berLengthSize(blob[pos] & 0xFF);
+            if (pos + outerLen > blob.length) {
+                return Optional.empty();
+            }
+            int end = pos + outerLen;
+
+            OptionalLong persistent = OptionalLong.empty();
+            OptionalInt transientReset = OptionalInt.empty();
+            OptionalInt transientDeselect = OptionalInt.empty();
+
+            while (pos < end) {
+                if (pos + 2 > end) {
+                    return Optional.empty();
+                }
+                int innerTag = blob[pos++] & 0xFF;
+                int innerLen = blob[pos++] & 0xFF;
+                if (pos + innerLen > end || innerLen > 8) {
+                    return Optional.empty();
+                }
+                long value = 0L;
+                for (int i = 0; i < innerLen; i++) {
+                    value = (value << 8) | (blob[pos + i] & 0xFFL);
+                }
+                pos += innerLen;
+                switch (innerTag) {
+                    case TAG_PERSISTENT -> persistent = OptionalLong.of(value);
+                    case TAG_TRANSIENT_RESET -> transientReset = OptionalInt.of((int) value);
+                    case TAG_TRANSIENT_DESELECT -> transientDeselect = OptionalInt.of((int) value);
+                    default -> {
+                        // Unknown tag inside FF21 — ignore for forward compatibility.
+                    }
+                }
+            }
+            return Optional.of(new MemoryReport(persistent, transientReset, transientDeselect));
+        }
+
+        private static int readBerLength(byte[] blob, int pos) {
+            if (pos >= blob.length) return -1;
+            int first = blob[pos] & 0xFF;
+            if (first < 0x80) {
+                return first;
+            }
+            if (first == 0x81) {
+                return pos + 1 < blob.length ? blob[pos + 1] & 0xFF : -1;
+            }
+            if (first == 0x82) {
+                return pos + 2 < blob.length
+                        ? ((blob[pos + 1] & 0xFF) << 8) | (blob[pos + 2] & 0xFF)
+                        : -1;
+            }
+            return -1;
+        }
+
+        private static int berLengthSize(int firstByte) {
+            if (firstByte < 0x80) return 1;
+            if (firstByte == 0x81) return 2;
+            if (firstByte == 0x82) return 3;
+            return 1;
+        }
+    }
 
     /** Wraps a checked {@link GPException} so picocli's exit-code handler can format it. */
     public static final class GpException extends RuntimeException {

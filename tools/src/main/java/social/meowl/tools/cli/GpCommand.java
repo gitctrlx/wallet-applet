@@ -18,10 +18,12 @@ import picocli.CommandLine.Spec;
 @Command(
         name = "gp",
         mixinStandardHelpOptions = true,
-        description = "GlobalPlatform card-management subcommands (list / install / uninstall).",
+        description =
+                "GlobalPlatform card-management subcommands (info / list / install / uninstall).",
         synopsisSubcommandLabel = "COMMAND",
         subcommands = {
             CommandLine.HelpCommand.class,
+            GpInfoCommand.class,
             GpListCommand.class,
             GpInstallCommand.class,
             GpUninstallCommand.class,
