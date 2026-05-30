@@ -11,7 +11,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.math.BigInteger;
 import java.security.Security;
 import java.util.Arrays;
-import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
 import org.bouncycastle.crypto.params.ECDomainParameters;
 import org.bouncycastle.crypto.params.ECPublicKeyParameters;
@@ -169,12 +168,10 @@ class EcdsaK1Test {
                 "Two signatures over the same (path, digest) are both valid (nonce policy is"
                         + " environment-dependent)")
         void repeatedSignAtSamePathValid() {
-            // Whether the bytes are identical or differ depends on the underlying ECDSA
-            // implementation: real JCOP silicon draws a random k per signature (so sig1 ≠ sig2
-            // with overwhelming probability), whereas JCardSim's BouncyCastle backend uses RFC
-            // 6979 deterministic nonces (so sig1 == sig2). MEAP-6 documents both as acceptable
-            // for v1.0; this test asserts only the property we actually rely on — that both
-            // signatures verify under the derived pubkey.
+            // Real JCOP silicon draws a fresh random k per ECDSA signature (JC 3.0.5 exposes no
+            // RFC 6979 hook), so two signatures over the same (path, digest) almost always differ.
+            // This test asserts only the property we actually rely on — that both signatures
+            // verify under the derived pubkey — rather than pinning equality either way.
             int[] path = {0};
             byte[] sig1 = signEcdsa(path, SAMPLE_DIGEST);
             byte[] sig2 = signEcdsa(path, SAMPLE_DIGEST);
@@ -221,7 +218,7 @@ class EcdsaK1Test {
         @Test
         @DisplayName("digest shorter than 32 bytes is rejected with SW_WRONG_LENGTH")
         void digestTooShort() {
-            byte[] req = encodeSignRequest(new int[] {0}, new byte[16]);
+            byte[] req = MeowlFixtures.encodeSignRequest(new int[] {0}, new byte[16]);
             ResponseAPDU r =
                     session.sendInner(Constants.INS_SIGN_ECDSA_K1, (byte) 0, (byte) 0, req);
             assertEquals(Constants.SW_WRONG_LENGTH & 0xFFFF, r.getSW());
@@ -283,8 +280,10 @@ class EcdsaK1Test {
         @Test
         @DisplayName("CAP_K1_ECDSA bit is now advertised in GET_INFO")
         void capK1EcdsaIsAdvertised() throws Exception {
-            byte[] tlv = transmitOuter(Constants.INS_GET_INFO & 0xFF, 0, 0, null).getData();
-            short caps = readCapabilities(tlv);
+            byte[] tlv =
+                    MeowlFixtures.transmitOuter(card, Constants.INS_GET_INFO & 0xFF, 0, 0, null)
+                            .getData();
+            short caps = MeowlFixtures.readCapabilities(tlv);
             assertNotEquals(
                     (short) 0,
                     (short) (caps & Constants.CAP_K1_ECDSA),
@@ -295,47 +294,19 @@ class EcdsaK1Test {
     /*  ECDSA-specific helpers.  */
 
     private byte[] derivePubkey(int[] path) {
-        byte[] req = encodeXpubRequest(Constants.CURVE_SECP256K1, path);
+        byte[] req = MeowlFixtures.encodeXpubRequest(Constants.CURVE_SECP256K1, path);
         byte[] resp = session.sendInnerExpectOk(Constants.INS_EXPORT_XPUB, (byte) 0, (byte) 0, req);
         return Arrays.copyOfRange(resp, 0, Constants.EC_POINT_COMPRESSED_LEN);
     }
 
     private byte[] signEcdsa(int[] path, byte[] digest) {
-        byte[] req = encodeSignRequest(path, digest);
+        byte[] req = MeowlFixtures.encodeSignRequest(path, digest);
         return session.sendInnerExpectOk(Constants.INS_SIGN_ECDSA_K1, (byte) 0, (byte) 0, req);
     }
 
     private ResponseAPDU signEcdsaResp(int[] path, byte[] digest) {
-        byte[] req = encodeSignRequest(path, digest);
+        byte[] req = MeowlFixtures.encodeSignRequest(path, digest);
         return session.sendInner(Constants.INS_SIGN_ECDSA_K1, (byte) 0, (byte) 0, req);
-    }
-
-    private static byte[] encodeSignRequest(int[] path, byte[] digest) {
-        byte[] out = new byte[1 + 4 * path.length + digest.length];
-        out[0] = (byte) path.length;
-        for (int i = 0; i < path.length; i++) {
-            int idx = path[i];
-            out[1 + i * 4] = (byte) (idx >>> 24);
-            out[1 + i * 4 + 1] = (byte) (idx >>> 16);
-            out[1 + i * 4 + 2] = (byte) (idx >>> 8);
-            out[1 + i * 4 + 3] = (byte) idx;
-        }
-        System.arraycopy(digest, 0, out, 1 + 4 * path.length, digest.length);
-        return out;
-    }
-
-    private static byte[] encodeXpubRequest(byte curve, int[] path) {
-        byte[] out = new byte[2 + 4 * path.length];
-        out[0] = curve;
-        out[1] = (byte) path.length;
-        for (int i = 0; i < path.length; i++) {
-            int idx = path[i];
-            out[2 + i * 4] = (byte) (idx >>> 24);
-            out[2 + i * 4 + 1] = (byte) (idx >>> 16);
-            out[2 + i * 4 + 2] = (byte) (idx >>> 8);
-            out[2 + i * 4 + 3] = (byte) idx;
-        }
-        return out;
     }
 
     private static boolean verifyEcdsa(byte[] compressedPub, byte[] digest, byte[] sig64) {
@@ -391,30 +362,6 @@ class EcdsaK1Test {
             }
         }
         return -1;
-    }
-
-    private static short readCapabilities(byte[] tlv) {
-        int i = 0;
-        while (i < tlv.length) {
-            int tag = tlv[i++] & 0xFF;
-            int len = tlv[i++] & 0xFF;
-            if (tag == (Constants.TAG_CAPABILITIES & 0xFF)) {
-                return (short) (((tlv[i] & 0xFF) << 8) | (tlv[i + 1] & 0xFF));
-            }
-            i += len;
-        }
-        throw new IllegalStateException("capabilities TLV not found");
-    }
-
-    /*  Test-specific helpers (ECDSA verification, low-s assertion, pubkey recovery, capability
-     *  TLV reader). Generic SC plumbing lives in {@link HostSession} and {@link MeowlFixtures}.  */
-
-    private ResponseAPDU transmitOuter(int ins, int p1, int p2, byte[] data) {
-        CommandAPDU cmd =
-                data == null
-                        ? new CommandAPDU(TestConstants.CLA, ins, p1, p2)
-                        : new CommandAPDU(TestConstants.CLA, ins, p1, p2, data);
-        return card.transmit(cmd);
     }
 
     private static byte[] bigIntToFixed(BigInteger n, int len) {

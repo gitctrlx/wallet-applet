@@ -11,7 +11,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.security.Security;
 import java.util.Arrays;
-import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.math.ec.ECPoint;
@@ -263,7 +262,9 @@ class PersonalisationTest {
                     (byte) 0,
                     MeowlFixtures.encodeSetup(
                             TestConstants.DEFAULT_PIN, TestConstants.DEFAULT_PUK));
-            byte[] info = transmitOuter(Constants.INS_GET_INFO & 0xFF, 0, 0, null).getData();
+            byte[] info =
+                    MeowlFixtures.transmitOuter(card, Constants.INS_GET_INFO & 0xFF, 0, 0, null)
+                            .getData();
             byte lifecycle = readLifecycleFromInfoTlv(info);
             assertEquals(LifecycleState.SETUP_DONE, lifecycle);
         }
@@ -605,11 +606,4 @@ class PersonalisationTest {
         return v.verify(sig);
     }
 
-    private ResponseAPDU transmitOuter(int ins, int p1, int p2, byte[] data) {
-        CommandAPDU cmd =
-                data == null
-                        ? new CommandAPDU(TestConstants.CLA, ins, p1, p2)
-                        : new CommandAPDU(TestConstants.CLA, ins, p1, p2, data);
-        return card.transmit(cmd);
-    }
 }

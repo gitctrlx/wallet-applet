@@ -20,7 +20,6 @@ import java.security.spec.X509EncodedKeySpec;
 import java.util.Arrays;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
-import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.junit.jupiter.api.AfterEach;
@@ -390,8 +389,10 @@ class Ed25519SigningTest {
         @Test
         @DisplayName("CAP_ED25519 bit is advertised in GET_INFO")
         void capEd25519IsAdvertised() throws Exception {
-            byte[] tlv = transmitOuter(Constants.INS_GET_INFO & 0xFF, 0, 0, null).getData();
-            short caps = readCapabilities(tlv);
+            byte[] tlv =
+                    MeowlFixtures.transmitOuter(card, Constants.INS_GET_INFO & 0xFF, 0, 0, null)
+                            .getData();
+            short caps = MeowlFixtures.readCapabilities(tlv);
             assertNotEquals(
                     (short) 0,
                     (short) (caps & Constants.CAP_ED25519),
@@ -402,48 +403,20 @@ class Ed25519SigningTest {
     /*  Ed25519-specific helpers.  */
 
     private byte[] ed25519Pubkey(int[] path) {
-        byte[] req = encodeXpubRequest(Constants.CURVE_ED25519, path);
+        byte[] req = MeowlFixtures.encodeXpubRequest(Constants.CURVE_ED25519, path);
         byte[] resp = session.sendInnerExpectOk(Constants.INS_EXPORT_XPUB, (byte) 0, (byte) 0, req);
         // Response: pubkey(32) || chain_code(32). We only need the pubkey for verification.
         return Arrays.copyOfRange(resp, 0, Ed25519.PUBLIC_KEY_LEN);
     }
 
     private byte[] signEd25519(int[] path, byte[] msg) {
-        byte[] req = encodeSignRequest(path, msg);
+        byte[] req = MeowlFixtures.encodeSignRequest(path, msg);
         return session.sendInnerExpectOk(Constants.INS_SIGN_ED25519, (byte) 0, (byte) 0, req);
     }
 
     private ResponseAPDU signEd25519Resp(int[] path, byte[] msg) {
-        byte[] req = encodeSignRequest(path, msg);
+        byte[] req = MeowlFixtures.encodeSignRequest(path, msg);
         return session.sendInner(Constants.INS_SIGN_ED25519, (byte) 0, (byte) 0, req);
-    }
-
-    private static byte[] encodeSignRequest(int[] path, byte[] msg) {
-        byte[] out = new byte[1 + 4 * path.length + msg.length];
-        out[0] = (byte) path.length;
-        for (int i = 0; i < path.length; i++) {
-            int idx = path[i];
-            out[1 + i * 4] = (byte) (idx >>> 24);
-            out[1 + i * 4 + 1] = (byte) (idx >>> 16);
-            out[1 + i * 4 + 2] = (byte) (idx >>> 8);
-            out[1 + i * 4 + 3] = (byte) idx;
-        }
-        System.arraycopy(msg, 0, out, 1 + 4 * path.length, msg.length);
-        return out;
-    }
-
-    private static byte[] encodeXpubRequest(byte curve, int[] path) {
-        byte[] out = new byte[2 + 4 * path.length];
-        out[0] = curve;
-        out[1] = (byte) path.length;
-        for (int i = 0; i < path.length; i++) {
-            int idx = path[i];
-            out[2 + i * 4] = (byte) (idx >>> 24);
-            out[2 + i * 4 + 1] = (byte) (idx >>> 16);
-            out[2 + i * 4 + 2] = (byte) (idx >>> 8);
-            out[2 + i * 4 + 3] = (byte) idx;
-        }
-        return out;
     }
 
     /**
@@ -515,24 +488,4 @@ class Ed25519SigningTest {
         }
     }
 
-    private static short readCapabilities(byte[] tlv) {
-        int i = 0;
-        while (i < tlv.length) {
-            int tag = tlv[i++] & 0xFF;
-            int len = tlv[i++] & 0xFF;
-            if (tag == (Constants.TAG_CAPABILITIES & 0xFF)) {
-                return (short) (((tlv[i] & 0xFF) << 8) | (tlv[i + 1] & 0xFF));
-            }
-            i += len;
-        }
-        throw new IllegalStateException("capabilities TLV not found");
-    }
-
-    private ResponseAPDU transmitOuter(int ins, int p1, int p2, byte[] data) {
-        CommandAPDU cmd =
-                data == null
-                        ? new CommandAPDU(TestConstants.CLA, ins, p1, p2)
-                        : new CommandAPDU(TestConstants.CLA, ins, p1, p2, data);
-        return card.transmit(cmd);
-    }
 }
