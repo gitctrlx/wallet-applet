@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: 2026 meowl.social contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-package social.meowl.applet.testkit;
+package social.meowl.applet.realcard.support;
 
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;

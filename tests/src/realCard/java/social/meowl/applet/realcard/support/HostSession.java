@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: 2026 meowl.social contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-package social.meowl.applet.testkit;
+package social.meowl.applet.realcard.support;
 
 import java.math.BigInteger;
 import java.security.GeneralSecurityException;
@@ -16,8 +16,6 @@ import javax.smartcardio.ResponseAPDU;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.math.ec.ECPoint;
 import social.meowl.applet.Constants;
-import social.meowl.applet.cardclient.RealCardClient;
-import social.meowl.applet.sc.KdfCmacHost;
 
 /**
  * Host-side reference Secure Channel client for end-to-end test suites. Mirrors MEAP-2 byte-for-

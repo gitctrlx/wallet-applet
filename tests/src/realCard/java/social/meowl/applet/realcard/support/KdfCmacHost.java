@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: 2026 meowl.social contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-package social.meowl.applet.sc;
+package social.meowl.applet.realcard.support;
 
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;

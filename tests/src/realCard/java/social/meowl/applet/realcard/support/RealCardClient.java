@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: 2026 meowl.social contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-package social.meowl.applet.cardclient;
+package social.meowl.applet.realcard.support;
 
 import java.util.List;
 import javax.smartcardio.Card;
@@ -30,7 +30,7 @@ import javax.smartcardio.TerminalFactory;
  * </ol>
  *
  * <p>Persistent-state isolation between tests is the test's responsibility — see {@code
- * MeowlFixtures.resetCard()} in the testkit, which the suites invoke from {@code @AfterEach}.
+ * CardLifecycle.resetCard()}, which the suites invoke from {@code @AfterEach}.
  */
 public final class RealCardClient implements AutoCloseable {
 
@@ -112,7 +112,7 @@ public final class RealCardClient implements AutoCloseable {
      * Disconnects with {@code reset = true} so the ICC reset propagates a {@code CLEAR_ON_RESET}
      * wipe — the per-deselect counter that {@code RESET_TO_FACTORY} relies on returns to its
      * install-time value. Tests that need persistent state cleared must drive {@code
-     * RESET_TO_FACTORY} explicitly via {@code MeowlFixtures.resetCard()} before close.
+     * RESET_TO_FACTORY} explicitly via {@code CardLifecycle.resetCard()} before close.
      */
     @Override
     public void close() {
