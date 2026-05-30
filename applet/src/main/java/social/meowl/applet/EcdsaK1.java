@@ -15,7 +15,7 @@ import javacard.security.Signature;
  *
  * <p>Given a BIP-32 path and a 32-byte digest, derives the leaf scalar via {@link
  * Bip32#deriveLeafScalar}, signs through the JC native {@code Signature.ALG_ECDSA_SHA_256} using
- * {@link Signature#signPreComputedHash} (hash-only per MEAP-6), parses the DER signature,
+ * {@link Signature#signPreComputedHash} (hash-only per protocol.md §10), parses the DER signature,
  * normalises {@code s} into the low half of {@code n} per BIP-62 / EIP-2, and writes a fixed-
  * length {@code r(32) ‖ s(32)} response.
  *

@@ -13,8 +13,9 @@ import javacard.security.KeyPair;
 
 /**
  * Long-lived secp256k1 card-identity keypair. Generated once at install, preserved across factory
- * resets (MEAP-4). The private half never leaves the secure element; the public half anchors the
- * Secure Channel handshake (MEAP-2) and serves as the CSR subject during PKI personalisation.
+ * resets (protocol.md §5). The private half never leaves the secure element; the public half
+ * anchors the Secure Channel handshake (protocol.md §6) and serves as the CSR subject during PKI
+ * personalisation.
  */
 public final class Authentikey {
 

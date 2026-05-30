@@ -107,7 +107,7 @@ public enum MeowlInsn {
             Channel.INNER,
             "Signs an arbitrary-length message with Ed25519 (RFC 8032).");
 
-    /** {@code CLA = 0x80} for every meowl-applet APDU per MEAP-1. */
+    /** {@code CLA = 0x80} for every meowl-applet APDU per protocol.md §1. */
     public static final byte CLA_MEOWL = (byte) 0x80;
 
     /** Whether an INS travels on the bare CLA/INS surface or inside a Secure Channel envelope. */

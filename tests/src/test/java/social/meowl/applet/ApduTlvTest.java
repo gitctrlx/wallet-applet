@@ -17,8 +17,8 @@ import org.junit.jupiter.api.Test;
  *
  * <p>Covers the four entry points ({@link ApduTlv#putByte putByte} / {@link ApduTlv#putShort
  * putShort} / {@link ApduTlv#putBytes putBytes} / {@link ApduTlv#reserve reserve} + {@link
- * ApduTlv#finishReserved finishReserved}) against the wire shapes pinned by MEAP-1, plus the
- * destination-range bound check on {@code finishReserved} so a value written past the buffer
+ * ApduTlv#finishReserved finishReserved}) against the wire shapes pinned by protocol.md §5, plus
+ * the destination-range bound check on {@code finishReserved} so a value written past the buffer
  * surfaces as {@link Constants#SW_WRONG_LENGTH} rather than a runtime {@code
  * IndexOutOfBoundsException} ({@code 6F00}).
  */

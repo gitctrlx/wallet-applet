@@ -13,7 +13,7 @@ import javax.crypto.spec.SecretKeySpec;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
 /**
- * Host-side mirror of the applet {@code Kdf} class: AES-CMAC-128–based KDF used by MEAP-2's Secure
+ * Host-side mirror of the applet {@code Kdf} class: AES-CMAC-128–based KDF used by the meowl Secure
  * Channel.
  *
  * <p>Two-stage extract-then-expand construction:
@@ -30,8 +30,8 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider;
  * java.security.Provider)}; the JDK does not ship a CMAC primitive directly. The provider is
  * registered statically by {@link HostCrypto}, so callers do not need to bootstrap it.
  *
- * <p>See {@code applet/.../Kdf.java} for the on-card counterpart and {@code docs/specs/meap-2.md}
- * §"Key derivation" for the wire-protocol context.
+ * <p>See {@code applet/.../Kdf.java} for the on-card counterpart and {@code docs/specs/protocol.md}
+ * §6.2 for the wire-protocol context.
  */
 public final class KdfCmac {
 

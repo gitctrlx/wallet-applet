@@ -19,7 +19,7 @@ import javacard.framework.JCSystem;
  * <p>Forward edges advance one ordinal via {@link #transitionTo}; the only retrograde edge is
  * {@link #reset()}, taken by the reset-to-factory flow. Writes execute inside a {@link
  * JCSystem#beginTransaction() JavaCard transaction} so a torn power-off cannot wedge the card
- * mid-transition. The {@code authentikey} keypair survives every transition (MEAP-4).
+ * mid-transition. The {@code authentikey} keypair survives every transition (protocol.md §5).
  */
 public final class LifecycleState {
 

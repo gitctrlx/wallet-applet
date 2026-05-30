@@ -21,8 +21,8 @@ import social.meowl.tools.transport.CardTransport;
  * {@code meowl authentikey} — fetches the card's compressed authentikey public key.
  *
  * <p>The authentikey is generated once at install time and never rotates; it anchors device
- * identity for the Secure Channel handshake (MEAP-2) and PKI personalisation (MEAP-4). Two
- * consecutive invocations of this command must therefore return identical bytes.
+ * identity for the Secure Channel handshake and PKI personalisation. Two consecutive invocations of
+ * this command must therefore return identical bytes.
  */
 @Command(
         name = "authentikey",

@@ -19,7 +19,7 @@ import social.meowl.tools.proto.SecureChannelClient;
 import social.meowl.tools.transport.CardTransport;
 
 /**
- * {@code meowl sc handshake} — runs only the {@code INIT_SECURE_CHANNEL} half of the MEAP-2
+ * {@code meowl sc handshake} — runs only the {@code INIT_SECURE_CHANNEL} half of the Secure Channel
  * protocol against the card, verifies the authentikey signature, and prints the resulting
  * session-state digest. The connection is closed at the end so the session does not persist; follow
  * up with {@code meowl sc send} when you actually need to invoke an inner-band INS.

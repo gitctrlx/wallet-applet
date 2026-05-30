@@ -27,7 +27,7 @@ public final class TestConstants {
 
     public static final X9ECParameters SECP256K1 = CustomNamedCurves.getByName("secp256k1");
 
-    /** KDF info label, MEAP-2 §key-derivation. Mirrors {@code SecureChannelClient.KDF_INFO}. */
+    /** KDF info label, protocol.md §6.2. Mirrors {@code SecureChannelClient.KDF_INFO}. */
     public static final byte[] KDF_INFO = "meowl-sc-v1".getBytes(StandardCharsets.UTF_8);
 
     /** Per-process secure RNG used to derive client ephemeral scalars during SC handshakes. */

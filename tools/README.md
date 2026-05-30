@@ -20,7 +20,7 @@ A modern picocli command tree that wraps every host-side workflow you need while
 | | `gp install <cap>` | Install (or replace) a CAP file. |
 | | `gp uninstall [--aid HEX]` | Delete an applet (and, by default, its package). |
 | | _ISD keys_ | Every `gp` subcommand accepts `--key-master HEX` _or_ `--key-enc HEX --key-mac HEX --key-kek HEX`; without flags the well-known GP development default `40 41 ... 4F` is used. |
-| Secure Channel | `sc handshake` | One-shot MEAP-2 handshake with authentikey-signature verification. |
+| Secure Channel | `sc handshake` | One-shot Secure Channel handshake with authentikey-signature verification. |
 | | `sc send <inner-hex>` | Open an SC and send one inner APDU through the encrypted envelope. |
 | Benchmarking | `bench` | Measures p50/p95/p99 signing / HD-walk latency on a `SEEDED` card (`--samples`, `--warmup`, `--json`). |
 | Interactive | `shell` | Persistent REPL with one PC/SC connection and an optional SC session. |
@@ -171,7 +171,7 @@ tools/src/main/java/social/meowl/tools/
 ├── Main.java                     ── one-line entry: System.exit(MeowlCli.commandLine().execute(args))
 ├── core/                         ── pure helpers (Hex, Tlv, MeowlInsn, MeowlSw, MeowlAid)
 ├── transport/                    ── apdu4j BIBO stack + ReaderPreferences + visitor wrapper
-├── proto/                        ── MEAP-2 host client (KdfCmac, HostCrypto, SecureChannelClient)
+├── proto/                        ── Secure Channel host client (KdfCmac, HostCrypto, SecureChannelClient)
 ├── gp/                           ── in-process GlobalPlatformPro (GpFacade)
 ├── shell/                        ── stateful REPL engine (ShellSession)
 └── cli/                          ── picocli command tree (MeowlCli + 12 subcommands)

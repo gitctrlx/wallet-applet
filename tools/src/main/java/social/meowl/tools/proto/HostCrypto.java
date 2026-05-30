@@ -27,7 +27,7 @@ import org.bouncycastle.crypto.ec.CustomNamedCurves;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
 /**
- * Host-side cryptographic primitives for the MEAP-2 Secure Channel client:
+ * Host-side cryptographic primitives for the meowl Secure Channel client:
  *
  * <ul>
  *   <li>secp256k1 ephemeral key generation + ECDH x-coordinate
@@ -190,7 +190,8 @@ public final class HostCrypto {
 
     /**
      * Decrypts AES-256-CBC ciphertext and strips PKCS#5 padding. Raises {@link
-     * SecureChannelException} on a malformed pad (treated as a MAC-equivalent failure per MEAP-2).
+     * SecureChannelException} on a malformed pad (treated as a MAC-equivalent failure per
+     * protocol.md §6.3).
      */
     public static byte[] aesCbcDecrypt(byte[] key, byte[] iv, byte[] ciphertext) {
         byte[] padded = aesCbc(Cipher.DECRYPT_MODE, key, iv, ciphertext);
@@ -198,9 +199,9 @@ public final class HostCrypto {
     }
 
     /**
-     * Computes the MEAP-2 envelope MAC: AES-CMAC-128 over the concatenation of {@code parts} keyed
-     * by the 16-byte {@code key}. Matches the applet-side {@code Signature.ALG_AES_CMAC_128}
-     * primitive exactly.
+     * Computes the Secure Channel envelope MAC: AES-CMAC-128 over the concatenation of {@code
+     * parts} keyed by the 16-byte {@code key}. Matches the applet-side {@code
+     * Signature.ALG_AES_CMAC_128} primitive exactly.
      */
     public static byte[] aesCmac128(byte[] key, byte[]... parts) {
         Objects.requireNonNull(key, "key");

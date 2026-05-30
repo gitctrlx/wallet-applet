@@ -180,7 +180,7 @@ class HostCryptoTest {
         java.security.Signature signer =
                 java.security.Signature.getInstance("SHA256withECDSA", "BC");
         signer.initSign(kp.getPrivate());
-        byte[] message = "MEAP-2 handshake".getBytes();
+        byte[] message = "secure-channel handshake".getBytes();
         signer.update(message);
         byte[] sig = signer.sign();
 

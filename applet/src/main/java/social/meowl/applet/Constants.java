@@ -10,8 +10,8 @@ import javacard.framework.ISOException;
  * Wire-level and policy constants for the meowl-applet.
  *
  * <p>Every magic number that appears on the APDU wire or in a policy threshold is declared here so
- * the rest of the codebase stays free of literal hex constants and the MEAP specifications under
- * {@code docs/specs/} can be diffed against a single file.
+ * the rest of the codebase stays free of literal hex constants and the protocol spec under {@code
+ * docs/specs/} can be diffed against a single file.
  *
  * <p>JavaCard 3.0.5 has no {@code enum}, so {@code byte} / {@code short} literals are the idiomatic
  * representation.
@@ -32,11 +32,11 @@ public final class Constants {
 
     /**
      * Class byte for every command the meowl applet processes. ISO 7816-4 private-class range; see
-     * {@code docs/specs/meap-1.md}.
+     * {@code docs/specs/protocol.md} §1.
      */
     public static final byte CLA_MEOWL = (byte) 0x80;
 
-    /*  INS table — see docs/specs/meap-1.md for the wire contract.
+    /*  INS table — see docs/specs/protocol.md §2 for the wire contract.
      *
      *  Banding convention (so reviewers can read intent from the opcode alone):
      *    0x00–0x0F  lifecycle / identity / capability discovery
@@ -160,7 +160,7 @@ public final class Constants {
      * {@code n} is the number of additional {@code RESET_TO_FACTORY} invocations still required to
      * trigger the wipe. {@code n == 0} signals that the wipe has been performed.
      *
-     * <p>Range used: {@code 0x6FA0}–{@code 0x6FAF}. See {@code docs/specs/meap-3.md}.
+     * <p>Range used: {@code 0x6FA0}–{@code 0x6FAF}. See {@code docs/specs/protocol.md} §4.
      */
     public static final short SW_RESET_COUNTDOWN_BASE = (short) 0x6FA0;
 
@@ -214,10 +214,10 @@ public final class Constants {
     // Bit 3 reserved for future AES-GCM Secure Channel.
 
     /**
-     * Bit 4 — card exposes a Secure Channel using AES-256-CBC + AES-CMAC-128 (per MEAP-2's
-     * 2026-05-24 revision). The constant name is retained for backwards-compatible capability
-     * parsing on hosts; the underlying primitive migrated off HMAC-SHA-256 to match the J3R180
-     * native algorithm matrix.
+     * Bit 4 — card exposes a Secure Channel using AES-256-CBC + AES-CMAC-128 (protocol.md §6). The
+     * constant name is retained for backwards-compatible capability parsing on hosts; the
+     * underlying primitive uses AES-CMAC-128, not HMAC, to match the J3R180 native algorithm
+     * matrix.
      */
     public static final short CAP_SC_CBC_HMAC = (short) 0x0010;
 
@@ -362,7 +362,7 @@ public final class Constants {
 
     /**
      * Number of consecutive un-interleaved {@code RESET_TO_FACTORY} invocations required to trigger
-     * the wipe. See {@code docs/specs/meap-3.md}.
+     * the wipe. See {@code docs/specs/protocol.md} §4.
      */
     public static final byte RESET_REQUIRED_INVOCATIONS = (byte) 4;
 

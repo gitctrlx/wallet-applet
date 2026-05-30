@@ -10,7 +10,7 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Spec;
 
 /**
- * {@code meowl sc ...} — namespace for MEAP-2 Secure Channel subcommands.
+ * {@code meowl sc ...} — namespace for Secure Channel subcommands.
  *
  * <p>Two leaves are exposed:
  *
@@ -30,7 +30,7 @@ import picocli.CommandLine.Spec;
 @Command(
         name = "sc",
         mixinStandardHelpOptions = true,
-        description = "MEAP-2 Secure Channel subcommands (handshake / send).",
+        description = "Secure Channel subcommands (handshake / send).",
         synopsisSubcommandLabel = "COMMAND",
         subcommands = {
             CommandLine.HelpCommand.class,

@@ -18,8 +18,8 @@ import org.bouncycastle.math.ec.ECPoint;
 import social.meowl.applet.Constants;
 
 /**
- * Host-side reference Secure Channel client for end-to-end test suites. Mirrors MEAP-2 byte-for-
- * byte: ECDH on secp256k1 → AES-CMAC-128 KBKDF → AES-256-CBC + AES-CMAC-128 record layer.
+ * Host-side reference Secure Channel client for end-to-end test suites. Mirrors protocol.md §6
+ * byte-for-byte: ECDH on secp256k1 → AES-CMAC-128 KBKDF → AES-256-CBC + AES-CMAC-128 record layer.
  *
  * <p>Open a session with {@link #open(RealCardClient)}; thereafter use {@link #sendInnerExpectOk}
  * for happy-path inner APDUs and {@link #sendInner} when the test needs to inspect a non-{@code

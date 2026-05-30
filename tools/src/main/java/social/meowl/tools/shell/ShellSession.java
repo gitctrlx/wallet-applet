@@ -228,7 +228,7 @@ public final class ShellSession {
         out.println("  info                 GET_INFO + pretty-print the TLV blob");
         out.println("  authentikey          GET_AUTHENTIKEY (33-byte compressed pubkey)");
         out.println("  apdu <hex>           transmit a raw APDU and print the response");
-        out.println("  sc handshake         open a MEAP-2 Secure Channel against this card");
+        out.println("  sc handshake         open a Secure Channel against this card");
         out.println("  sc send <inner-hex>  send an inner APDU through the open Secure Channel");
         out.println("  sc close             tear down the open Secure Channel session");
         out.println("  reset                drive RESET_TO_FACTORY countdown to 6FA0");

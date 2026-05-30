@@ -18,7 +18,7 @@ import javacard.security.Signature;
 import javacardx.crypto.Cipher;
 
 /**
- * Implements the meowl Secure Channel as specified in {@code docs/specs/meap-2.md}.
+ * Implements the meowl Secure Channel as specified in {@code docs/specs/protocol.md} §6.
  *
  * <h2>Handshake (INS 0x10)</h2>
  *
@@ -215,7 +215,7 @@ public final class SecureChannel {
         if (inDataLen != CLIENT_EPH_PUB_LEN) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        // Per MEAP-2: a non-0x04 prefix is a crypto failure (6FB2), not a length error (6700).
+        // Per protocol.md §6.1: a non-0x04 prefix is a crypto failure (6FB2), not a length error.
         if (apduBuffer[inDataOffset] != (byte) 0x04) {
             ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
         }

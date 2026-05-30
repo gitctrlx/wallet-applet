@@ -35,9 +35,9 @@ import javacard.security.MessageDigest;
  * <h2>Wire contract</h2>
  *
  * <p>Input: {@code [SLIP-10 leaf priv(32), message(*)]}; the message is hashed internally so the
- * card never parses payloads (MEAP-6 hash-only invariant). Output: {@code R(32) ‖ S(32)} in RFC
- * 8032 §5.1.2 little-endian compressed form. Every intermediate lives in a shared transient scratch
- * wiped by a {@code finally} on every code path.
+ * card never parses payloads (hash-only invariant, protocol.md §10). Output: {@code R(32) ‖ S(32)}
+ * in RFC 8032 §5.1.2 little-endian compressed form. Every intermediate lives in a shared transient
+ * scratch wiped by a {@code finally} on every code path.
  *
  * <h2>Scratch layout</h2>
  *

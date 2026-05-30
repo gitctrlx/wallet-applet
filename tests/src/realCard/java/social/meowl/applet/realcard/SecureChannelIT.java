@@ -208,7 +208,7 @@ class SecureChannelIT {
     @Test
     @DisplayName("handshake with non-0x04 prefix byte is rejected with 6FB2")
     void handshakeNonZeroFourPrefixIsCryptoFailure() {
-        // 65-byte body of the right length but with a corrupted prefix: MEAP-2 §57 says this
+        // 65-byte body of the right length but with a corrupted prefix: protocol.md §6.1 says this
         // must be reported as a cryptographic check failure (6FB2), not as a length error
         // (6700), since the length itself is well-formed and only the cryptographic structure
         // is wrong.
@@ -286,8 +286,8 @@ class SecureChannelIT {
             "KDF derives a 16-byte PRK and three pairwise-distinct sub-keys from a fixed input")
     void kdfDerivesDistinctNonZeroKeys() {
         // Algorithmic-correctness check: pin the structural shape of the AES-CMAC KDF (PRK length,
-        // OKM length, sub-key separation) without fixing bytes. The byte-level Test Vectors
-        // belong in MEAP-2 §Test Vectors and are filled in from a real-card derive run.
+        // OKM length, sub-key separation) without fixing bytes. The byte-level vectors are
+        // pinned from a real-card derive run.
         byte[] clientX = filled((byte) 0x11, 32);
         byte[] cardX = filled((byte) 0x22, 32);
         byte[] sharedX = filled((byte) 0x33, 32);

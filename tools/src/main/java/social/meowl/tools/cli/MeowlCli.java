@@ -24,7 +24,7 @@ import picocli.CommandLine.Spec;
         version = "meowl 0.1.0-SNAPSHOT",
         description =
                 "Host-side CLI for the meowl-applet — APDU debugging, GlobalPlatform"
-                        + " applet management, MEAP-2 Secure Channel client and an interactive"
+                        + " applet management, Secure Channel client and an interactive"
                         + " shell.",
         synopsisSubcommandLabel = "COMMAND",
         subcommands = {

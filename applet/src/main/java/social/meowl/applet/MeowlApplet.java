@@ -163,8 +163,8 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
 
     /**
      * Opens a fresh Secure Channel session. Tearing down the previous SC keys and the PIN-verified
-     * flag first preserves the "PIN binds to the SC session" property of MEAP-3 — a re-handshake
-     * MUST NOT inherit the prior session's authentication state.
+     * flag first preserves the "PIN binds to the SC session" property (protocol.md §6.4) — a
+     * re-handshake MUST NOT inherit the prior session's authentication state.
      */
     private short handleInitSecureChannel(APDU apdu, byte[] buffer) {
         short lc = apdu.setIncomingAndReceive();
@@ -684,9 +684,9 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
     }
 
     /**
-     * Reset-to-factory wipe. Per {@code docs/specs/meap-4.md} the authentikey is preserved; Secure
-     * Channel state, PIN/PUK gates, PKI cert state, master-seed gates and lifecycle state are
-     * reset.
+     * Reset-to-factory wipe. Per {@code docs/specs/protocol.md} §4 the authentikey is preserved;
+     * Secure Channel state, PIN/PUK gates, PKI cert state, master-seed gates and lifecycle state
+     * are reset.
      *
      * <p>The persistent gates commit inside a single {@link JCSystem#beginTransaction()} block so a
      * torn power-off cannot leave host-visible state half-reset. Master key material is physically

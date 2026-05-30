@@ -152,7 +152,8 @@ public final class MasterSeed {
                 || (short) (outOff + Constants.SEED_GENERATED_LEN) > (short) outBuf.length) {
             ISOException.throwIt(Constants.SW_WRONG_LENGTH);
         }
-        // MEAP-5 §GENERATE_SEED: ALG_KEYGENERATION first (universal on JC 3.0.4+, designed for
+        // protocol.md §9 GENERATE_SEED: ALG_KEYGENERATION first (universal on JC 3.0.4+, designed
+        // for
         // key material); ALG_TRNG fallback for cards that restrict the keygen class.
         javacard.security.RandomData random;
         try {

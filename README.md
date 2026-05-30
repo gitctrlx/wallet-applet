@@ -48,20 +48,20 @@ Tests are split into two tracks via JUnit tags:
 | Task | Scope | Status |
 | --- | --- | --- |
 | `./gradlew :tests:test` | Pure unit tests + simulator-safe assertions (`HmacSha512Test`, `BarrettTest`, `BigNatTest`, `Fp25519Test` arithmetic, `BoundsTest`, `ApduTlvTest`, `SchnorrTagHashTest`, `SecureChannelStripPkcs5Test`, `LifecycleStateTest.IsLegalForward`, …) | ✅ Default; runs in CI |
-| `./gradlew :tests:realCardTest -Preader=NAME` | `@Tag("real-card")` suites driven over PCSC by `RealCardClient`: `MeowlAppletTest`, `SecureChannelTest`, `SchnorrK1Test`, `EcdsaK1Test`, `Ed25519SigningTest`, `HdDerivationTest`, `PersonalisationTest` | ✅ Opt-in; requires a J3R180 with the applet pre-installed on the named PCSC reader |
-| `./gradlew :tools:realCardTest -Preader=NAME` | `SecureChannelClientIT` against the same physical card — verifies the host-side `SecureChannelClient` MEAP-2 implementation byte-for-byte against the applet | ✅ Opt-in; same prerequisites as `:tests:realCardTest` |
+| `./gradlew :tests:realCardTest -Preader=NAME` | `@Tag("real-card")` suites driven over PCSC by `RealCardClient`: `MeowlAppletIT`, `SecureChannelIT`, `SchnorrK1IT`, `EcdsaK1IT`, `Ed25519SigningIT`, `HdDerivationIT`, `PersonalisationIT` | ✅ Opt-in; requires a J3R180 with the applet pre-installed on the named PCSC reader |
+| `./gradlew :tools:realCardTest -Preader=NAME` | `SecureChannelClientIT` against the same physical card — verifies the host-side `SecureChannelClient` Secure Channel implementation byte-for-byte against the applet | ✅ Opt-in; same prerequisites as `:tests:realCardTest` |
 
 Real-card execution is the canonical correctness gate, not the simulator. The [`:applet:Fp25519Inv`](applet/src/main/java/social/meowl/applet/Fp25519Inv.java) RSA-NOPAD inverter and [`:applet:EcPoint`](applet/src/main/java/social/meowl/applet/EcPoint.java) transient EC key allocation only function on the real chip; jcardsim short-circuits both. Every release candidate is therefore gated on `:tests:realCardTest` plus `:tools:realCardTest` against a physical J3R180 paired with an ACR1552U-MF (or equivalent PCSC reader).
 
 ## Host-side CLI (`meowl`)
 
-The `:tools` subproject ships a picocli-based CLI that wraps every host-side workflow you need while building, debugging or operating the meowl-applet — APDU pass-through, GlobalPlatform install / uninstall / list, MEAP-2 Secure Channel client and an interactive JLine shell.
+The `:tools` subproject ships a picocli-based CLI that wraps every host-side workflow you need while building, debugging or operating the meowl-applet — APDU pass-through, GlobalPlatform install / uninstall / list, Secure Channel client and an interactive JLine shell.
 
 ```bash
 ./gradlew :tools:run -q --args="--help"           # full command listing
 ./gradlew :tools:run -q --args="info"             # GET_INFO TLV pretty-print
 ./gradlew :tools:run -q --args="info --json"      # machine-readable for scripts
-./gradlew :tools:run -q --args="sc handshake"     # MEAP-2 Secure Channel diagnostics
+./gradlew :tools:run -q --args="sc handshake"     # Secure Channel diagnostics
 ./gradlew :tools:run -q --args="shell"            # interactive REPL with persistent SC session
 ```
 

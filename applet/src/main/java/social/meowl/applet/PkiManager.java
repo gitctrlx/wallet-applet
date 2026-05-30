@@ -10,7 +10,7 @@ import javacard.framework.Util;
 import javacard.security.Signature;
 
 /**
- * PKI personalisation manager per {@code docs/specs/meap-4.md}.
+ * PKI personalisation manager per {@code docs/specs/protocol.md} §8.
  *
  * <h2>Flow</h2>
  *
@@ -186,9 +186,9 @@ public final class PkiManager {
     }
 
     /**
-     * Reset-to-factory hook. Per {@code docs/specs/meap-4.md} the authentikey is preserved; the
-     * manufacturer-issued certificate is logically wiped so a re-personalised card can install a
-     * fresh one.
+     * Reset-to-factory hook. Per {@code docs/specs/protocol.md} §8 the authentikey is preserved;
+     * the manufacturer-issued certificate is logically wiped so a re-personalised card can install
+     * a fresh one.
      *
      * <p>We zero only the bookkeeping fields, not the 1 KiB cert buffer: with {@code importedLen =
      * 0} the buffer is unreadable through {@link #exportCert} (which gates on {@code importedLen})

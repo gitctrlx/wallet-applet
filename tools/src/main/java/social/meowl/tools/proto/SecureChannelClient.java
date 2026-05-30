@@ -13,10 +13,10 @@ import java.util.Arrays;
 import java.util.Objects;
 
 /**
- * Host-side client for the MEAP-2 Secure Channel. One instance corresponds to one open session,
+ * Host-side client for the meowl Secure Channel. One instance corresponds to one open session,
  * identified by the ephemeral keypair generated at {@link #handshake} time.
  *
- * <p>Wire layout (see {@code docs/specs/meap-2.md}):
+ * <p>Wire layout (see {@code docs/specs/protocol.md} §6):
  *
  * <ul>
  *   <li>handshake: {@code [client_eph_pub(65)]} → {@code [card_eph_pub(65) | sigLen(2 BE) | sig]}
@@ -32,23 +32,23 @@ import java.util.Objects;
  */
 public final class SecureChannelClient {
 
-    /** {@code CLA = 0x80} for every meowl-applet APDU per MEAP-1. */
+    /** {@code CLA = 0x80} for every meowl-applet APDU per protocol.md §1. */
     public static final int CLA_MEOWL = 0x80;
 
-    /** {@code INS = 0x10} — INIT_SECURE_CHANNEL, MEAP-2 §handshake. */
+    /** {@code INS = 0x10} — INIT_SECURE_CHANNEL, protocol.md §6.1. */
     public static final int INS_INIT_SC = 0x10;
 
-    /** {@code INS = 0x11} — OPEN_SECURE_CHANNEL, MEAP-2 §record-layer. */
+    /** {@code INS = 0x11} — OPEN_SECURE_CHANNEL, protocol.md §6.3. */
     public static final int INS_OPEN_SC = 0x11;
 
-    /** KDF info label, MEAP-2 §key-derivation. */
+    /** KDF info label, protocol.md §6.2. */
     public static final byte[] KDF_INFO = "meowl-sc-v1".getBytes(StandardCharsets.UTF_8);
 
     /** KDF output length: K_enc(32) + K_mac(16) + IV_base(16) = 64 bytes. */
     private static final int KDF_OKM_LEN =
             HostCrypto.AES_KEY_LEN + HostCrypto.MAC_KEY_LEN + HostCrypto.AES_BLOCK_LEN;
 
-    /** Outbound MAC's direction-tag, fixed at 0xFF (MEAP-2 §record-layer outbound). */
+    /** Outbound MAC's direction-tag, fixed at 0xFF (protocol.md §6.3, outbound). */
     private static final byte OUTBOUND_DIRECTION_TAG = (byte) 0xFF;
 
     private final APDUBIBO bibo;
@@ -179,7 +179,8 @@ public final class SecureChannelClient {
         byte[] ciphertext = HostCrypto.aesCbcEncrypt(kEnc, iv, innerApdu);
 
         int lc = iv.length + ciphertext.length + HostCrypto.MAC_LEN;
-        // MEAP-2 envelopes ride short-form APDUs; if lc exceeds the single-byte LC field, the
+        // Secure Channel envelopes ride short-form APDUs; if lc exceeds the single-byte LC field,
+        // the
         // host's MAC input (which packs lc into one byte) would diverge from what the card sees
         // and the envelope would be silently rejected with an obscure MAC mismatch.
         if (lc > 0xFF) {

@@ -6,7 +6,7 @@
 // A modern picocli command tree on top of:
 //   * apdu4j 26.x          — BIBO transport, decorators, MockBIBO replay
 //   * GlobalPlatformPro    — library-level GP install / uninstall / list
-//   * BouncyCastle         — host-side secp256k1 / AES / HMAC for the MEAP-2
+//   * BouncyCastle         — host-side secp256k1 / AES / CMAC for the
 //                            Secure Channel client
 //   * JLine 3              — interactive shell (`meowl shell`)
 //   * jackson-jr           — JSON output mode (`--json`)
@@ -42,7 +42,7 @@ dependencies {
     // GlobalPlatformPro — library use, not a forked process.
     implementation(libs.gppro)
 
-    // Host-side crypto for the MEAP-2 Secure Channel client.
+    // Host-side crypto for the Secure Channel client.
     implementation(libs.bouncycastle.prov)
 
     // Interactive shell.
