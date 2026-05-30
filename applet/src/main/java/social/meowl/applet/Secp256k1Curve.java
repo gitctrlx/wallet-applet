@@ -9,7 +9,7 @@ import javacard.security.ECKey;
 /**
  * Curve parameters for {@code secp256k1} per <a href="https://www.secg.org/sec2-v2.pdf">SEC 2
  * v2.0</a> §2.4.1. The byte layout matches the {@link ECKey#setFieldFP setFieldFP / setA / setB /
- * setG / setR / setK} API exposed by JavaCard 3.0.4 so the same backing array can be sliced and
+ * setG / setR / setK} API exposed by JavaCard 3.0.5 so the same backing array can be sliced and
  * handed to every setter.
  *
  * <p>Replaces v1 {@code Secp256k1}: same numeric constants, additional Barrett precomputation

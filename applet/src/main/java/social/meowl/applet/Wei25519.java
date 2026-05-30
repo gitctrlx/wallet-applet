@@ -11,8 +11,8 @@ import javacard.security.ECKey;
  * Curve parameters and Edwards-25519 bijection for the Weierstrass form of curve25519.
  *
  * <p>Wei25519 is the short Weierstrass-form expression of curve25519 — same underlying group as
- * Edwards-25519, just a different parametrisation. Because JavaCard 3.0.4 silicon exposes EC scalar
- * multiplication only for short Weierstrass curves ({@link
+ * Edwards-25519, just a different parametrisation. Because JavaCard 3.0.x (Classic, pre-3.1) silicon
+ * exposes EC scalar multiplication only for short Weierstrass curves ({@link
  * javacard.security.KeyAgreement#ALG_EC_SVDP_DH_PLAIN_XY}), routing Ed25519 through Wei25519 is the
  * only way to get hardware EC acceleration on the standard EdDSA wire format. The dispatcher lives
  * in {@link Ed25519}.

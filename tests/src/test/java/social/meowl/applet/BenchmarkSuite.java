@@ -21,12 +21,14 @@ import social.meowl.applet.testkit.MeowlFixtures;
 import social.meowl.applet.testkit.TestConstants;
 
 /**
- * jcardsim performance benchmarks for the meowl applet's signing and HD-walk paths.
+ * Performance benchmarks for the meowl applet's signing and HD-walk paths, run against a physical
+ * J3R180 over PCSC.
  *
- * <p>Disabled by default. Enable with {@code -Dbench=true}, e.g.:
+ * <p>Tagged {@code real-card} and additionally gated on {@code -Dbench=true}, so it is excluded from
+ * the default {@code :tests:test} run and only fires when explicitly requested:
  *
  * <pre>
- *   ./gradlew :tests:test --tests social.meowl.applet.BenchmarkSuite \
+ *   ./gradlew :tests:realCardTest --tests social.meowl.applet.BenchmarkSuite \
  *       -Dbench=true -i
  * </pre>
  *
@@ -34,14 +36,14 @@ import social.meowl.applet.testkit.TestConstants;
  *
  * <ol>
  *   <li>Brings the applet to {@code SEEDED + PIN-verified} state once per test.
- *   <li>Runs {@link #WARMUP} iterations to let the JIT warm up.
+ *   <li>Runs {@link #WARMUP} warm-up iterations.
  *   <li>Runs {@link #SAMPLES} iterations, recording per-call wall-clock latency.
  *   <li>Reports p50 / p95 / p99 / mean / stddev to {@code System.out}.
  * </ol>
  *
- * <p>jcardsim runs in the same JVM as the test; numbers are <strong>not</strong> representative of
- * real silicon, which has its own clock domain and EEPROM write latencies. Use the {@code meowl
- * bench} CLI command for hardware-side numbers.
+ * <p>Latencies reflect real silicon — the card's own clock domain, EC/RSA coprocessor and EEPROM
+ * write costs — plus PCSC and host-side framing overhead. They are wall-clock end-to-end numbers,
+ * not isolated on-card cycle counts.
  */
 @EnabledIfSystemProperty(named = "bench", matches = "true")
 @Tag("real-card")

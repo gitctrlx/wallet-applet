@@ -292,12 +292,10 @@ public final class SecureChannel {
             return (short) (sigOffset + sigLen);
         } catch (ISOException e) {
             reset();
-            ISOException.throwIt(e.getReason());
-            return 0;
+            throw Constants.fail(e.getReason());
         } catch (Exception e) {
             reset();
-            ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
-            return 0;
+            throw Constants.fail(Constants.SW_SECURE_CHANNEL_FAILED);
         }
     }
 

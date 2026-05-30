@@ -11,12 +11,12 @@ import javacard.security.MessageDigest;
 /**
  * RFC 8032 Ed25519 signing primitive backed by the J3R180 EC coprocessor.
  *
- * <p>JavaCard 3.0.4 silicon exposes EC scalar multiplication only for short Weierstrass curves;
- * Ed25519's native group is twisted Edwards. The signing pipeline therefore routes the two scalar
- * multiplications ({@code A = s·G} and {@code R = r·G}) through {@link Wei25519} — the
- * Weierstrass-form expression of curve25519 — using {@link EcPoint} on top of {@link
- * javacard.security.KeyAgreement#ALG_EC_SVDP_DH_PLAIN_XY}, then maps each affine Wei25519 result
- * back to RFC 8032 §5.1.2 little-endian compressed form via {@link Wei25519#encodeEdwards}.
+ * <p>JavaCard 3.0.x (Classic, pre-3.1) silicon exposes EC scalar multiplication only for short
+ * Weierstrass curves; Ed25519's native group is twisted Edwards. The signing pipeline therefore
+ * routes the two scalar multiplications ({@code A = s·G} and {@code R = r·G}) through {@link
+ * Wei25519} — the Weierstrass-form expression of curve25519 — using {@link EcPoint} on top of
+ * {@link javacard.security.KeyAgreement#ALG_EC_SVDP_DH_PLAIN_XY}, then maps each affine Wei25519
+ * result back to RFC 8032 §5.1.2 little-endian compressed form via {@link Wei25519#encodeEdwards}.
  *
  * <h2>Cofactor handling — the {@code (s/8) · (8G)} trick</h2>
  *

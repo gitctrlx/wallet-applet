@@ -156,8 +156,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
                 responseLen = handleOpenSecureChannel(apdu, buffer);
                 break;
             default:
-                ISOException.throwIt(Constants.SW_INS_NOT_SUPPORTED);
-                return;
+                throw Constants.fail(Constants.SW_INS_NOT_SUPPORTED);
         }
         apdu.setOutgoingAndSend((short) 0, responseLen);
     }
@@ -259,8 +258,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
             case Constants.INS_SIGN_ED25519:
                 return handleSignEd25519(buffer, dataOff, dataLen);
             default:
-                ISOException.throwIt(Constants.SW_INS_NOT_SUPPORTED);
-                return 0;
+                throw Constants.fail(Constants.SW_INS_NOT_SUPPORTED);
         }
     }
 
@@ -435,8 +433,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
                 pkiManager.importFinalize();
                 return 0;
             default:
-                ISOException.throwIt(Constants.SW_INCORRECT_P1P2);
-                return 0;
+                throw Constants.fail(Constants.SW_INCORRECT_P1P2);
         }
     }
 
@@ -542,8 +539,7 @@ public final class MeowlApplet extends Applet implements WipeTrigger {
             case Constants.CURVE_ED25519:
                 return handleExportXpubEd25519(buffer, pathOff, depth);
             default:
-                ISOException.throwIt(Constants.SW_INCORRECT_P1P2);
-                return 0;
+                throw Constants.fail(Constants.SW_INCORRECT_P1P2);
         }
     }
 
