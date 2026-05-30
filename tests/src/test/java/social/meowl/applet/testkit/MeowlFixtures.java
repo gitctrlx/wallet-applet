@@ -7,7 +7,7 @@ package social.meowl.applet.testkit;
 import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
 import social.meowl.applet.Constants;
-import social.meowl.applet.cardclient.CardClient;
+import social.meowl.applet.cardclient.RealCardClient;
 
 /**
  * Reusable lifecycle setup helpers for end-to-end test suites. Each fixture mirrors the legacy
@@ -28,7 +28,7 @@ public final class MeowlFixtures {
      * <p>Real-card suites invoke this from {@code @AfterEach} so the next test's
      * {@code @BeforeEach} starts on the same lifecycle floor.
      */
-    public static void resetCard(CardClient card) {
+    public static void resetCard(RealCardClient card) {
         int total = Constants.RESET_REQUIRED_INVOCATIONS & 0xFF;
         for (int i = 0; i < total; i++) {
             ResponseAPDU r =
@@ -62,7 +62,7 @@ public final class MeowlFixtures {
      * @return the live SC session post-VERIFY_PIN, ready for inner-channel commands.
      * @throws IllegalStateException if any step returns a non-{@code 9000} status word.
      */
-    public static HostSession bringToSetupDoneAndVerifyPin(CardClient card) {
+    public static HostSession bringToSetupDoneAndVerifyPin(RealCardClient card) {
         HostSession session = HostSession.open(card);
         byte[] cert = new byte[64];
         for (int i = 0; i < cert.length; i++) cert[i] = (byte) i;

@@ -199,21 +199,6 @@ class BigNatTest {
         }
 
         @Test
-        @DisplayName("ctSelectCopy with mask -1 copies src; with mask 0 keeps dst")
-        void ctSelectCopy() {
-            byte[] src = randomScalar();
-            byte[] dst = randomScalar();
-            byte[] copied = dst.clone();
-
-            BigNat.ctSelectCopy(copied, (short) 0, src, (short) 0, LEN, (short) -1);
-            assertArrayEquals(src, copied);
-
-            byte[] kept = dst.clone();
-            BigNat.ctSelectCopy(kept, (short) 0, src, (short) 0, LEN, (short) 0);
-            assertArrayEquals(dst, kept);
-        }
-
-        @Test
         @DisplayName(
                 "ctSelectNeg with mask -1 produces (m − a); zero corner is masked back to"
                         + " zero by neg")

@@ -19,24 +19,20 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import social.meowl.applet.cardclient.CardClient;
-import social.meowl.applet.cardclient.CardClientFactory;
+import social.meowl.applet.cardclient.RealCardClient;
 import social.meowl.applet.testkit.MeowlFixtures;
 
 /**
  * Integration tests for the always-reachable outer-frame INS surface of the meowl applet: {@code
  * GET_INFO}, {@code GET_AUTHENTIKEY} and the multi-step {@code RESET_TO_FACTORY} trigger.
  *
- * <p>Drives the applet through {@link CardClient}, so the same source runs on whichever backend the
- * active Gradle task selects (simulator or PCSC). Today the simulator backend cannot install the
- * post-Phase-1 applet, so this suite carries {@code @Tag("real-card")} and only the {@code
- * :tests:realCardTest} task picks it up; once a J3R180-faithful simulator lands the tag can drop
- * with no test-source change.
+ * <p>Drives the applet through {@link RealCardClient} over PCSC. The post-Phase-1 applet only
+ * installs on real J3R180 silicon, so this suite carries {@code @Tag("real-card")} and only the
+ * {@code :tests:realCardTest} task picks it up.
  *
- * <p>Each test starts from a freshly-selected applet — simulator backend reinstalls in
- * {@code @BeforeEach}, real backend opens a fresh PCSC channel and disconnects with {@code reset =
- * true} in {@link #tearDown} so the {@code CLEAR_ON_RESET} counter (and therefore the {@code
- * RESET_TO_FACTORY} state machine) is restored between tests.
+ * <p>Each test starts from a freshly-selected applet: {@code @BeforeEach} opens a fresh PCSC
+ * channel and {@link #tearDown} disconnects with {@code reset = true} so the {@code CLEAR_ON_RESET}
+ * counter (and therefore the {@code RESET_TO_FACTORY} state machine) is restored between tests.
  */
 @Tag("real-card")
 class MeowlAppletTest {
@@ -56,11 +52,11 @@ class MeowlAppletTest {
     private static final int INS_SIGN_ED25519 = Constants.INS_SIGN_ED25519 & 0xFF;
     private static final int INS_IMPORT_SEED = Constants.INS_IMPORT_SEED & 0xFF;
 
-    private CardClient card;
+    private RealCardClient card;
 
     @BeforeEach
     void setUp() {
-        card = CardClientFactory.create(APPLET_AID_BYTES);
+        card = RealCardClient.connect(APPLET_AID_BYTES);
     }
 
     @AfterEach

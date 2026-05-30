@@ -29,8 +29,8 @@ import social.meowl.tools.transport.CardTransport;
  *
  * <p>Runs a fresh Secure Channel handshake, performs a {@code VERIFY_PIN} with the supplied PIN,
  * then times each operation with {@link #warmup} warm-up iterations followed by {@link #samples}
- * timed iterations. Text output mirrors {@code BenchmarkSuite} for easy side-by-side comparison
- * between simulator and silicon; {@code --json} emits a structured object for regression harnesses.
+ * timed iterations. Text mode prints a p50/p95/p99 table to stdout (per-op progress on stderr);
+ * {@code --json} emits a structured object for regression harnesses.
  */
 @Command(
         name = "bench",

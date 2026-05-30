@@ -25,8 +25,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import social.meowl.applet.cardclient.CardClient;
-import social.meowl.applet.cardclient.CardClientFactory;
+import social.meowl.applet.cardclient.RealCardClient;
 import social.meowl.applet.testkit.HostSession;
 import social.meowl.applet.testkit.MeowlFixtures;
 import social.meowl.applet.testkit.TestConstants;
@@ -60,7 +59,7 @@ class EcdsaK1Test {
             TestConstants.parseHex(
                     "a591a6d40bf420404a011733cfb7b190d62c65bf0bcda32b57b277d9ad9f146e");
 
-    private CardClient card;
+    private RealCardClient card;
     private HostSession session;
 
     @BeforeAll
@@ -72,7 +71,7 @@ class EcdsaK1Test {
 
     @BeforeEach
     void setUp() throws Exception {
-        card = CardClientFactory.create(TestConstants.APPLET_AID_BYTES);
+        card = RealCardClient.connect(TestConstants.APPLET_AID_BYTES);
         session = MeowlFixtures.bringToSetupDoneAndVerifyPin(card);
         // SIGN_ECDSA_K1 needs a seeded card; install vector 1 seed before each test.
         session.sendInnerExpectOk(
@@ -260,7 +259,7 @@ class EcdsaK1Test {
             // (i.e. NOT seed it) so the sign attempt actually hits the lifecycle guard.
             MeowlFixtures.resetCard(card);
             card.close();
-            card = CardClientFactory.create(TestConstants.APPLET_AID_BYTES);
+            card = RealCardClient.connect(TestConstants.APPLET_AID_BYTES);
             session = MeowlFixtures.bringToSetupDoneAndVerifyPin(card);
             // Do NOT import a seed: lifecycle is SETUP_DONE, not SEEDED.
             ResponseAPDU r = signEcdsaResp(new int[] {0}, SAMPLE_DIGEST);

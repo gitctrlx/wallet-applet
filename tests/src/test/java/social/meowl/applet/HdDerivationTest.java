@@ -20,8 +20,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import social.meowl.applet.cardclient.CardClient;
-import social.meowl.applet.cardclient.CardClientFactory;
+import social.meowl.applet.cardclient.RealCardClient;
 import social.meowl.applet.testkit.HostSession;
 import social.meowl.applet.testkit.MeowlFixtures;
 import social.meowl.applet.testkit.TestConstants;
@@ -53,7 +52,7 @@ class HdDerivationTest {
                     "4b381541583be4423346c643850da4b320e46a87ae3d2a4e6da11eba819cd4ac"
                             + "ba45d239319ac14f863b8d5ab5a0d0c64d2e8a1e7d1457df2e5a3c51c73235be");
 
-    private CardClient card;
+    private RealCardClient card;
     private HostSession session;
 
     @BeforeAll
@@ -65,7 +64,7 @@ class HdDerivationTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        card = CardClientFactory.create(TestConstants.APPLET_AID_BYTES);
+        card = RealCardClient.connect(TestConstants.APPLET_AID_BYTES);
         // Walk the card to SETUP_DONE: install a tiny PKI cert, lock, run SETUP, verify PIN.
         session = MeowlFixtures.bringToSetupDoneAndVerifyPin(card);
     }
@@ -445,7 +444,7 @@ class HdDerivationTest {
         void backToBackBip32() {
             // First derivation: m/0H. Triggers Bip32.scalarKey.clearKey() at the end.
             byte[] first = exportXpub(Constants.CURVE_SECP256K1, new int[] {0x80000000});
-            // Second derivation on the same simulator instance must work despite the post-clear
+            // Second derivation on the same card instance must work despite the post-clear
             // state of scalarKey — the EC scalar mult inside ckdPriv re-initialises the key.
             byte[] second = exportXpub(Constants.CURVE_SECP256K1, new int[] {0x80000000, 1});
             assertArrayEquals(

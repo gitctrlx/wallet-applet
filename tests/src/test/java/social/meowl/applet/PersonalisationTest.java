@@ -22,8 +22,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import social.meowl.applet.cardclient.CardClient;
-import social.meowl.applet.cardclient.CardClientFactory;
+import social.meowl.applet.cardclient.RealCardClient;
 import social.meowl.applet.testkit.HostSession;
 import social.meowl.applet.testkit.MeowlFixtures;
 import social.meowl.applet.testkit.TestConstants;
@@ -36,7 +35,7 @@ import social.meowl.applet.testkit.TestConstants;
 @Tag("real-card")
 class PersonalisationTest {
 
-    private CardClient card;
+    private RealCardClient card;
     private HostSession session;
 
     @BeforeAll
@@ -48,7 +47,7 @@ class PersonalisationTest {
 
     @BeforeEach
     void setUp() {
-        card = CardClientFactory.create(TestConstants.APPLET_AID_BYTES);
+        card = RealCardClient.connect(TestConstants.APPLET_AID_BYTES);
         session = HostSession.open(card);
     }
 

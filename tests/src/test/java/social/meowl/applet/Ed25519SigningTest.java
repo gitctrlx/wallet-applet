@@ -30,8 +30,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import social.meowl.applet.cardclient.CardClient;
-import social.meowl.applet.cardclient.CardClientFactory;
+import social.meowl.applet.cardclient.RealCardClient;
 import social.meowl.applet.testkit.HostSession;
 import social.meowl.applet.testkit.MeowlFixtures;
 import social.meowl.applet.testkit.TestConstants;
@@ -77,7 +76,7 @@ class Ed25519SigningTest {
         (byte) 0x04, (byte) 0x22, (byte) 0x04, (byte) 0x20,
     };
 
-    private CardClient card;
+    private RealCardClient card;
     private HostSession session;
 
     @BeforeAll
@@ -89,7 +88,7 @@ class Ed25519SigningTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        card = CardClientFactory.create(TestConstants.APPLET_AID_BYTES);
+        card = RealCardClient.connect(TestConstants.APPLET_AID_BYTES);
         session = MeowlFixtures.bringToSetupDoneAndVerifyPin(card);
         session.sendInnerExpectOk(
                 Constants.INS_IMPORT_SEED,
@@ -324,7 +323,7 @@ class Ed25519SigningTest {
             // IMPORT_SEED so the sign attempt actually hits the lifecycle guard.
             MeowlFixtures.resetCard(card);
             card.close();
-            card = CardClientFactory.create(TestConstants.APPLET_AID_BYTES);
+            card = RealCardClient.connect(TestConstants.APPLET_AID_BYTES);
             session = MeowlFixtures.bringToSetupDoneAndVerifyPin(card);
             ResponseAPDU r = signEd25519Resp(new int[] {0x80000000}, SAMPLE_MESSAGE);
             assertEquals(Constants.SW_LIFECYCLE_INVALID & 0xFFFF, r.getSW());

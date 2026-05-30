@@ -30,17 +30,16 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import social.meowl.applet.cardclient.CardClient;
-import social.meowl.applet.cardclient.CardClientFactory;
+import social.meowl.applet.cardclient.RealCardClient;
 import social.meowl.applet.sc.KdfCmacHost;
 import social.meowl.applet.testkit.MeowlFixtures;
 
 /**
- * End-to-end Secure Channel tests driving MeowlApplet through {@link CardClient}.
+ * End-to-end Secure Channel tests driving MeowlApplet through {@link RealCardClient}.
  *
  * <p>Verifies the entire handshake (ECDH + AES-CMAC-128 KBKDF + authentikey ECDSA signature) and
  * the envelope round-trip (encrypt, MAC, IV monotonicity, replay defense). Tagged {@code real-card}
- * because the simulator backend cannot install the post-Phase-1 applet.
+ * because the post-Phase-1 applet only installs on real J3R180 silicon.
  */
 @Tag("real-card")
 class SecureChannelTest {
@@ -59,7 +58,7 @@ class SecureChannelTest {
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    private CardClient card;
+    private RealCardClient card;
 
     @BeforeAll
     static void registerProvider() {
@@ -70,7 +69,7 @@ class SecureChannelTest {
 
     @BeforeEach
     void setUp() {
-        card = CardClientFactory.create(APPLET_AID_BYTES);
+        card = RealCardClient.connect(APPLET_AID_BYTES);
     }
 
     @AfterEach

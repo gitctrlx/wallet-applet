@@ -11,12 +11,8 @@
 //   * JLine 3              — interactive shell (`meowl shell`)
 //   * jackson-jr           — JSON output mode (`--json`)
 //
-// Run with `./gradlew :tools:run --args="..."`, install a launcher with
-// `./gradlew :tools:installDist`, or (later) compile to a native binary with
-// `./gradlew :tools:nativeCompile` once the GraalVM Buildtools plugin is wired
-// up. The picocli annotation processor already emits reflection / resource
-// descriptors under `META-INF/native-image/social.meowl/meowl/` so a native
-// build is a one-line addition rather than a refactor.
+// Run with `./gradlew :tools:run --args="..."` or install a launcher with
+// `./gradlew :tools:installDist`.
 
 plugins {
     application
@@ -118,7 +114,6 @@ tasks.register<Test>("realCardTest") {
         showStandardStreams = true
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
-    systemProperty("cardBackend", "real")
     project.findProperty("reader")?.let { systemProperty("cardReader", it.toString()) }
 }
 

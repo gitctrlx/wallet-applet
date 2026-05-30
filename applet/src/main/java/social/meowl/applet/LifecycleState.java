@@ -87,7 +87,9 @@ public final class LifecycleState {
         }
     }
 
-    /** Pure decision function for {@link #transitionTo}, exposed package-private for unit tests. */
+    /**
+     * Pure decision function for {@link #transitionToInTx}, exposed package-private for unit tests.
+     */
     static boolean isLegalForward(byte from, byte to) {
         return to == (byte) (from + 1) && from >= UNINITIALIZED && from < SEEDED && to <= SEEDED;
     }

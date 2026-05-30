@@ -78,8 +78,8 @@ class Fp25519Test {
     class Multiplicative {
 
         @Test
-        @DisplayName("mul / sqr over 50 random pairs")
-        void mulSqr() {
+        @DisplayName("mul over 50 random pairs")
+        void mul() {
             byte[] out = new byte[Fp25519.LEN];
             byte[] scratch = new byte[Fp25519.MUL_SCRATCH_LEN];
             for (int i = 0; i < 50; i++) {
@@ -95,8 +95,6 @@ class Fp25519Test {
                         scratch,
                         (short) 0);
                 assertArrayEquals(beBytes(a.multiply(b).mod(P)), out);
-                Fp25519.sqr(beBytes(a), (short) 0, out, (short) 0, scratch, (short) 0);
-                assertArrayEquals(beBytes(a.modPow(BigInteger.TWO, P)), out);
             }
         }
     }

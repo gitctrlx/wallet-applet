@@ -1,14 +1,14 @@
 // SPDX-FileCopyrightText: 2026 meowl.social contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Tests run against jcardsim inside a normal JVM — they do not load the CAP.
-// The applet sources are reused from `:applet`.
+// Unit tests run in a normal JVM; jcardsim supplies the javacard.* runtime so the
+// applet's arithmetic/helper classes can be exercised directly without loading the CAP.
 
 plugins {
     `java-library`
 }
 
-description = "meowl-applet — unit + simulator tests (real-card tests opt-in)"
+description = "meowl-applet — unit tests (real-card tests opt-in)"
 
 java {
     toolchain.languageVersion =
@@ -33,14 +33,14 @@ dependencies {
     testImplementation(libs.slf4j.api)
     testRuntimeOnly(libs.slf4j.simple)
 
-    // Reuse applet sources for the simulator.
+    // Reuse applet sources so unit tests can call the applet classes directly.
     testImplementation(project(":applet"))
 }
 
-// Default `test` task: pure unit tests + simulator-safe tests only. Tests tagged
-// `real-card` are excluded because the J3R180-aligned applet (Fp25519Inv RSA-only,
-// EcPoint transient-only EC keys) cannot install on jcardsim — those tests must
-// run against actual silicon. See `realCardTest` below.
+// Default `test` task: pure unit tests only. Tests tagged `real-card` are excluded
+// because the J3R180-aligned applet (Fp25519Inv RSA-only, EcPoint transient-only EC
+// keys) cannot install on jcardsim — those tests must run against actual silicon. See
+// `realCardTest` below.
 tasks.test {
     useJUnitPlatform {
         excludeTags("real-card")
@@ -73,9 +73,6 @@ tasks.register<Test>("realCardTest") {
         showStandardStreams = true
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
-    // Forward -Dbench=true to the forked test JVM so BenchmarkSuite (gated on the
-    // system property *and* `real-card` tag) runs only when explicitly requested.
-    System.getProperty("bench")?.let { systemProperty("bench", it) }
     // Reader name flows through to RealCardClient.connect when set.
     project.findProperty("reader")?.let { systemProperty("cardReader", it.toString()) }
 }

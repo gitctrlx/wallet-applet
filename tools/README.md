@@ -13,6 +13,7 @@ A modern picocli command tree that wraps every host-side workflow you need while
 | | `authentikey` | Returns the 33-byte compressed authentikey public key. |
 | | `select` | Issues a SELECT BY DF NAME and prints the FCI bytes. |
 | | `reset --confirm` | Drives `RESET_TO_FACTORY` to completion. |
+| Provisioning | `bootstrap` | One-shot personalise → SETUP → import seed (deterministic by default) to bring a fresh card to `SEEDED`. |
 | Raw APDU | `apdu <hex>` | Transmits an arbitrary hex APDU (optionally with `--no-select`). |
 | | `replay <dump> <hex>` | Replays a previously captured `--dump` session against `MockBIBO` — no card required. |
 | GlobalPlatform | `gp list` | Enumerate installed packages, applets and security domains. |
@@ -21,6 +22,7 @@ A modern picocli command tree that wraps every host-side workflow you need while
 | | _ISD keys_ | Every `gp` subcommand accepts `--key-master HEX` _or_ `--key-enc HEX --key-mac HEX --key-kek HEX`; without flags the well-known GP development default `40 41 ... 4F` is used. |
 | Secure Channel | `sc handshake` | One-shot MEAP-2 handshake with authentikey-signature verification. |
 | | `sc send <inner-hex>` | Open an SC and send one inner APDU through the encrypted envelope. |
+| Benchmarking | `bench` | Measures p50/p95/p99 signing / HD-walk latency on a `SEEDED` card (`--samples`, `--warmup`, `--json`). |
 | Interactive | `shell` | Persistent REPL with one PC/SC connection and an optional SC session. |
 
 ## Build / run
@@ -135,7 +137,7 @@ meowl[sc]> exit
 # }
 ```
 
-The Rust SDK's integration tests can shell out to `meowl info --json` and parse the result without re-implementing any APDU framing.
+Host SDKs and integration tests can shell out to `meowl info --json` and parse the result without re-implementing any APDU framing.
 
 ## Production hardening
 
@@ -143,12 +145,10 @@ The Rust SDK's integration tests can shell out to `meowl info --json` and parse 
 
 A production deployment **MUST** rotate the ISD keys before loading any sensitive applet:
 
-1. **Rotate** ISD keys to a per-card random value via `PUT KEY` (under the vendor CDK).
-   _The CLI surface for this — `meowl gp put-key` — is on the roadmap; today, use `gp.exe` from GlobalPlatformPro directly._
+1. **Rotate** ISD keys to a per-card random value via `PUT KEY` (under the vendor CDK), using `gp` from GlobalPlatformPro.
 2. **Install** the meowl applet with the new keys.
 3. **Personalise** at the applet layer (`SETUP`, master seed, PIN).
 4. **Lock** the ISD: switch the card to `CARD_LOCKED` lifecycle and securely destroy the rotated keys (one-way burn). After this step, no one — including you — can replace or remove the applet, which is the very definition of an immutable hardware wallet.
-   _CLI surface: `meowl gp lock-card`, also on the roadmap._
 
 Until the rotation+lock flow is automated end-to-end, the safe operating mode is: **use the development-default or vendor CDK only on cards that hold no real key material**.
 
@@ -164,19 +164,9 @@ Until the rotation+lock flow is automated end-to-end, the safe operating mode is
 
 Run with `-v` to see the underlying stack trace.
 
-## GraalVM native image (optional)
-
-The `picocli-codegen` annotation processor already emits reflection / resource descriptors under `META-INF/native-image/social.meowl/meowl/`. Building a native binary is a future addition — the current Gradle wiring keeps the option open without forcing GraalVM on every contributor:
-
-```bash
-# When the GraalVM Buildtools plugin lands in tools/build.gradle.kts:
-./gradlew :tools:nativeCompile
-./tools/build/native/nativeCompile/meowl info
-```
-
 ## Architecture at a glance
 
-```
+```text
 tools/src/main/java/social/meowl/tools/
 ├── Main.java                     ── one-line entry: System.exit(MeowlCli.commandLine().execute(args))
 ├── core/                         ── pure helpers (Hex, Tlv, MeowlInsn, MeowlSw, MeowlAid)
@@ -184,7 +174,7 @@ tools/src/main/java/social/meowl/tools/
 ├── proto/                        ── MEAP-2 host client (KdfCmac, HostCrypto, SecureChannelClient)
 ├── gp/                           ── in-process GlobalPlatformPro (GpFacade)
 ├── shell/                        ── stateful REPL engine (ShellSession)
-└── cli/                          ── picocli command tree (MeowlCli + 13 subcommands)
+└── cli/                          ── picocli command tree (MeowlCli + 12 subcommands)
 ```
 
 Test pyramid:
@@ -192,12 +182,12 @@ Test pyramid:
 | Layer | Tests | Speed |
 | --- | --- | --- |
 | `core/` & helpers | strict hex / TLV / INS / SW / AID round-trips | <100 ms |
-| `proto/` | RFC 5869 vectors, AES / ECDH round-trips, JCardSim integration | ~1 s |
+| `proto/` | RFC 5869 vectors, AES / ECDH round-trips, BouncyCastle oracles | ~1 s |
 | `cli/` | picocli registration, JSON output, exit-code mapping | <100 ms |
 | `shell/` | MockBIBO-driven dispatcher tests | <100 ms |
 | `transport/` | MockBIBO decorator / dump-replay / PrintStream layering | <100 ms |
 
-Total: 253 tests, <2 s end-to-end on a warm JVM.
+The full unit suite runs in well under a second on a warm JVM.
 
 ## License
 

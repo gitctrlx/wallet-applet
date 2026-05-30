@@ -14,8 +14,9 @@ import javax.smartcardio.ResponseAPDU;
 import javax.smartcardio.TerminalFactory;
 
 /**
- * {@link CardClient} backed by a PCSC-attached physical card. The applet under test must already be
- * installed on the card; this client only opens a channel and runs ISO 7816 SELECT.
+ * Card I/O surface for the integration suites, backed by a PCSC-attached physical card. The applet
+ * under test must already be installed on the card; this client only opens a channel and runs ISO
+ * 7816 SELECT.
  *
  * <p>The reader is selected by name via {@code -DcardReader=...}; if unset, the first terminal
  * reporting a card present is used (so dual-interface readers such as the ACR1552 1S, which expose
@@ -31,10 +32,15 @@ import javax.smartcardio.TerminalFactory;
  * <p>Persistent-state isolation between tests is the test's responsibility — see {@code
  * MeowlFixtures.resetCard()} in the testkit, which the suites invoke from {@code @AfterEach}.
  */
-public final class RealCardClient implements CardClient {
+public final class RealCardClient implements AutoCloseable {
 
     private final Card card;
     private final CardChannel channel;
+
+    /** Connects using the reader named by {@code -DcardReader=...} (first available when unset). */
+    public static RealCardClient connect(byte[] aidBytes) {
+        return connect(aidBytes, System.getProperty("cardReader"));
+    }
 
     /**
      * Connects to a PCSC reader, opens a channel, and SELECTs {@code aidBytes}. Persistent state
@@ -94,7 +100,6 @@ public final class RealCardClient implements CardClient {
         this.channel = channel;
     }
 
-    @Override
     public ResponseAPDU transmit(CommandAPDU cmd) {
         try {
             return channel.transmit(cmd);

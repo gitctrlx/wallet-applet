@@ -16,28 +16,28 @@ import javax.smartcardio.ResponseAPDU;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.math.ec.ECPoint;
 import social.meowl.applet.Constants;
-import social.meowl.applet.cardclient.CardClient;
+import social.meowl.applet.cardclient.RealCardClient;
 import social.meowl.applet.sc.KdfCmacHost;
 
 /**
  * Host-side reference Secure Channel client for end-to-end test suites. Mirrors MEAP-2 byte-for-
  * byte: ECDH on secp256k1 → AES-CMAC-128 KBKDF → AES-256-CBC + AES-CMAC-128 record layer.
  *
- * <p>Open a session with {@link #open(CardClient)}; thereafter use {@link #sendInnerExpectOk} for
- * happy-path inner APDUs and {@link #sendInner} when the test needs to inspect a non-{@code 9000}
- * status word. The implementation deliberately re-derives every primitive on top of BouncyCastle so
- * tests do not depend on the production {@code tools/proto/SecureChannelClient} — keeping host and
- * card sides reachable through independent code paths preserves the byte-for-byte cross-check value
- * of these suites.
+ * <p>Open a session with {@link #open(RealCardClient)}; thereafter use {@link #sendInnerExpectOk}
+ * for happy-path inner APDUs and {@link #sendInner} when the test needs to inspect a non-{@code
+ * 9000} status word. The implementation deliberately re-derives every primitive on top of
+ * BouncyCastle so tests do not depend on the production {@code tools/proto/SecureChannelClient} —
+ * keeping host and card sides reachable through independent code paths preserves the byte-for-byte
+ * cross-check value of these suites.
  */
 public final class HostSession {
 
-    private final CardClient card;
+    private final RealCardClient card;
     private final byte[] kEnc;
     private final byte[] kMac;
     private long counter;
 
-    private HostSession(CardClient card, byte[] kEnc, byte[] kMac) {
+    private HostSession(RealCardClient card, byte[] kEnc, byte[] kMac) {
         this.card = card;
         this.kEnc = kEnc;
         this.kMac = kMac;
@@ -50,7 +50,7 @@ public final class HostSession {
      * to assert handshake integrity (notably {@code SecureChannelTest}) keep their own bespoke
      * Session helper for that reason.
      */
-    public static HostSession open(CardClient card) {
+    public static HostSession open(RealCardClient card) {
         BigInteger clientPriv;
         do {
             byte[] cand = new byte[32];

@@ -13,9 +13,9 @@ import javacard.framework.Util;
  * EC coprocessor returns an affine Wei25519 point. The v1 {@code Field25519} class was the inner
  * loop of the software Edwards group law; in v2 only the encoding transformation lives here, so the
  * API is smaller. Additive arithmetic ({@link #sub}, {@link #increment}, {@link #decrement})
- * delegates to {@link BigNat}; multiplicative arithmetic ({@link #mul}, {@link #sqr}) uses
- * schoolbook plus a constant-time pseudo-Mersenne reducer that runs under 10 ms on J3R180 silicon.
- * Modular inversion is delegated to {@link Fp25519Inv} so the RSA dependency stays explicit.
+ * delegates to {@link BigNat}; multiplicative arithmetic ({@link #mul}) uses schoolbook plus a
+ * constant-time pseudo-Mersenne reducer that runs under 10 ms on J3R180 silicon. Modular inversion
+ * is delegated to {@link Fp25519Inv} so the RSA dependency stays explicit.
  *
  * <h2>Representation</h2>
  *
@@ -46,21 +46,10 @@ public final class Fp25519 {
         (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xED,
     };
 
-    /** Scratch budget for {@link #mul} / {@link #sqr}: 64 bytes for the unreduced product. */
+    /** Scratch budget for {@link #mul}: 64 bytes for the unreduced product. */
     public static final short MUL_SCRATCH_LEN = (short) 64;
 
     private Fp25519() {}
-
-    /** {@code dst[..] ← src[..]} (32 bytes). */
-    public static void copy(byte[] src, short srcOff, byte[] dst, short dstOff) {
-        Util.arrayCopyNonAtomic(src, srcOff, dst, dstOff, LEN);
-    }
-
-    /** {@code dst[..] ← 1} (canonical 32-byte big-endian one). */
-    public static void one(byte[] dst, short dstOff) {
-        Util.arrayFillNonAtomic(dst, dstOff, LEN, (byte) 0);
-        dst[(short) (dstOff + LEN - 1)] = (byte) 0x01;
-    }
 
     /** {@code out ← (a − b) mod p}. Output may alias either input. Constant-time. */
     public static void sub(byte[] a, short aOff, byte[] b, short bOff, byte[] out, short outOff) {
@@ -113,12 +102,6 @@ public final class Fp25519 {
         BigNat.multAsymmetric(a, aOff, LEN, b, bOff, LEN, scratch, scratchOff);
         reducePseudoMersenne(scratch, scratchOff, out, outOff);
         Util.arrayFillNonAtomic(scratch, scratchOff, MUL_SCRATCH_LEN, (byte) 0);
-    }
-
-    /** {@code out ← (a · a) mod p}. Implemented as {@code mul(a, a)} for code-size minimality. */
-    public static void sqr(
-            byte[] a, short aOff, byte[] out, short outOff, byte[] scratch, short scratchOff) {
-        mul(a, aOff, a, aOff, out, outOff, scratch, scratchOff);
     }
 
     /**

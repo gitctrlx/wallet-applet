@@ -191,10 +191,10 @@ public final class PkiManager {
      * fresh one.
      *
      * <p>We zero only the bookkeeping fields, not the 1 KiB cert buffer: with {@code importedLen =
-     * 0} the buffer is unreadable through {@link #exportPagedAt} (which gates on {@code
-     * importedLen}) and {@link #importInit} repaints the staged region with zeros before any future
-     * WRITE arrives, so residual bytes can never surface to the host. Skipping the bulk fill keeps
-     * the wipe transaction small enough to commit within the BWT of a contactless link.
+     * 0} the buffer is unreadable through {@link #exportCert} (which gates on {@code importedLen})
+     * and {@link #importInit} repaints the staged region with zeros before any future WRITE
+     * arrives, so residual bytes can never surface to the host. Skipping the bulk fill keeps the
+     * wipe transaction small enough to commit within the BWT of a contactless link.
      *
      * <p>Caller MUST hold a {@link JCSystem#beginTransaction()} block; bundled with PIN, master
      * seed and lifecycle wipes into the single atomic reset-to-factory commit driven by {@link

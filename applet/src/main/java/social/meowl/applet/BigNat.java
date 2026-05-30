@@ -21,14 +21,12 @@ import javacard.framework.Util;
  * <h2>Timing model</h2>
  *
  * <ul>
- *   <li><b>Variable-time</b>: {@link #lessThan}, {@link #isZero}. These early-exit and MUST only be
- *       fed public material (host-provided lengths, recovered public points).
  *   <li><b>Constant-time</b>: every {@code ct*} primitive walks every byte unconditionally and uses
  *       a mask-driven select between two computed values.
- *   <li><b>Schedule-independent</b>: {@link #add}, {@link #sub}, {@link #mult}, {@link
- *       #multAsymmetric}, {@link #ctAddLowerHalf}, {@link #modAdd}, {@link #modSub}. The byte-level
- *       loop count is fixed by the {@code size} arguments alone; values flowing through the carry /
- *       borrow chain are data-dependent but the work pattern is not. Safe on secrets.
+ *   <li><b>Schedule-independent</b>: {@link #add}, {@link #sub}, {@link #multAsymmetric}, {@link
+ *       #ctAddLowerHalf}, {@link #modAdd}, {@link #modSub}. The byte-level loop count is fixed by
+ *       the {@code size} arguments alone; values flowing through the carry / borrow chain are
+ *       data-dependent but the work pattern is not. Safe on secrets.
  * </ul>
  *
  * <p>Variable-time modular reduction is intentionally absent — use {@link Barrett} (constant-time,
@@ -223,20 +221,6 @@ public final class BigNat {
             short sum = (short) ((x[(short) (xOff + i)] & DIGIT_MASK) + yi + carry);
             x[(short) (xOff + i)] = (byte) sum;
             carry = (short) ((sum >>> DIGIT_BITS) & 1);
-        }
-    }
-
-    /**
-     * Mask-driven byte-wise conditional copy: {@code if (mask == -1) dst[..] = src[..]; else
-     * no-op}. {@code mask} must be {@code -1} (0xFFFF) or {@code 0}.
-     */
-    public static void ctSelectCopy(
-            byte[] dst, short dstOff, byte[] src, short srcOff, short size, short mask) {
-        short keep = (short) ~mask;
-        for (short i = 0; i < size; i++) {
-            short s = (short) (src[(short) (srcOff + i)] & DIGIT_MASK);
-            short d = (short) (dst[(short) (dstOff + i)] & DIGIT_MASK);
-            dst[(short) (dstOff + i)] = (byte) ((s & mask) | (d & keep));
         }
     }
 

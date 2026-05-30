@@ -84,7 +84,7 @@ public final class BootstrapCommand implements Callable<Integer> {
             defaultValue = "80")
     public int certSize;
 
-    /** Default deterministic seed mirrored from {@code BenchmarkSuite.DEFAULT_SEED}. */
+    /** Deterministic seed (bytes {@code 1..32}) for reproducible bootstrap provisioning. */
     private static final byte[] DEFAULT_SEED = new byte[32];
 
     static {

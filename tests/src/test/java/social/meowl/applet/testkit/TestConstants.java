@@ -12,9 +12,9 @@ import org.bouncycastle.crypto.ec.CustomNamedCurves;
 import social.meowl.applet.Constants;
 
 /**
- * Shared constants for end-to-end test suites driving the meowl applet through {@code
- * CardClient}-mediated APDUs. Centralised here so each integration suite stops duplicating the same
- * AID, INS bytes, KDF info, and BIP-32 vector seeds.
+ * Shared constants for end-to-end test suites driving the meowl applet through card-mediated APDUs.
+ * Centralised here so each integration suite stops duplicating the same AID, INS bytes, KDF info,
+ * and BIP-32 vector seeds.
  */
 public final class TestConstants {
 
