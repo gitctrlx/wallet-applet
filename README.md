@@ -51,7 +51,7 @@ Tests are split into two tracks via JUnit tags:
 | `./gradlew :tests:realCardTest -Preader=NAME` | `@Tag("real-card")` suites driven over PCSC by `RealCardClient`: `WalletAppletIT`, `SecureChannelIT`, `SchnorrK1IT`, `EcdsaK1IT`, `Ed25519SigningIT`, `HdDerivationIT`, `PersonalisationIT` | ✅ Opt-in; requires a J3R180 with the applet pre-installed on the named PCSC reader |
 | `./gradlew :tools:realCardTest -Preader=NAME` | `SecureChannelClientIT` against the same physical card — verifies the host-side `SecureChannelClient` Secure Channel implementation byte-for-byte against the applet | ✅ Opt-in; same prerequisites as `:tests:realCardTest` |
 
-Real-card execution is the canonical correctness gate, not the simulator. The [`:wallet:Fp25519Inv`](applet/src/main/java/social/meowl/applet/Fp25519Inv.java) RSA-NOPAD inverter and [`:wallet:EcPoint`](applet/src/main/java/social/meowl/applet/EcPoint.java) transient EC key allocation only function on the real chip; jcardsim short-circuits both. Every release candidate is therefore gated on `:tests:realCardTest` plus `:tools:realCardTest` against a physical J3R180 paired with an ACR1552U-MF (or equivalent PCSC reader).
+Real-card execution is the canonical correctness gate, not the simulator. The [`:wallet:Fp25519Inv`](wallet/src/main/java/social/meowl/wallet/Fp25519Inv.java) RSA-NOPAD inverter and [`:wallet:EcPoint`](wallet/src/main/java/social/meowl/wallet/EcPoint.java) transient EC key allocation only function on the real chip; jcardsim short-circuits both. Every release candidate is therefore gated on `:tests:realCardTest` plus `:tools:realCardTest` against a physical J3R180 paired with an ACR1552U-MF (or equivalent PCSC reader).
 
 ## Host-side CLI (`meowl`)
 
