@@ -32,15 +32,15 @@ class CapBreakdownTest {
         Path cap = tmp.resolve("test.cap");
         Map<String, Integer> entries = new LinkedHashMap<>();
         // On-card components.
-        entries.put("social/meowl/applet/javacard/Method.cap", 12000);
-        entries.put("social/meowl/applet/javacard/ConstantPool.cap", 1400);
-        entries.put("social/meowl/applet/javacard/Header.cap", 19);
+        entries.put("social/meowl/wallet/javacard/Method.cap", 12000);
+        entries.put("social/meowl/wallet/javacard/ConstantPool.cap", 1400);
+        entries.put("social/meowl/wallet/javacard/Header.cap", 19);
         // JVM bytecode (not on-card).
-        entries.put("APPLET-INF/classes/social/meowl/applet/WalletApplet.class", 12000);
-        entries.put("APPLET-INF/classes/social/meowl/applet/Bip32.class", 3700);
+        entries.put("APPLET-INF/classes/social/meowl/wallet/WalletApplet.class", 12000);
+        entries.put("APPLET-INF/classes/social/meowl/wallet/Bip32.class", 3700);
         // Workshop metadata.
         entries.put("META-INF/MANIFEST.MF", 1100);
-        entries.put("social/meowl/applet/javacard/meowl.exp", 800);
+        entries.put("social/meowl/wallet/javacard/meowl.exp", 800);
         writeZip(cap, entries);
 
         CapBreakdown b = CapBreakdown.read(cap);
@@ -96,7 +96,7 @@ class CapBreakdownTest {
     @DisplayName("returned components list is unmodifiable")
     void componentsListIsUnmodifiable(@TempDir Path tmp) throws IOException {
         Path cap = tmp.resolve("test.cap");
-        writeZip(cap, Map.of("social/meowl/applet/javacard/Method.cap", 100));
+        writeZip(cap, Map.of("social/meowl/wallet/javacard/Method.cap", 100));
 
         CapBreakdown b = CapBreakdown.read(cap);
         List<CapBreakdown.Component> components = b.components();

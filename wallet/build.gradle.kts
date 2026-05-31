@@ -51,13 +51,13 @@ dependencies {
     compileOnly(files(jcApiJar))
 }
 
-// Applet identifiers (override via `-Papplet.xxx=...`).
-private val packageAid = providers.gradleProperty("applet.packageAid").getOrElse("F06D656F776C")
-private val appletAid = providers.gradleProperty("applet.appletAid").getOrElse("F06D656F776C01")
-private val appletClass = providers.gradleProperty("applet.class").getOrElse("social.meowl.wallet.WalletApplet")
-private val packageName = providers.gradleProperty("applet.packageName").getOrElse("social.meowl.wallet")
+// Applet identifiers (override via `-Pwallet.xxx=...`).
+private val packageAid = providers.gradleProperty("wallet.packageAid").getOrElse("F06D656F776C")
+private val appletAid = providers.gradleProperty("wallet.appletAid").getOrElse("F06D656F776C01")
+private val appletClass = providers.gradleProperty("wallet.class").getOrElse("social.meowl.wallet.WalletApplet")
+private val packageName = providers.gradleProperty("wallet.packageName").getOrElse("social.meowl.wallet")
 // CAP package version is MAJOR.MINOR (bytes); separate from project version.
-private val capVersion = providers.gradleProperty("applet.capVersion").getOrElse("0.1")
+private val capVersion = providers.gradleProperty("wallet.capVersion").getOrElse("0.1")
 
 private val capOutputDir = layout.buildDirectory.dir("cap")
 
@@ -129,7 +129,7 @@ tasks.named("assemble") { dependsOn(buildCap) }
 // what was used to build the artefact. JSON-only; schema defaults to v1.6.
 tasks.cyclonedxDirectBom {
     projectType = org.cyclonedx.model.Component.Type.APPLICATION
-    componentName = "meowl-applet"
+    componentName = "meowl-wallet"
     includeConfigs = listOf("antJavaCard", "compileClasspath")
     skipConfigs = listOf(".*[Tt]est.*")
     includeBuildSystem = true

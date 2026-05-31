@@ -66,15 +66,15 @@ The CAP file lands in `wallet/build/cap/meowl-wallet.cap`.
 
 ## Configuration knobs
 
-Applet identifiers and the CAP package version are overridable via Gradle properties (`-Papplet.xxx=...`):
+Applet identifiers and the CAP package version are overridable via Gradle properties (`-Pwallet.xxx=...`):
 
 | Property | Default | Purpose |
 | --- | --- | --- |
-| `applet.packageAid` | `F06D656F776C` | CAP package AID (hex) |
-| `applet.appletAid` | `F06D656F776C01` | Applet instance AID |
-| `applet.class` | `social.meowl.wallet.WalletApplet` | Applet class FQN |
-| `applet.packageName` | `social.meowl.wallet` | Java package |
-| `applet.capVersion` | `0.1` | CAP package version (MAJOR.MINOR) |
+| `wallet.packageAid` | `F06D656F776C` | CAP package AID (hex) |
+| `wallet.appletAid` | `F06D656F776C01` | Applet instance AID |
+| `wallet.class` | `social.meowl.wallet.WalletApplet` | Applet class FQN |
+| `wallet.packageName` | `social.meowl.wallet` | Java package |
+| `wallet.capVersion` | `0.1` | CAP package version (MAJOR.MINOR) |
 
 ## Workflow
 
@@ -85,7 +85,7 @@ Applet identifiers and the CAP package version are overridable via Gradle proper
 5. Commit using **Conventional Commits** in English (subject ≤ 72 chars):
 
    ```text
-   feat(applet): add PIN unblock flow
+   feat(wallet): add PIN unblock flow
    fix(tests): correct expected SW for unknown CLA
    docs: explain target SDK choice
    ```
@@ -94,7 +94,7 @@ Applet identifiers and the CAP package version are overridable via Gradle proper
 
 ## Coding rules
 
-- **Java source/target: 1.8** in `applet/` (JCDK v26.0 converter limit). `var` is permitted only in `tools/` and `tests/`.
+- **Java source/target: 1.8** in `wallet/` (JCDK v26.0 converter limit). `var` is permitted only in `tools/` and `tests/`.
 - **No `String` in applet code paths** — concatenation allocates and the card has no GC. Use `byte[]` plus `Util.arrayCopyNonAtomic`.
 - **No floating point**, **no multi-dimensional arrays**, **no threads**.
 - Sensitive data must live in `JCSystem.makeTransientByteArray(...)` and be wiped after use.
