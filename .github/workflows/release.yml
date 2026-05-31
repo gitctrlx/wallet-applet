@@ -6,8 +6,10 @@
 #   git tag v1.0.0 && git push origin v1.0.0
 #
 # Artefacts attached to the GitHub Release:
-#   - meowl-wallet.cap        the CAP file
-#   - meowl-wallet-sbom.cdx.json     CycloneDX 1.6 SBOM
+#   - meowl-wallet.cap        the wallet CAP file
+#   - meowl-wallet-sbom.cdx.json     CycloneDX 1.6 SBOM (wallet)
+#   - meowl-ndef.cap          the NDEF tag CAP file
+#   - meowl-ndef-sbom.cdx.json       CycloneDX 1.6 SBOM (NDEF)
 #   - sha256sums.txt          digests of every artefact
 #
 # The CAP file is also attested via Sigstore keyless signing
@@ -55,7 +57,11 @@ jobs:
           cache-read-only: true
 
       - name: Build + test + SBOM
-        run: ./gradlew :wallet:buildCap :tests:test :wallet:cyclonedxDirectBom
+        run: >
+          ./gradlew
+          :wallet:buildCap :ndef:buildCap
+          :tests:test
+          :wallet:cyclonedxDirectBom :ndef:cyclonedxDirectBom
 
       - name: Stage release artefacts
         shell: bash
@@ -64,13 +70,17 @@ jobs:
           mkdir -p release
           cp wallet/build/cap/meowl-wallet.cap release/
           cp wallet/build/reports/meowl-wallet-sbom.cdx.json release/
+          cp ndef/build/cap/meowl-ndef.cap release/
+          cp ndef/build/reports/meowl-ndef-sbom.cdx.json release/
           (cd release && sha256sum * > sha256sums.txt)
 
       - name: Attest SLSA build provenance
         continue-on-error: true # Only works for public repos on Team/Pro/Free plans
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
-          subject-path: release/meowl-wallet.cap
+          subject-path: |
+            release/meowl-wallet.cap
+            release/meowl-ndef.cap
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
@@ -81,4 +91,6 @@ jobs:
           files: |
             release/meowl-wallet.cap
             release/meowl-wallet-sbom.cdx.json
+            release/meowl-ndef.cap
+            release/meowl-ndef-sbom.cdx.json
             release/sha256sums.txt

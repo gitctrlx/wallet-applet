@@ -42,17 +42,25 @@ jobs:
       - name: Spotless check
         run: ./gradlew spotlessCheck
 
-      - name: Build CAP
-        run: ./gradlew :wallet:buildCap
+      - name: Build CAPs (wallet + NDEF)
+        run: ./gradlew :wallet:buildCap :ndef:buildCap
 
       - name: Run tests
         run: ./gradlew :tests:test
 
-      - name: Upload CAP
+      - name: Upload wallet CAP
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: meowl-wallet-cap
           path: wallet/build/cap/meowl-wallet.cap
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload NDEF CAP
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: meowl-ndef-cap
+          path: ndef/build/cap/meowl-ndef.cap
           if-no-files-found: error
           retention-days: 30
 

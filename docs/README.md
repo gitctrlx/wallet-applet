@@ -1,10 +1,11 @@
 # meowl-applet documentation
 
-Two documents back the project, separated by audience:
+These documents back the project, separated by audience:
 
 | Document | Path | Audience |
 | --- | --- | --- |
 | **Wire protocol** | [`./specs/protocol.md`](./specs/protocol.md) | Host SDK authors, integrators, security auditors |
+| **NDEF tag** | [`./specs/ndef.md`](./specs/ndef.md) | NFC integrators, app authors |
 | **README, CONTRIBUTING, SECURITY** | repository root | Contributors, operators, vulnerability reporters |
 
 [`specs/protocol.md`](./specs/protocol.md) is the **sole normative** specification of the on-card protocol — APDU framing, the Secure Channel, the lifecycle state machine, PIN/PUK, HD derivation, signing and status words. The applet sources under `applet/` and the test suite under `tests/` are the ultimate source of truth; where the document and the code disagree, **the code wins**.
