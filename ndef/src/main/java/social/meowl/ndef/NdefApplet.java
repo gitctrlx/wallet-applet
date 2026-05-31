@@ -11,27 +11,32 @@ import javacard.framework.ISOException;
 import javacard.framework.Util;
 
 /**
- * Minimal NFC Forum Type 4 Tag applet for the meowl card.
+ * NFC Forum Type 4 Tag applet for the meowl card — an openly readable and writable tag.
  *
- * <p>Its sole job is NFC discovery: when a phone taps a meowl card, the OS reads this read-only
- * Type 4 tag and follows the embedded {@code https://meowl.social} URI record so the right app
- * opens without the user launching anything. It is a self-contained CAP carrying no meowl wallet or
- * backup code — install it alongside whichever functional applet a given card hosts.
+ * <p>Its job is NFC discovery: when a phone taps a meowl card, the OS reads this Type 4 tag and
+ * follows the embedded URI record so the right app opens without the user launching anything. The
+ * tag ships pointing at {@code https://meowl.social}; the meowl app overwrites it with the holder's
+ * decentralised profile link (an {@code https://} URL carrying their Nostr {@code nprofile}). It is
+ * a self-contained CAP carrying no meowl wallet or backup code — install it alongside whichever
+ * functional applet a given card hosts.
  *
  * <p>The tag is selected by the phone's NFC stack via the NFC Forum well-known application AID
  * {@code D2760000850101}; the GP {@code install [for install]} step assigns that instance AID even
  * though the CAP declares a meowl-namespaced AID. After application selection the reader speaks the
- * Type 4 file protocol: {@code SELECT} (by file id) followed by {@code READ_BINARY} against the
- * Capability Container ({@code E103}) and the NDEF file ({@code E104}).
+ * Type 4 file protocol: {@code SELECT} (by file id), {@code READ_BINARY} and {@code UPDATE_BINARY}
+ * against the Capability Container ({@code E103}) and the NDEF file ({@code E104}).
  *
- * <p>Content is static and read-only — there is no {@code UPDATE_BINARY} surface, so the tag cannot
- * be rewritten over NFC. Per-card provisioning of the NDEF payload is intentionally out of scope
- * for this revision.
+ * <p>The NDEF file is openly writable ({@code UPDATE_BINARY}, no authentication) by design: the
+ * payload is a public profile pointer, holders rewrite their own card from the app, and anti-clone
+ * is an app/relay concern rather than a tag one. The Capability Container is read-only.
  */
 public final class NdefApplet extends Applet {
 
     /** ISO 7816-4 {@code READ BINARY} instruction. */
     private static final byte INS_READ_BINARY = (byte) 0xB0;
+
+    /** ISO 7816-4 {@code UPDATE BINARY} instruction. */
+    private static final byte INS_UPDATE_BINARY = (byte) 0xD6;
 
     /** {@code SELECT} P1: select by EF identifier. */
     private static final byte SELECT_P1_BY_FILE_ID = (byte) 0x00;
@@ -51,9 +56,12 @@ public final class NdefApplet extends Applet {
     /** Maximum bytes returned per {@code READ BINARY} (CC {@code MLe}). */
     private static final short MAX_READ_LEN = (short) 255;
 
+    /** Size of the writable NDEF elementary file (matches the Capability Container max size). */
+    private static final short NDEF_FILE_SIZE = (short) 1024;
+
     /**
      * Capability Container (15 bytes, mapping version 2.0). Declares a single NDEF file {@code
-     * E104} with free read access and write access denied — a permanently read-only tag.
+     * E104} with free read and write access; the CC itself is read-only.
      */
     private static final byte[] CC_FILE = {
         (byte) 0x00,
@@ -67,17 +75,19 @@ public final class NdefApplet extends Applet {
         (byte) 0x06, // NDEF File Control TLV: T = 0x04, L = 6
         (byte) 0xE1,
         (byte) 0x04, // NDEF file id = E104
-        (byte) 0x01,
-        (byte) 0x00, // max NDEF file size = 256
+        (byte) 0x04,
+        (byte) 0x00, // max NDEF file size = 1024
         (byte) 0x00, // read access: granted
-        (byte) 0xFF // write access: denied
+        (byte) 0x00 // write access: granted
     };
 
     /**
-     * NDEF file: a 2-byte length prefix ({@code NLEN}) followed by a single well-known URI record
-     * for {@code https://meowl.social} (URI prefix code {@code 0x04} = {@code "https://"}).
+     * Default NDEF payload seeded into the writable file at install: a 2-byte length prefix ({@code
+     * NLEN}) followed by a single well-known URI record for {@code https://meowl.social} (URI
+     * prefix code {@code 0x04} = {@code "https://"}). The meowl app overwrites this with the
+     * holder's link.
      */
-    private static final byte[] NDEF_FILE = {
+    private static final byte[] DEFAULT_NDEF = {
         (byte) 0x00,
         (byte) 0x11, // NLEN = 17
         (byte) 0xD1, // MB | ME | SR, TNF = NFC Forum well-known type
@@ -102,8 +112,14 @@ public final class NdefApplet extends Applet {
     /** Currently selected EF, reset on every (re)selection of the applet. */
     private short selectedFile;
 
+    /** Writable NDEF file: {@code NLEN} prefix plus payload, seeded with {@link #DEFAULT_NDEF}. */
+    private final byte[] ndefFile;
+
     private NdefApplet() {
         selectedFile = FILE_ID_NONE;
+        ndefFile = new byte[NDEF_FILE_SIZE];
+        Util.arrayCopyNonAtomic(
+                DEFAULT_NDEF, (short) 0, ndefFile, (short) 0, (short) DEFAULT_NDEF.length);
         register();
     }
 
@@ -132,6 +148,9 @@ public final class NdefApplet extends Applet {
                 break;
             case INS_READ_BINARY:
                 processReadBinary(apdu);
+                break;
+            case INS_UPDATE_BINARY:
+                processUpdateBinary(apdu);
                 break;
             default:
                 ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
@@ -164,7 +183,7 @@ public final class NdefApplet extends Applet {
         if (selectedFile == FILE_ID_CC) {
             data = CC_FILE;
         } else if (selectedFile == FILE_ID_NDEF) {
-            data = NDEF_FILE;
+            data = ndefFile;
         } else {
             ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
             return;
@@ -188,5 +207,25 @@ public final class NdefApplet extends Applet {
 
         apdu.setOutgoingLength(le);
         apdu.sendBytesLong(data, offset, le);
+    }
+
+    /** Writes into the NDEF file at the requested offset; the read-only CC rejects writes. */
+    private void processUpdateBinary(APDU apdu) {
+        if (selectedFile != FILE_ID_NDEF) {
+            ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
+        }
+
+        byte[] buffer = apdu.getBuffer();
+        short offset = Util.getShort(buffer, ISO7816.OFFSET_P1);
+        short lc = apdu.setIncomingAndReceive();
+        short size = (short) ndefFile.length;
+        if (offset < 0 || offset >= size) {
+            ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
+        }
+        short limit = (short) (offset + lc);
+        if (limit < 0 || limit > size) {
+            ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+        }
+        Util.arrayCopy(buffer, ISO7816.OFFSET_CDATA, ndefFile, offset, lc);
     }
 }
