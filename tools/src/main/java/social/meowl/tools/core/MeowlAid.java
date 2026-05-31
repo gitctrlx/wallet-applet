@@ -30,6 +30,9 @@ public final class MeowlAid {
      */
     public static final String NDEF_INSTANCE_HEX = "D2760000850101";
 
+    /** Instance AID of the meowl backup applet (BIP-39 seed-backup card). */
+    public static final String BACKUP_INSTANCE_HEX = "F06D656F776C0201";
+
     /** Minimum AID length per ISO/IEC 7816-5 §8.2.1.2 (5 bytes). */
     public static final int MIN_LEN = 5;
 

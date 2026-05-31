@@ -40,6 +40,7 @@ import picocli.CommandLine.Spec;
             GpCommand.class,
             ScCommand.class,
             NdefCommand.class,
+            BackupCommand.class,
             ShellCommand.class,
         })
 public final class MeowlCli implements Callable<Integer> {

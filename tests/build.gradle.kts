@@ -45,6 +45,7 @@ dependencies {
     // Reuse applet sources so unit tests can call the applet classes directly.
     testImplementation(project(":wallet"))
     testImplementation(project(":ndef"))
+    testImplementation(project(":backup"))
 }
 
 // Default `test` task: the jcardsim-backed unit suites in `src/test`. The PCSC integration suites

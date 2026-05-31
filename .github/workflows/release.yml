@@ -10,6 +10,8 @@
 #   - meowl-wallet-sbom.cdx.json     CycloneDX 1.6 SBOM (wallet)
 #   - meowl-ndef.cap          the NDEF tag CAP file
 #   - meowl-ndef-sbom.cdx.json       CycloneDX 1.6 SBOM (NDEF)
+#   - meowl-backup.cap        the backup CAP file
+#   - meowl-backup-sbom.cdx.json     CycloneDX 1.6 SBOM (backup)
 #   - sha256sums.txt          digests of every artefact
 #
 # The CAP file is also attested via Sigstore keyless signing
@@ -59,9 +61,9 @@ jobs:
       - name: Build + test + SBOM
         run: >
           ./gradlew
-          :wallet:buildCap :ndef:buildCap
+          :wallet:buildCap :ndef:buildCap :backup:buildCap
           :tests:test
-          :wallet:cyclonedxDirectBom :ndef:cyclonedxDirectBom
+          :wallet:cyclonedxDirectBom :ndef:cyclonedxDirectBom :backup:cyclonedxDirectBom
 
       - name: Stage release artefacts
         shell: bash
@@ -72,6 +74,8 @@ jobs:
           cp wallet/build/reports/meowl-wallet-sbom.cdx.json release/
           cp ndef/build/cap/meowl-ndef.cap release/
           cp ndef/build/reports/meowl-ndef-sbom.cdx.json release/
+          cp backup/build/cap/meowl-backup.cap release/
+          cp backup/build/reports/meowl-backup-sbom.cdx.json release/
           (cd release && sha256sum * > sha256sums.txt)
 
       - name: Attest SLSA build provenance
@@ -81,6 +85,7 @@ jobs:
           subject-path: |
             release/meowl-wallet.cap
             release/meowl-ndef.cap
+            release/meowl-backup.cap
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
@@ -93,4 +98,6 @@ jobs:
             release/meowl-wallet-sbom.cdx.json
             release/meowl-ndef.cap
             release/meowl-ndef-sbom.cdx.json
+            release/meowl-backup.cap
+            release/meowl-backup-sbom.cdx.json
             release/sha256sums.txt

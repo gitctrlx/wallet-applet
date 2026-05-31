@@ -17,6 +17,7 @@ GRADLE_FLAGS ?= --no-daemon
 CAP ?= $(abspath wallet/build/cap/meowl-wallet.cap)
 NDEF_CAP ?= $(abspath ndef/build/cap/meowl-ndef.cap)
 NDEF_AID ?= D2760000850101
+BACKUP_CAP ?= $(abspath backup/build/cap/meowl-backup.cap)
 PIN ?= 123456
 PUK ?= 12345678
 SEED ?=
@@ -27,7 +28,7 @@ CDKkek ?= B040703EC3DE23EE8AE4CFB6D632AA80
 GP_KEYS ?= --key-enc $(CDKenc) --key-mac $(CDKmac) --key-kek $(CDKkek)
 
 .DEFAULT_GOAL := all
-.PHONY: all help check test tools-test bench fmt lint build cap build-ndef install-ndef read-ndef write-ndef install uninstall init reset-card run shell clean tasks ci
+.PHONY: all help check test tools-test bench fmt lint build cap build-ndef install-ndef read-ndef write-ndef build-backup install-backup install uninstall init reset-card run shell clean tasks ci
 
 # Default target — the verification gate the user asked for: enforces the
 # Spotless format contract, then runs the full applet test suite.
@@ -49,6 +50,8 @@ help:
 	@echo   make install-ndef build+install NDEF CAP under NFC AID D2760000850101
 	@echo   make read-ndef   read the NDEF tag and print its URI
 	@echo   make write-ndef URI=.. write a URI record to the NDEF tag
+	@echo   make build-backup ./gradlew :backup:buildCap (BIP-39 seed backup CAP)
+	@echo   make install-backup build+install backup CAP (AID F06D656F776C0201)
 	@echo   make install     build CAP and install it with default CDK ENC/MAC/KEK
 	@echo   make uninstall   uninstall applet/package with default CDK ENC/MAC/KEK
 	@echo   make init        initialize fresh applet: PKI + PIN/PUK + seed
@@ -104,6 +107,14 @@ read-ndef:
 write-ndef:
 	$(GRADLE) $(GRADLE_FLAGS) :tools:run --args="ndef write-uri $(URI)"
 
+# Build the backup CAP (BIP-39 seed-backup card; separate self-contained package).
+build-backup:
+	$(GRADLE) $(GRADLE_FLAGS) :backup:buildCap
+
+# Build and install the backup CAP under its declared instance AID F06D656F776C0201.
+install-backup: build-backup
+	$(GRADLE) $(GRADLE_FLAGS) :tools:run --args="gp install $(GP_KEYS) $(BACKUP_CAP)"
+
 install: build
 	$(GRADLE) $(GRADLE_FLAGS) :tools:run --args="gp install $(GP_KEYS) $(CAP)"
 
@@ -126,7 +137,7 @@ shell:
 	$(GRADLE) $(GRADLE_FLAGS) :tools:run --args="shell"
 
 # Reproduce the GitHub Actions verification job locally (matches ci.yml).
-ci: check build build-ndef test tools-test
+ci: check build build-ndef build-backup test tools-test
 
 # List every Gradle task (useful when discovering subproject-scoped tasks).
 tasks:

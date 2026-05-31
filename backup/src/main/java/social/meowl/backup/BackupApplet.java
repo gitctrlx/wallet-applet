@@ -34,10 +34,26 @@ public final class BackupApplet extends Applet implements WipeTrigger {
     private static final short ADVERTISED_CAPABILITIES =
             (short) (Constants.CAP_RESET_TO_FACTORY | Constants.CAP_SC_CBC_HMAC);
 
+    // Backup lifecycle is the shared 3-step forward FSM with backup-meaningful aliases:
+    // FRESH --SETUP_PIN--> PIN_SET --BACKUP_SEED--> SEEDED. The wallet's fourth state is unused.
+    private static final byte LC_FRESH = LifecycleState.UNINITIALIZED;
+    private static final byte LC_PIN_SET = LifecycleState.PERSONALIZED;
+    private static final byte LC_SEEDED = LifecycleState.SETUP_DONE;
+
     private final LifecycleState state;
     private final Authentikey authentikey;
     private final ResetToFactory resetTrigger;
     private final SecureChannel secureChannel;
+    private final SeedVault seedVault;
+    private final BackupPin backupPin;
+
+    /** User-facing backup card label (persistent); empty until {@code SET_NAME}. */
+    private final byte[] cardName;
+
+    private byte cardNameLen;
+
+    /** Transient {@code [off1, len1, off2, len2]} scratch for two-field inner commands. */
+    private final short[] twoFieldDesc;
 
     private BackupApplet() {
         byte[] sharedScratch =
@@ -46,6 +62,11 @@ public final class BackupApplet extends Applet implements WipeTrigger {
         this.authentikey = new Authentikey();
         this.resetTrigger = new ResetToFactory();
         this.secureChannel = new SecureChannel(this.authentikey, sharedScratch);
+        this.seedVault = new SeedVault();
+        this.backupPin = new BackupPin();
+        this.cardName = new byte[Constants.BACKUP_NAME_MAX_LEN];
+        this.cardNameLen = (byte) 0;
+        this.twoFieldDesc = JCSystem.makeTransientShortArray((short) 4, JCSystem.CLEAR_ON_DESELECT);
         register();
     }
 
@@ -58,6 +79,7 @@ public final class BackupApplet extends Applet implements WipeTrigger {
     public boolean select() {
         resetTrigger.rearm();
         secureChannel.reset();
+        backupPin.clearSession();
         return true;
     }
 
@@ -119,6 +141,22 @@ public final class BackupApplet extends Applet implements WipeTrigger {
         offset =
                 ApduTlv.putShort(
                         buffer, offset, Constants.TAG_CAPABILITIES, ADVERTISED_CAPABILITIES);
+        offset =
+                ApduTlv.putByte(
+                        buffer,
+                        offset,
+                        Constants.TAG_SEED_PRESENT,
+                        seedVault.isSeeded() ? (byte) 1 : (byte) 0);
+        offset = ApduTlv.putByte(buffer, offset, Constants.TAG_SEED_LEN, seedVault.length());
+        offset =
+                ApduTlv.putByte(
+                        buffer, offset, Constants.TAG_PIN_TRIES, backupPin.triesRemaining());
+
+        short nameHeader = offset;
+        short nameValue = ApduTlv.reserve(buffer, nameHeader, Constants.TAG_CARD_NAME);
+        Util.arrayCopyNonAtomic(cardName, (short) 0, buffer, nameValue, cardNameLen);
+        ApduTlv.finishReserved(buffer, nameHeader, cardNameLen);
+        offset = (short) (nameValue + cardNameLen);
 
         short headerOffset = offset;
         short valueStart = ApduTlv.reserve(buffer, headerOffset, Constants.TAG_AUTHENTIKEY_PUBKEY);
@@ -127,10 +165,15 @@ public final class BackupApplet extends Applet implements WipeTrigger {
         return (short) (valueStart + pkLen);
     }
 
-    /** Opens a fresh Secure Channel session, tearing down any prior session keys first. */
+    /**
+     * Opens a fresh Secure Channel session, tearing down the prior session keys and the
+     * PIN-verified flag first so a re-handshake never inherits the previous session's
+     * authentication state (PIN binds to the SC session).
+     */
     private short handleInitSecureChannel(APDU apdu, byte[] buffer) {
         short lc = apdu.setIncomingAndReceive();
         secureChannel.reset();
+        backupPin.clearSession();
         return secureChannel.initHandshake(buffer, ISO7816.OFFSET_CDATA, lc);
     }
 
@@ -178,25 +221,188 @@ public final class BackupApplet extends Applet implements WipeTrigger {
     }
 
     /**
-     * Inner-APDU router, reachable only through {@code OPEN_SECURE_CHANNEL}. P3 wires {@code
-     * SETUP_PIN}, {@code VERIFY_PIN}, {@code CHANGE_PIN}, {@code BACKUP_SEED}, {@code
-     * RESTORE_SEED}, {@code VERIFY_SEED}, {@code SET_NAME} and {@code FACTORY_RESET} here.
+     * Inner-APDU router, reachable only through {@code OPEN_SECURE_CHANNEL}. {@code FACTORY_RESET}
+     * is the outer {@code RESET_TO_FACTORY} countdown (no PIN, anti-fat-finger) handled in {@link
+     * #process}; every command below requires the Secure Channel and, past setup, a verified PIN.
      */
     private short dispatchInner(
             byte[] buffer, byte ins, byte p1, byte p2, short dataOff, short dataLen) {
-        throw Constants.fail(Constants.SW_INS_NOT_SUPPORTED);
+        switch (ins) {
+            case Constants.INS_SETUP:
+                return handleSetupPin(buffer, dataOff, dataLen);
+            case Constants.INS_VERIFY_PIN:
+                return handleVerifyPin(buffer, dataOff, dataLen);
+            case Constants.INS_CHANGE_PIN:
+                return handleChangePin(buffer, dataOff, dataLen);
+            case Constants.INS_BACKUP_SEED:
+                return handleBackupSeed(buffer, dataOff, dataLen);
+            case Constants.INS_RESTORE_SEED:
+                return handleRestoreSeed(buffer, dataLen);
+            case Constants.INS_VERIFY_SEED:
+                return handleVerifySeed(buffer, dataLen);
+            case Constants.INS_SET_NAME:
+                return handleSetName(buffer, dataOff, dataLen);
+            default:
+                throw Constants.fail(Constants.SW_INS_NOT_SUPPORTED);
+        }
+    }
+
+    /** {@code SETUP_PIN} inner data: {@code [pinLen(1), PIN]}. Provisions the PIN, no PUK. */
+    private short handleSetupPin(byte[] buffer, short dataOff, short dataLen) {
+        state.require(LC_FRESH);
+        if (dataLen < 1) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        short pinLen = (short) (buffer[dataOff] & 0xFF);
+        if ((short) (1 + pinLen) != dataLen) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        JCSystem.beginTransaction();
+        backupPin.setupInTx(buffer, (short) (dataOff + 1), pinLen);
+        state.transitionToInTx(LC_PIN_SET);
+        JCSystem.commitTransaction();
+        return 0;
+    }
+
+    /** {@code VERIFY_PIN} inner data: the PIN bytes. Exhaustion wipes the seed (no PUK). */
+    private short handleVerifyPin(byte[] buffer, short dataOff, short dataLen) {
+        state.requireAtLeast(LC_PIN_SET);
+        verifyPinOrWipe(buffer, dataOff, dataLen);
+        return 0;
+    }
+
+    /** {@code CHANGE_PIN} inner data: {@code [oldLen(1), old, newLen(1), new]}. */
+    private short handleChangePin(byte[] buffer, short dataOff, short dataLen) {
+        state.requireAtLeast(LC_PIN_SET);
+        parseTwoLengthPrefixedFields(buffer, dataOff, dataLen);
+        // A correct old PIN consumes no try, so a later bad new-PIN length cannot burn one; a wrong
+        // old PIN consumes a try and may trip the wipe-on-exhaustion path.
+        verifyPinOrWipe(buffer, twoFieldDesc[0], twoFieldDesc[1]);
+        JCSystem.beginTransaction();
+        backupPin.changeInTx(buffer, twoFieldDesc[2], twoFieldDesc[3]);
+        JCSystem.commitTransaction();
+        return 0;
+    }
+
+    /** {@code BACKUP_SEED} inner data: {@code [entropyLen(1), entropy]}. Single-slot, PIN-gated. */
+    private short handleBackupSeed(byte[] buffer, short dataOff, short dataLen) {
+        state.require(LC_PIN_SET);
+        requirePinVerified();
+        if (dataLen < 1) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        short entropyLen = (short) (buffer[dataOff] & 0xFF);
+        if ((short) (1 + entropyLen) != dataLen) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        JCSystem.beginTransaction();
+        seedVault.storeInTx(buffer, (short) (dataOff + 1), entropyLen);
+        state.transitionToInTx(LC_SEEDED);
+        JCSystem.commitTransaction();
+        // The entropy plaintext is wiped centrally by handleOpenSecureChannel's finally.
+        return 0;
+    }
+
+    /** {@code RESTORE_SEED}: no input; returns the stored entropy under the Secure Channel. */
+    private short handleRestoreSeed(byte[] buffer, short dataLen) {
+        state.require(LC_SEEDED);
+        requirePinVerified();
+        if (dataLen != 0) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        return seedVault.restore(buffer, ISO7816.OFFSET_CDATA);
+    }
+
+    /** {@code VERIFY_SEED}: no input; recomputes the integrity tag, raising on mismatch. */
+    private short handleVerifySeed(byte[] buffer, short dataLen) {
+        state.require(LC_SEEDED);
+        requirePinVerified();
+        if (dataLen != 0) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        seedVault.verify();
+        return 0;
+    }
+
+    /** {@code SET_NAME} inner data: the label bytes (0..{@link Constants#BACKUP_NAME_MAX_LEN}). */
+    private short handleSetName(byte[] buffer, short dataOff, short dataLen) {
+        state.requireAtLeast(LC_PIN_SET);
+        requirePinVerified();
+        if (dataLen > Constants.BACKUP_NAME_MAX_LEN) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        JCSystem.beginTransaction();
+        Util.arrayCopyNonAtomic(buffer, dataOff, cardName, (short) 0, dataLen);
+        cardNameLen = (byte) dataLen;
+        JCSystem.commitTransaction();
+        return 0;
+    }
+
+    /** Common gate for handlers that require the PIN verified in this Secure Channel session. */
+    private void requirePinVerified() {
+        if (!backupPin.isVerified()) {
+            ISOException.throwIt(Constants.SW_SECURITY_STATUS_NOT_SATISFIED);
+        }
     }
 
     /**
-     * Reset-to-factory wipe driven by the {@code RESET_TO_FACTORY} countdown. The authentikey is
-     * preserved; Secure Channel state and the lifecycle FSM are reset. The seed vault and PIN wipes
-     * are added once those components are wired (P2).
+     * Verifies the PIN, applying the scorched-earth policy: a wrong PIN consumes a try and, when
+     * the counter reaches zero, wipes the seed and raises {@link Constants#SW_AUTH_BLOCKED};
+     * otherwise a {@code 0x63Cn} retry status word carries the remaining count.
+     */
+    private void verifyPinOrWipe(byte[] buffer, short off, short len) {
+        if (backupPin.check(buffer, off, len)) {
+            return;
+        }
+        if (backupPin.triesRemaining() == 0) {
+            wipe();
+            ISOException.throwIt(Constants.SW_AUTH_BLOCKED);
+        }
+        ISOException.throwIt(
+                (short) (Constants.SW_PIN_RETRIES_BASE | (backupPin.triesRemaining() & 0x0F)));
+    }
+
+    /**
+     * Parses {@code [len1(1), field1, len2(1), field2]} from {@code
+     * buffer[dataOff..dataOff+dataLen]} into {@link #twoFieldDesc} as {@code [off1, len1, off2,
+     * len2]}; raises {@link Constants#SW_WRONG_LENGTH} on any overrun.
+     */
+    private void parseTwoLengthPrefixedFields(byte[] buffer, short dataOff, short dataLen) {
+        short cursor = dataOff;
+        short len1 = (short) (buffer[cursor++] & 0xFF);
+        short off1 = cursor;
+        cursor += len1;
+        if ((short) (cursor + 1) > (short) (dataOff + dataLen)) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        short len2 = (short) (buffer[cursor++] & 0xFF);
+        short off2 = cursor;
+        if ((short) (cursor + len2) != (short) (dataOff + dataLen)) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        twoFieldDesc[0] = off1;
+        twoFieldDesc[1] = len1;
+        twoFieldDesc[2] = off2;
+        twoFieldDesc[3] = len2;
+    }
+
+    /**
+     * Factory-reset wipe — the single destructive routine, shared by the {@code RESET_TO_FACTORY}
+     * countdown, the {@code FACTORY_RESET} command and the PIN-exhaustion trigger. The authentikey
+     * is preserved (it is the card's stable Secure Channel identity); the seed, its integrity tag,
+     * the PIN, the card label and the lifecycle state are all reset. The persistent gates commit in
+     * one transaction so a torn power-off cannot leave half-reset state.
      */
     @Override
     public void wipe() {
         secureChannel.reset();
+        backupPin.clearSession();
         JCSystem.beginTransaction();
+        seedVault.wipeInTx();
+        backupPin.wipeInTx();
+        cardNameLen = (byte) 0;
         state.resetInTx();
         JCSystem.commitTransaction();
+        Util.arrayFillNonAtomic(cardName, (short) 0, (short) cardName.length, (byte) 0);
     }
 }
