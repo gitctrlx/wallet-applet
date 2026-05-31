@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: 2026 meowl.social contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-package social.meowl.wallet;
+package social.meowl.shared;
 
 import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
@@ -84,6 +84,13 @@ public final class SecureChannel {
             (short) (HS_CARD_PUB + CLIENT_EPH_PUB_LEN); // 65 → ends 195
     private static final short HS_SALT = (short) (HS_SHARED + CLIENT_EPH_PUB_LEN); // 64 → ends 259
     private static final short HS_SCRATCH_LEN = (short) (HS_SALT + (Constants.EC_SCALAR_LEN * 2));
+
+    /**
+     * Minimum length of the shared handshake scratch buffer a caller must supply to the
+     * constructor. Exposed so applets can size their shared transient buffer without hard-coding
+     * the internal handshake layout.
+     */
+    public static final short MIN_SCRATCH_LEN = HS_SCRATCH_LEN;
 
     /** Application-binding label for {@link Kdf#expand}. */
     private static final byte[] KDF_INFO = {
@@ -331,7 +338,7 @@ public final class SecureChannel {
         // Replay defence before MAC verification: reject non-monotonic IVs cheaply. The IV
         // bytes themselves are public, so the comparison's data-dependent timing is not a
         // secret-leak channel; we still use constant-time compare16 because the rest of this
-        // class speaks one defence-in-depth dialect (BigNat.ctEquals, stripPkcs5) and a stray
+        // class speaks one defence-in-depth dialect (CtUtil.ctEquals, stripPkcs5) and a stray
         // ternary here would be the first non-constant-time branch on a security-sensitive
         // path. Critically, this branch does NOT reset() the session: an attacker without
         // K_mac could otherwise replay any captured envelope to wipe the session keys, a free
@@ -342,7 +349,7 @@ public final class SecureChannel {
             ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
         }
 
-        // MAC = AES-CMAC-128(K_mac, outer_header ‖ IV ‖ ciphertext). BigNat.ctEquals is mandatory:
+        // MAC = AES-CMAC-128(K_mac, outer_header ‖ IV ‖ ciphertext). CtUtil.ctEquals is mandatory:
         // Util.arrayCompare is left-to-right ternary and leaks mismatch position.
         macSig.init(macKey, Signature.MODE_SIGN);
         macSig.update(apduBuffer, (short) 0, (short) 5);
@@ -352,7 +359,7 @@ public final class SecureChannel {
                 (short) (Constants.SC_BLOCK_LEN + ctLen),
                 macScratch,
                 (short) 0);
-        if (!BigNat.ctEquals(macScratch, (short) 0, apduBuffer, macOffset, Constants.SC_MAC_LEN)) {
+        if (!CtUtil.ctEquals(macScratch, (short) 0, apduBuffer, macOffset, Constants.SC_MAC_LEN)) {
             reset();
             ISOException.throwIt(Constants.SW_SECURE_CHANNEL_FAILED);
         }
@@ -440,7 +447,7 @@ public final class SecureChannel {
      * Constant-time 16-byte big-endian three-way comparison: returns {@code > 0} iff {@code a > b},
      * {@code 0} on equality, {@code < 0} otherwise. Used solely for the inbound IV monotonicity
      * check; mask-based so the channel speaks one defence-in-depth dialect with {@link
-     * BigNat#ctEquals} and {@link BigNat#ctLessThan}.
+     * CtUtil#ctEquals} and {@link CtUtil#ctLessThan}.
      */
     static short compare16(byte[] a, short aOff, byte[] b, short bOff) {
         // gtMask / ltMask track "have we already proven a > b / a < b at a more significant

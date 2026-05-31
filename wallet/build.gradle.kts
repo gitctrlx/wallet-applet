@@ -5,6 +5,8 @@
 // cache is disabled at the project level (see root gradle.properties) because
 // Gradle's AntBuilder captures script references that aren't serialisable.
 
+import java.io.File
+
 plugins {
     `java-library`
     alias(libs.plugins.cyclonedx)
@@ -51,6 +53,30 @@ dependencies {
     compileOnly(files(jcApiJar))
 }
 
+// Shared source injection. JC 3.0.5 classic CAPs are one-package / one-firewall,
+// so the :shared classes cannot be linked across packages at runtime. Their
+// sources are copied in at build time with the package rewritten from
+// social.meowl.shared to this applet's own. The rewritten tree feeds both
+// compileJava (IDE + :tests checks) and the ant-javacard CAP build (multi-path sources).
+private val sharedSrcDir =
+    rootProject.layout.projectDirectory.dir("shared/src/main/java/social/meowl/shared")
+private val generatedSharedDir = layout.buildDirectory.dir("generated/shared/java")
+
+val injectShared by tasks.registering(Sync::class) {
+    from(sharedSrcDir)
+    into(generatedSharedDir.map { it.dir("social/meowl/wallet") })
+    filteringCharset = "UTF-8"
+    filter { line -> line.replace("social.meowl.shared", "social.meowl.wallet") }
+}
+
+sourceSets.named("main") {
+    java.srcDir(generatedSharedDir)
+}
+
+tasks.named("compileJava") {
+    dependsOn(injectShared)
+}
+
 // Applet identifiers (override via `-Pwallet.xxx=...`).
 private val packageAid = providers.gradleProperty("wallet.packageAid").getOrElse("F06D656F776C")
 private val appletAid = providers.gradleProperty("wallet.appletAid").getOrElse("F06D656F776C01")
@@ -65,10 +91,11 @@ val buildCap by tasks.registering {
     group = "javacard"
     description = "Builds the meowl applet CAP file using ant-javacard."
 
-    dependsOn(tasks.named("compileJava"))
+    dependsOn(tasks.named("compileJava"), injectShared)
 
     inputs.files(antJavaCard).withPropertyName("antJavaCard")
     inputs.dir(layout.projectDirectory.dir("src/main/java")).withPropertyName("sources")
+    inputs.dir(generatedSharedDir).withPropertyName("sharedSources")
     inputs.dir(jcKitDir).withPropertyName("jckit")
     inputs.property("packageAid", packageAid)
     inputs.property("appletAid", appletAid)
@@ -82,6 +109,7 @@ val buildCap by tasks.registering {
     val outDir = capOutputDir.get().asFile
     val outCap = capOutputDir.get().file("meowl-wallet.cap").asFile
     val sourcesDir = layout.projectDirectory.dir("src/main/java").asFile
+    val sharedSourcesDir = generatedSharedDir.get().asFile
     val jcKitDirFile = jcKitDir.asFile
     val antClasspath = antJavaCard.asPath
 
@@ -107,7 +135,9 @@ val buildCap by tasks.registering {
                     "version" to capVersion,
                     "output" to outCap.absolutePath,
                     "export" to outDir.absolutePath,
-                    "sources" to sourcesDir.absolutePath,
+                    "sources" to
+                        listOf(sourcesDir.absolutePath, sharedSourcesDir.absolutePath)
+                            .joinToString(File.pathSeparator),
                     "verify" to "true",
                     "debug" to "false",
                     "ints" to "false",

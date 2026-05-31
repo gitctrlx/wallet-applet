@@ -23,5 +23,5 @@ plugins {
 
 rootProject.name = "meowl-applet"
 
-include("wallet", "ndef", "tests", "tools")
+include("shared", "wallet", "backup", "ndef", "tests", "tools")
 

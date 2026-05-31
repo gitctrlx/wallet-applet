@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: 2026 meowl.social contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-package social.meowl.wallet;
+package social.meowl.shared;
 
 import javacard.framework.ISOException;
 import javacard.framework.JCSystem;

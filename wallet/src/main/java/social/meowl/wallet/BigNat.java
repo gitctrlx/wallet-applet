@@ -155,16 +155,7 @@ public final class BigNat {
      * otherwise. Performs the full trial-subtract; every byte is read MSB-to-LSB on every call.
      */
     public static short ctLessThan(byte[] x, short xOff, byte[] y, short yOff, short size) {
-        short borrow = 0;
-        for (short i = (short) (size - 1); i >= 0; i--) {
-            short diff =
-                    (short)
-                            ((x[(short) (xOff + i)] & DIGIT_MASK)
-                                    - (y[(short) (yOff + i)] & DIGIT_MASK)
-                                    - borrow);
-            borrow = (short) ((diff >>> 15) & 1);
-        }
-        return (short) -borrow;
+        return CtUtil.ctLessThan(x, xOff, y, yOff, size);
     }
 
     /**
@@ -173,13 +164,7 @@ public final class BigNat {
      * rejects {@code int}-typed locals.
      */
     public static short ctIsZero(byte[] x, short xOff, short size) {
-        short acc = 0;
-        for (short i = 0; i < size; i++) {
-            acc |= (short) (x[(short) (xOff + i)] & DIGIT_MASK);
-        }
-        short orNeg = (short) (acc | (short) -acc);
-        short nonZero = (short) ((orNeg >>> 15) & 1);
-        return (short) (nonZero - 1);
+        return CtUtil.ctIsZero(x, xOff, size);
     }
 
     /**
@@ -188,11 +173,7 @@ public final class BigNat {
      * is secret.
      */
     public static boolean ctEquals(byte[] x, short xOff, byte[] y, short yOff, short size) {
-        byte diff = 0;
-        for (short i = 0; i < size; i++) {
-            diff |= (byte) (x[(short) (xOff + i)] ^ y[(short) (yOff + i)]);
-        }
-        return diff == 0;
+        return CtUtil.ctEquals(x, xOff, y, yOff, size);
     }
 
     /**

@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: 2026 meowl.social contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-package social.meowl.wallet;
+package social.meowl.shared;
 
 import javacard.framework.ISOException;
 
@@ -365,6 +365,61 @@ public final class Constants {
      * the wipe. See {@code docs/specs/protocol.md} §4.
      */
     public static final byte RESET_REQUIRED_INVOCATIONS = (byte) 4;
+
+    /*  Backup applet — BIP-39 seed-backup card (social.meowl.backup). Reuses the common surface
+     *  above (CLA, the SW table, EC/SC sizes, the SC + lifecycle + PIN INS 0x01/0x02/0x03/0x10/
+     *  0x11/0x20/0x21/0x22) and adds the seed-backup opcodes plus its own policy. The backup PIN
+     *  has no PUK and wipes the seed on exhaustion (see BackupPin), so PUK_* above is wallet-only.
+     *  INS values sit in the free upper half of the seed band so they never collide with the
+     *  wallet seed opcodes 0x40–0x42.
+     */
+
+    /**
+     * {@code BACKUP_SEED} — store BIP-39 entropy into the single seed slot (PIN-gated, SC-only).
+     */
+    public static final byte INS_BACKUP_SEED = (byte) 0x43;
+
+    /** {@code RESTORE_SEED} — return the stored entropy under the Secure Channel (PIN-gated). */
+    public static final byte INS_RESTORE_SEED = (byte) 0x44;
+
+    /** {@code VERIFY_SEED} — recompute the seed integrity CMAC and report a match (PIN-gated). */
+    public static final byte INS_VERIFY_SEED = (byte) 0x45;
+
+    /** {@code SET_NAME} — set the user-facing backup card label (PIN-gated). */
+    public static final byte INS_SET_NAME = (byte) 0x46;
+
+    /** Minimum BIP-39 entropy length: 16 bytes = 128 bits = 12 words. */
+    public static final short ENTROPY_MIN_LEN = (short) 16;
+
+    /** Maximum BIP-39 entropy length: 32 bytes = 256 bits = 24 words. */
+    public static final short ENTROPY_MAX_LEN = (short) 32;
+
+    /** Maximum backup card label length in bytes. */
+    public static final short BACKUP_NAME_MAX_LEN = (short) 32;
+
+    /** Backup PIN maximum length in bytes; aligned with the Ledger Recovery Key 4–8 policy. */
+    public static final byte BACKUP_PIN_MAX_LEN = (byte) 8;
+
+    /** Backup PIN try limit; on exhaustion the seed is wiped (no PUK recovery). */
+    public static final byte BACKUP_PIN_RETRY_LIMIT = (byte) 3;
+
+    /** Status tag 0x06 — backup seed presence (1 byte: {@code 0x01} stored, {@code 0x00} empty). */
+    public static final byte TAG_SEED_PRESENT = (byte) 0x06;
+
+    /** Status tag 0x07 — remaining backup PIN tries (1 byte). */
+    public static final byte TAG_PIN_TRIES = (byte) 0x07;
+
+    /** Status tag 0x08 — backup card label (variable length, ≤ {@link #BACKUP_NAME_MAX_LEN}). */
+    public static final byte TAG_CARD_NAME = (byte) 0x08;
+
+    /** Status tag 0x09 — stored entropy length in bytes (1 byte: 16/24/32, or 0 when empty). */
+    public static final byte TAG_SEED_LEN = (byte) 0x09;
+
+    /** Applet-private {@code 6FD0} — stored-seed integrity (AES-CMAC-128) check failed. */
+    public static final short SW_SEED_INTEGRITY_FAIL = (short) 0x6FD0;
+
+    /** Applet-private {@code 6FD1} — a seed is already stored; the single slot is occupied. */
+    public static final short SW_SEED_ALREADY_PRESENT = (short) 0x6FD1;
 
     /**
      * Throws {@link ISOException} with the given status word and returns a {@link RuntimeException}
