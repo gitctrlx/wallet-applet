@@ -5,11 +5,14 @@
 package social.meowl.tools.cli;
 
 import java.nio.file.Path;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
+import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 import picocli.CommandLine.ParentCommand;
+import social.meowl.tools.core.MeowlAid;
 import social.meowl.tools.gp.GpFacade;
 
 /**
@@ -36,11 +39,24 @@ public final class GpInstallCommand implements Callable<Integer> {
     @Parameters(arity = "1", paramLabel = "CAP", description = "Path to the CAP file to install.")
     public Path capFile;
 
+    @Option(
+            names = "--instance-aid",
+            paramLabel = "HEX",
+            description =
+                    "Instance AID to assign at install, hex. Defaults to the CAP's declared applet"
+                        + " AID. Pass e.g. D2760000850101 to instantiate the NDEF tag applet under"
+                        + " the NFC Forum Type 4 well-known AID for phone auto-discovery.")
+    public String instanceAidHex;
+
     @Override
     public Integer call() {
         MeowlCli root = (MeowlCli) parent.spec.commandLine().getParent().getCommand();
         GpFacade facade = new GpFacade(root.globalOptions.toReaderPreferences(), keys.toCardKeys());
-        GpFacade.InstallResult result = facade.install(capFile);
+        Optional<byte[]> instanceOverride =
+                (instanceAidHex == null || instanceAidHex.isBlank())
+                        ? Optional.empty()
+                        : Optional.of(MeowlAid.parse(instanceAidHex));
+        GpFacade.InstallResult result = facade.install(capFile, instanceOverride);
 
         if (root.globalOptions.json) {
             JsonOutput.writeMap(

@@ -6,14 +6,14 @@
 #   git tag v1.0.0 && git push origin v1.0.0
 #
 # Artefacts attached to the GitHub Release:
-#   - meowl-applet.cap        the CAP file
-#   - meowl-sbom.cdx.json     CycloneDX 1.6 SBOM
+#   - meowl-wallet.cap        the CAP file
+#   - meowl-wallet-sbom.cdx.json     CycloneDX 1.6 SBOM
 #   - sha256sums.txt          digests of every artefact
 #
 # The CAP file is also attested via Sigstore keyless signing
 # (actions/attest-build-provenance). Verify with:
 #
-#   gh attestation verify meowl-applet.cap --repo qntx/meowl-applet
+#   gh attestation verify meowl-wallet.cap --repo qntx/meowl-applet
 name: Release
 
 on:
@@ -55,22 +55,22 @@ jobs:
           cache-read-only: true
 
       - name: Build + test + SBOM
-        run: ./gradlew :applet:buildCap :tests:test :applet:cyclonedxDirectBom
+        run: ./gradlew :wallet:buildCap :tests:test :wallet:cyclonedxDirectBom
 
       - name: Stage release artefacts
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p release
-          cp applet/build/cap/meowl-applet.cap release/
-          cp applet/build/reports/meowl-sbom.cdx.json release/
+          cp wallet/build/cap/meowl-wallet.cap release/
+          cp wallet/build/reports/meowl-wallet-sbom.cdx.json release/
           (cd release && sha256sum * > sha256sums.txt)
 
       - name: Attest SLSA build provenance
         continue-on-error: true # Only works for public repos on Team/Pro/Free plans
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
-          subject-path: release/meowl-applet.cap
+          subject-path: release/meowl-wallet.cap
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
@@ -79,6 +79,6 @@ jobs:
           fail_on_unmatched_files: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
-            release/meowl-applet.cap
-            release/meowl-sbom.cdx.json
+            release/meowl-wallet.cap
+            release/meowl-wallet-sbom.cdx.json
             release/sha256sums.txt

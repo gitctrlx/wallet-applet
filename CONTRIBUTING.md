@@ -24,10 +24,10 @@ systemProp.http.proxyPort=7897
 ```bash
 git clone --recurse-submodules https://github.com/qntx/meowl-applet.git
 cd meowl-applet
-./gradlew spotlessCheck :applet:buildCap :tests:test
+./gradlew spotlessCheck :wallet:buildCap :tests:test
 ```
 
-The CAP file lands in `applet/build/cap/meowl-applet.cap`.
+The CAP file lands in `wallet/build/cap/meowl-wallet.cap`.
 
 ## Project layout
 
@@ -49,7 +49,7 @@ The CAP file lands in `applet/build/cap/meowl-applet.cap`.
 ./gradlew spotlessApply
 
 # Build the CAP file
-./gradlew :applet:buildCap
+./gradlew :wallet:buildCap
 
 # Run the JCardSim test suite (no physical card required)
 ./gradlew :tests:test
@@ -72,8 +72,8 @@ Applet identifiers and the CAP package version are overridable via Gradle proper
 | --- | --- | --- |
 | `applet.packageAid` | `F06D656F776C` | CAP package AID (hex) |
 | `applet.appletAid` | `F06D656F776C01` | Applet instance AID |
-| `applet.class` | `social.meowl.applet.MeowlApplet` | Applet class FQN |
-| `applet.packageName` | `social.meowl.applet` | Java package |
+| `applet.class` | `social.meowl.wallet.WalletApplet` | Applet class FQN |
+| `applet.packageName` | `social.meowl.wallet` | Java package |
 | `applet.capVersion` | `0.1` | CAP package version (MAJOR.MINOR) |
 
 ## Workflow
@@ -81,7 +81,7 @@ Applet identifiers and the CAP package version are overridable via Gradle proper
 1. Open an issue first for non-trivial changes.
 2. Branch from `main` using a Conventional-Commits-style prefix: `git checkout -b feat/<topic>` or `fix/<topic>`.
 3. Keep the diff focused — one logical change per PR.
-4. Run the full local pipeline before pushing: `./gradlew spotlessApply :applet:buildCap :tests:test`.
+4. Run the full local pipeline before pushing: `./gradlew spotlessApply :wallet:buildCap :tests:test`.
 5. Commit using **Conventional Commits** in English (subject ≤ 72 chars):
 
    ```text
@@ -103,7 +103,7 @@ Applet identifiers and the CAP package version are overridable via Gradle proper
 
 ## Adding a new APDU
 
-1. Reserve an `INS` constant in `MeowlApplet`.
+1. Reserve an `INS` constant in `WalletApplet`.
 2. Add a private handler and dispatch it from `process(...)`.
 3. Add a JCardSim test under `tests/` covering both the success path and the relevant failure status words.
 4. Document the APDU in `docs/protocol.md` (create the file if it does not yet exist).

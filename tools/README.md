@@ -65,8 +65,8 @@ Every subcommand inherits the same mixin via picocli:
 
 ```bash
 # 1. Build the CAP and install it onto the card with the default GP keys.
-./gradlew :applet:buildCap
-./gradlew :tools:run -q --args="gp install applet/build/cap/meowl-applet.cap"
+./gradlew :wallet:buildCap
+./gradlew :tools:run -q --args="gp install wallet/build/cap/meowl-wallet.cap"
 
 # 2. Sanity-check the install.
 ./gradlew :tools:run -q --args="info"
@@ -83,7 +83,7 @@ Most JCOP 4 cards (incl. NXP J3R180) ship with a vendor-specific "default" ISD k
 ./gradlew :tools:run -q --args="gp list --key-master 404142434445464748494A4B4C4D4E4F"
 
 # Triple form: the three components are used as static SCP02/SCP03 keys.
-./gradlew :tools:run -q --args="gp install applet/build/cap/meowl-applet.cap \
+./gradlew :tools:run -q --args="gp install wallet/build/cap/meowl-wallet.cap \
   --key-enc 5A9E63D03BADBC2A240FE8F534709EDF \
   --key-mac 7CCC1E79D64FC5FA263B8F2955282998 \
   --key-kek B040703EC3DE23EE8AE4CFB6D632AA80"

@@ -201,7 +201,7 @@ class SecureChannelClientIT {
     }
 
     /**
-     * Connects to a PCSC reader, opens a basic channel, and SELECTs the {@code MeowlApplet} AID.
+     * Connects to a PCSC reader, opens a basic channel, and SELECTs the {@code WalletApplet} AID.
      * The applet must already be installed on the card; this fixture does not invoke GP install.
      *
      * <p>{@code terminalName} matches the JDK PCSC name verbatim (no substring matching). When
@@ -220,7 +220,7 @@ class SecureChannelClientIT {
             if (select.getSW() != 0x9000) {
                 card.disconnect(false);
                 throw new IllegalStateException(
-                        "SELECT MeowlApplet failed: SW=0x" + Integer.toHexString(select.getSW()));
+                        "SELECT WalletApplet failed: SW=0x" + Integer.toHexString(select.getSW()));
             }
             return card;
         } catch (CardException e) {

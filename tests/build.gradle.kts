@@ -21,8 +21,8 @@ java {
 
 // The PCSC-backed integration suites live in their own `realCard` source set so they stay both
 // physically and compile-isolated from the jcardsim-backed unit tests in `src/test`. The unit tests
-// need package-private access to applet internals (hence they share package `social.meowl.applet`),
-// whereas the integration suites are pure black-box APDU drivers in `social.meowl.applet.realcard`.
+// need package-private access to applet internals (hence they share package `social.meowl.wallet`),
+// whereas the integration suites are pure black-box APDU drivers in `social.meowl.wallet.realcard`.
 val realCard: SourceSet by sourceSets.creating
 
 configurations["realCardImplementation"].extendsFrom(configurations["testImplementation"])
@@ -43,7 +43,7 @@ dependencies {
     testRuntimeOnly(libs.slf4j.simple)
 
     // Reuse applet sources so unit tests can call the applet classes directly.
-    testImplementation(project(":applet"))
+    testImplementation(project(":wallet"))
 }
 
 // Default `test` task: the jcardsim-backed unit suites in `src/test`. The PCSC integration suites
@@ -59,7 +59,7 @@ tasks.test {
 }
 
 // Opt-in `realCardTest` task: compiles and runs the `realCard` source set against a physical J3R180
-// via PCSC. Drives `RealCardClient` from `social.meowl.applet.realcard.support`, which talks to
+// via PCSC. Drives `RealCardClient` from `social.meowl.wallet.realcard.support`, which talks to
 // `javax.smartcardio` over whatever PCSC reader the environment surfaces. The applet must already be
 // installed on the card.
 //

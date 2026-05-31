@@ -42,7 +42,7 @@ public final class MeowlCard {
 
     /**
      * Consecutive un-interleaved {@code RESET_TO_FACTORY} invocations the applet requires before it
-     * performs the wipe; mirrors {@code social.meowl.applet.Constants.RESET_REQUIRED_INVOCATIONS}.
+     * performs the wipe; mirrors {@code social.meowl.wallet.Constants.RESET_REQUIRED_INVOCATIONS}.
      */
     public static final int RESET_REQUIRED_INVOCATIONS = 4;
 

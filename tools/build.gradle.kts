@@ -120,12 +120,12 @@ tasks.register<Test>("realCardTest") {
 tasks.register<Exec>("installCap") {
     group = "javacard"
     description = "Builds the meowl CAP and installs it via `meowl gp install` (default GP keys)."
-    dependsOn(":applet:buildCap", "installDist")
+    dependsOn(":wallet:buildCap", "installDist")
 
     val capProvider =
         rootProject.layout.projectDirectory
-            .dir("applet/build/cap")
-            .file("meowl-applet.cap")
+            .dir("wallet/build/cap")
+            .file("meowl-wallet.cap")
     inputs.file(capProvider)
 
     val launcherDir = layout.buildDirectory.dir("install/meowl/bin")
@@ -141,7 +141,7 @@ tasks.register<Exec>("installCap") {
 
     doFirst {
         val cap = capProvider.asFile
-        check(cap.isFile) { "CAP file not found at $cap. Run :applet:buildCap first." }
+        check(cap.isFile) { "CAP file not found at $cap. Run :wallet:buildCap first." }
         commandLine(
             launcherDir
                 .get()

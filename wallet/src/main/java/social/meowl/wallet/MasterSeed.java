@@ -1,0 +1,280 @@
+/*
+ * SPDX-FileCopyrightText: 2026 meowl.social contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+package social.meowl.wallet;
+
+import javacard.framework.ISOException;
+import javacard.framework.JCSystem;
+import javacard.framework.Util;
+
+/**
+ * Persistent master-seed storage and HD derivation root.
+ *
+ * <p>The raw BIP-39 seed is never retained: on import the card computes the two HMAC-SHA-512 chains
+ * once and persists only the resulting master keying material:
+ *
+ * <pre>
+ *   bip32Material  = HMAC-SHA-512("Bitcoin seed", seed)   // 64 bytes, k(32) || c(32)
+ *   slip10Material = HMAC-SHA-512("ed25519 seed", seed)   // 64 bytes, k(32) || c(32)
+ * </pre>
+ *
+ * <p>Lifecycle: {@link #importSeed} for a host-supplied seed, {@link #generateSeed} for a
+ * card-internal CSPRNG seed (the only path on which raw seed bytes ever leave the card), and {@link
+ * #wipe} as the reset-to-factory hook.
+ */
+public final class MasterSeed {
+
+    /** HMAC label per BIP-32 §"Master key generation". */
+    private static final byte[] HMAC_LABEL_BIP32 = {
+        (byte) 'B',
+        (byte) 'i',
+        (byte) 't',
+        (byte) 'c',
+        (byte) 'o',
+        (byte) 'i',
+        (byte) 'n',
+        (byte) ' ',
+        (byte) 's',
+        (byte) 'e',
+        (byte) 'e',
+        (byte) 'd',
+    };
+
+    /** HMAC label per SLIP-10 §1. */
+    private static final byte[] HMAC_LABEL_SLIP10 = {
+        (byte) 'e',
+        (byte) 'd',
+        (byte) '2',
+        (byte) '5',
+        (byte) '5',
+        (byte) '1',
+        (byte) '9',
+        (byte) ' ',
+        (byte) 's',
+        (byte) 'e',
+        (byte) 'e',
+        (byte) 'd',
+    };
+
+    private static final short MASTER_LEN = (short) 64;
+
+    /** Concatenated {@code k_master(32) || c_master(32)} for BIP-32 secp256k1. */
+    private final byte[] bip32Material;
+
+    /** Concatenated {@code k_master(32) || c_master(32)} for SLIP-10 Ed25519. */
+    private final byte[] slip10Material;
+
+    /** {@code [0] != 0} once a seed has been imported or generated. */
+    private final byte[] seededFlag;
+
+    private final HmacSha512 hmac;
+
+    /**
+     * @param sharedHmac512 a shared HMAC-SHA-512 engine reused by {@link Bip32} and {@link Slip10}.
+     *     Safe because APDU dispatch is single-threaded; one engine saves ~192 transient bytes on
+     *     cards that take the software fallback path.
+     */
+    public MasterSeed(HmacSha512 sharedHmac512) {
+        this.bip32Material = new byte[MASTER_LEN];
+        this.slip10Material = new byte[MASTER_LEN];
+        this.seededFlag = new byte[1];
+        this.hmac = sharedHmac512;
+    }
+
+    /** Whether a seed has been imported or generated. */
+    public boolean isSeeded() {
+        return seededFlag[0] != 0;
+    }
+
+    /**
+     * Installs a host-supplied seed and computes both master-key chains. <strong>Caller MUST hold a
+     * {@link JCSystem#beginTransaction() JavaCard transaction}</strong> so the master commit lands
+     * atomically with the companion lifecycle advance ({@code SETUP_DONE → SEEDED}).
+     *
+     * <p>Per <a href="https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki">BIP-32</a>
+     * §"Master key generation", a seed yielding {@code parse256(I_L) == 0} or {@code parse256(I_L)
+     * ≥ n} is rejected with {@link Constants#SW_CONDITIONS_NOT_SATISFIED} so the host can retry
+     * (occurrence probability is below {@code 2⁻¹²⁷}). SLIP-10 imposes no such check, so the
+     * Ed25519 master is accepted unconditionally.
+     *
+     * @param seedLen seed length in bytes; must lie in {@code [SEED_MIN_LEN, SEED_MAX_LEN]}
+     */
+    public void importSeed(byte[] seedBuf, short seedOff, short seedLen) {
+        // Runtime guard for the "caller holds a JC transaction" contract: a half-mutated
+        // MasterSeed surviving a torn power-off would brick the card.
+        if (JCSystem.getTransactionDepth() == 0) {
+            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
+        }
+        if (seededFlag[0] != 0) {
+            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
+        }
+        if (seedLen < Constants.SEED_MIN_LEN || seedLen > Constants.SEED_MAX_LEN) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        hmacInto(
+                HMAC_LABEL_BIP32,
+                (short) HMAC_LABEL_BIP32.length,
+                seedBuf,
+                seedOff,
+                seedLen,
+                bip32Material,
+                (short) 0);
+        requireValidBip32MasterKey();
+        hmacInto(
+                HMAC_LABEL_SLIP10,
+                (short) HMAC_LABEL_SLIP10.length,
+                seedBuf,
+                seedOff,
+                seedLen,
+                slip10Material,
+                (short) 0);
+        seededFlag[0] = 1;
+    }
+
+    /**
+     * Generates a 64-byte CSPRNG seed into {@code outBuf} and derives both master-key chains from
+     * it. The caller emits the generated bytes as the APDU response and overwrites the buffer
+     * afterwards; this method does not zero the output.
+     *
+     * @return {@link Constants#SEED_GENERATED_LEN}
+     */
+    public short generateSeed(byte[] outBuf, short outOff) {
+        // Same transaction-depth contract as importSeed.
+        if (JCSystem.getTransactionDepth() == 0) {
+            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
+        }
+        if (seededFlag[0] != 0) {
+            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
+        }
+        if (outBuf == null
+                || outOff < 0
+                || (short) (outOff + Constants.SEED_GENERATED_LEN) > (short) outBuf.length) {
+            ISOException.throwIt(Constants.SW_WRONG_LENGTH);
+        }
+        // protocol.md §9 GENERATE_SEED: ALG_KEYGENERATION first (universal on JC 3.0.4+, designed
+        // for
+        // key material); ALG_TRNG fallback for cards that restrict the keygen class.
+        javacard.security.RandomData random;
+        try {
+            random =
+                    javacard.security.RandomData.getInstance(
+                            javacard.security.RandomData.ALG_KEYGENERATION);
+        } catch (Exception e) {
+            random =
+                    javacard.security.RandomData.getInstance(javacard.security.RandomData.ALG_TRNG);
+        }
+        // Resample until the BIP-32 master k passes parse256(I_L) ∈ (0, n). Failure probability
+        // per draw is below 2⁻¹²⁷; the 8-attempt cap is purely defensive.
+        for (short attempt = 0; attempt < (short) 8; attempt++) {
+            random.nextBytes(outBuf, outOff, Constants.SEED_GENERATED_LEN);
+            hmacInto(
+                    HMAC_LABEL_BIP32,
+                    (short) HMAC_LABEL_BIP32.length,
+                    outBuf,
+                    outOff,
+                    Constants.SEED_GENERATED_LEN,
+                    bip32Material,
+                    (short) 0);
+            if (BigNat.ctLessThan(
+                                    bip32Material,
+                                    (short) 0,
+                                    Secp256k1Curve.N,
+                                    (short) 0,
+                                    Constants.EC_SCALAR_LEN)
+                            != 0
+                    && BigNat.ctIsZero(bip32Material, (short) 0, Constants.EC_SCALAR_LEN) == 0) {
+                hmacInto(
+                        HMAC_LABEL_SLIP10,
+                        (short) HMAC_LABEL_SLIP10.length,
+                        outBuf,
+                        outOff,
+                        Constants.SEED_GENERATED_LEN,
+                        slip10Material,
+                        (short) 0);
+                seededFlag[0] = 1;
+                return Constants.SEED_GENERATED_LEN;
+            }
+        }
+        // Resample budget exhausted; wipe the partial master so a rollback can't leak it.
+        Util.arrayFillNonAtomic(bip32Material, (short) 0, MASTER_LEN, (byte) 0);
+        Util.arrayFillNonAtomic(outBuf, outOff, Constants.SEED_GENERATED_LEN, (byte) 0);
+        throw Constants.fail(Constants.SW_CONDITIONS_NOT_SATISFIED);
+    }
+
+    /**
+     * Enforces BIP-32 master-key validity ({@code 0 < parse256(I_L) < n}) on {@link
+     * #bip32Material}. Failure throws {@link Constants#SW_CONDITIONS_NOT_SATISFIED} so the host can
+     * retry with a fresh seed.
+     */
+    private void requireValidBip32MasterKey() {
+        if (BigNat.ctIsZero(bip32Material, (short) 0, Constants.EC_SCALAR_LEN) != 0
+                || BigNat.ctLessThan(
+                                bip32Material,
+                                (short) 0,
+                                Secp256k1Curve.N,
+                                (short) 0,
+                                Constants.EC_SCALAR_LEN)
+                        == 0) {
+            // Wipe the partial master so a future commit can't expose a structurally invalid key.
+            Util.arrayFillNonAtomic(bip32Material, (short) 0, MASTER_LEN, (byte) 0);
+            ISOException.throwIt(Constants.SW_CONDITIONS_NOT_SATISFIED);
+        }
+    }
+
+    /**
+     * Copies the BIP-32 master keying material ({@code k_master(32) || c_master(32)}, 64 bytes)
+     * into {@code dst[dstOff..dstOff+64]}. Callers MUST treat the destination as secret and wipe it
+     * on the surrounding HD-walk scratch lifecycle. Pull-based by design so no live alias to the
+     * persistent master ever escapes.
+     *
+     * <p><b>Visibility:</b> package-private — only {@link Bip32#walkPathToLeaf} should ever call
+     * this. Widening to {@code public} would let any package-internal class (PKI, SC, …) copy the
+     * master into a non-transient buffer.
+     */
+    void copyBip32MasterTo(byte[] dst, short dstOff) {
+        requireSeeded();
+        Util.arrayCopyNonAtomic(bip32Material, (short) 0, dst, dstOff, MASTER_LEN);
+    }
+
+    /**
+     * Copies the SLIP-10 Ed25519 master ({@code k || c} layout) into {@code
+     * dst[dstOff..dstOff+64]}. Same secrecy contract and package-private visibility as {@link
+     * #copyBip32MasterTo}.
+     */
+    void copySlip10MasterTo(byte[] dst, short dstOff) {
+        requireSeeded();
+        Util.arrayCopyNonAtomic(slip10Material, (short) 0, dst, dstOff, MASTER_LEN);
+    }
+
+    /**
+     * Reset-to-factory hook: closes the seeded gate. Caller MUST hold a {@link
+     * JCSystem#beginTransaction()} block; physical EEPROM clearing is performed after the atomic
+     * gate commit by {@link #wipeKeyMaterialNonAtomic()}.
+     */
+    public void wipeInTx() {
+        seededFlag[0] = 0;
+    }
+
+    void wipeKeyMaterialNonAtomic() {
+        Util.arrayFillNonAtomic(bip32Material, (short) 0, MASTER_LEN, (byte) 0);
+        Util.arrayFillNonAtomic(slip10Material, (short) 0, MASTER_LEN, (byte) 0);
+    }
+
+    private void hmacInto(
+            byte[] label,
+            short labelLen,
+            byte[] in,
+            short inOff,
+            short inLen,
+            byte[] out,
+            short outOff) {
+        hmac.sign(label, (short) 0, labelLen, in, inOff, inLen, out, outOff);
+    }
+
+    private void requireSeeded() {
+        if (seededFlag[0] == 0) {
+            ISOException.throwIt(Constants.SW_LIFECYCLE_INVALID);
+        }
+    }
+}

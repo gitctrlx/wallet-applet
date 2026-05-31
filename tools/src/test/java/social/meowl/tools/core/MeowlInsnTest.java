@@ -111,7 +111,7 @@ class MeowlInsnTest {
     @Test
     @DisplayName("the enum size is in sync with the applet's documented INS surface")
     void enumSizeMatchesSpec() {
-        // 21 INS bytes are documented in `social.meowl.applet.Constants` at the time of writing.
+        // 21 INS bytes are documented in `social.meowl.wallet.Constants` at the time of writing.
         // Any change to that surface MUST be reflected here; the corresponding test in the applet
         // module (MeowlInsTableTest, Phase 2) will keep us honest reflectively.
         assertEquals(21, MeowlInsn.values().length);

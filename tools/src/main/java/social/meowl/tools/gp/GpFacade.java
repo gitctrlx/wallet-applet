@@ -22,7 +22,6 @@ import pro.javacard.gp.GPRegistry;
 import pro.javacard.gp.GPRegistryEntry;
 import pro.javacard.gp.GPSession;
 import pro.javacard.gp.keys.PlaintextKeys;
-import social.meowl.tools.core.MeowlAid;
 import social.meowl.tools.transport.CardTransport;
 import social.meowl.tools.transport.ReaderPreferences;
 
@@ -94,11 +93,24 @@ public final class GpFacade {
     }
 
     /**
-     * Installs a CAP file on the card. The package and applet AIDs come from the CAP; the instance
-     * AID is {@link MeowlAid#defaultBytes}. If the package or instance is already installed it is
-     * deleted (with dependencies) so the install replaces rather than fails.
+     * Installs a CAP file on the card with the instance AID defaulting to the CAP's declared applet
+     * AID. See {@link #install(Path, Optional)}.
      */
     public InstallResult install(Path capPath) {
+        return install(capPath, Optional.empty());
+    }
+
+    /**
+     * Installs a CAP file on the card. The package and applet (class) AIDs come from the CAP; the
+     * instance AID is {@code instanceAidOverride} when present, otherwise the CAP's declared applet
+     * AID. If the package is already installed it is deleted (with dependencies) so the install
+     * replaces rather than fails.
+     *
+     * <p>The override exists because an applet can be instantiated under an AID different from the
+     * one it declares — e.g. the NDEF tag applet is instantiated under the NFC Forum Type 4
+     * well-known AID {@code D2760000850101} so phones auto-discover it on tap.
+     */
+    public InstallResult install(Path capPath, Optional<byte[]> instanceAidOverride) {
         return CardTransport.run(
                 prefs,
                 bibo -> {
@@ -117,12 +129,12 @@ public final class GpFacade {
                                 "CAP file declares no applets: " + capPath);
                     }
                     AID classAid = appletAids.get(0);
-                    AID instanceAid = new AID(MeowlAid.defaultBytes());
+                    AID instanceAid = instanceAidOverride.map(AID::new).orElse(classAid);
 
                     GPSession gp = openSession(bibo);
 
-                    // Idempotent install: if either the package or the instance is already there,
-                    // remove it (with dependencies) so the install does not fail with 6985.
+                    // Idempotent install: if the package is already there, remove it (with
+                    // dependencies) so the install does not fail with 6985.
                     Optional<AID> existingPackage =
                             gp.getRegistry().allPackages().stream()
                                     .map(GPRegistryEntry::getAID)

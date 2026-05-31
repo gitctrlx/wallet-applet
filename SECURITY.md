@@ -37,7 +37,7 @@ The codebase and release process enforce:
 
   ```bash
   sha256sum -c sha256sums.txt
-  gh attestation verify meowl-applet.cap --repo qntx/meowl-applet
+  gh attestation verify meowl-wallet.cap --repo qntx/meowl-applet
   ```
 
 ## Operating assumptions

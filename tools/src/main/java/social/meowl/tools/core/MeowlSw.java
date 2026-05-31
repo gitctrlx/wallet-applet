@@ -11,7 +11,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * Status word table mirrored from {@code social.meowl.applet.Constants}.
+ * Status word table mirrored from {@code social.meowl.wallet.Constants}.
  *
  * <p>This is the host-side decoder used by the CLI and shell to translate a returned {@link
  * apdu4j.core.ResponseAPDU#getSW()} into a human-readable label. The applet emits status words from

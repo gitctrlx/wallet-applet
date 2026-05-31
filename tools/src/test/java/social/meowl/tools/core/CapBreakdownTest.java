@@ -36,7 +36,7 @@ class CapBreakdownTest {
         entries.put("social/meowl/applet/javacard/ConstantPool.cap", 1400);
         entries.put("social/meowl/applet/javacard/Header.cap", 19);
         // JVM bytecode (not on-card).
-        entries.put("APPLET-INF/classes/social/meowl/applet/MeowlApplet.class", 12000);
+        entries.put("APPLET-INF/classes/social/meowl/applet/WalletApplet.class", 12000);
         entries.put("APPLET-INF/classes/social/meowl/applet/Bip32.class", 3700);
         // Workshop metadata.
         entries.put("META-INF/MANIFEST.MF", 1100);

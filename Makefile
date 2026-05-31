@@ -14,7 +14,9 @@ else
 endif
 
 GRADLE_FLAGS ?= --no-daemon
-CAP ?= $(abspath applet/build/cap/meowl-applet.cap)
+CAP ?= $(abspath wallet/build/cap/meowl-wallet.cap)
+NDEF_CAP ?= $(abspath ndef/build/cap/meowl-ndef.cap)
+NDEF_AID ?= D2760000850101
 PIN ?= 123456
 PUK ?= 12345678
 SEED ?=
@@ -24,7 +26,7 @@ CDKkek ?= B040703EC3DE23EE8AE4CFB6D632AA80
 GP_KEYS ?= --key-enc $(CDKenc) --key-mac $(CDKmac) --key-kek $(CDKkek)
 
 .DEFAULT_GOAL := all
-.PHONY: all help check test bench fmt lint build cap install uninstall init reset-card run shell clean tasks ci
+.PHONY: all help check test bench fmt lint build cap build-ndef install-ndef install uninstall init reset-card run shell clean tasks ci
 
 # Default target — the verification gate the user asked for: enforces the
 # Spotless format contract, then runs the full applet test suite.
@@ -40,8 +42,10 @@ help:
 	@echo   make bench ARGS=.. ./gradlew :tools:run --args="bench ARGS"
 	@echo   make fmt         ./gradlew spotlessApply (auto-format in place)
 	@echo   make lint        alias for 'make check'
-	@echo   make build       ./gradlew :applet:buildCap
+	@echo   make build       ./gradlew :wallet:buildCap
 	@echo   make cap         alias for 'make build'
+	@echo   make build-ndef  ./gradlew :ndef:buildCap (NFC Type 4 tag CAP)
+	@echo   make install-ndef build+install NDEF CAP under NFC AID D2760000850101
 	@echo   make install     build CAP and install it with default CDK ENC/MAC/KEK
 	@echo   make uninstall   uninstall applet/package with default CDK ENC/MAC/KEK
 	@echo   make init        initialize fresh applet: PKI + PIN/PUK + seed
@@ -72,9 +76,18 @@ lint: check
 
 # Build the deployable JavaCard applet artefact.
 build:
-	$(GRADLE) $(GRADLE_FLAGS) :applet:buildCap
+	$(GRADLE) $(GRADLE_FLAGS) :wallet:buildCap
 
 cap: build
+
+# Build the NDEF Type 4 tag CAP (separate package from the wallet applet).
+build-ndef:
+	$(GRADLE) $(GRADLE_FLAGS) :ndef:buildCap
+
+# Build and install the NDEF tag CAP, instantiated under the NFC Forum Type 4
+# well-known AID D2760000850101 so phones auto-discover it on tap.
+install-ndef: build-ndef
+	$(GRADLE) $(GRADLE_FLAGS) :tools:run --args="gp install $(GP_KEYS) --instance-aid $(NDEF_AID) $(NDEF_CAP)"
 
 install: build
 	$(GRADLE) $(GRADLE_FLAGS) :tools:run --args="gp install $(GP_KEYS) $(CAP)"
