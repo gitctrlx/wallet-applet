@@ -23,6 +23,13 @@ public final class MeowlAid {
     /** Hex form of {@link #defaultBytes()}, suitable for CLI usage messages. */
     public static final String DEFAULT_HEX = "F06D656F776C01";
 
+    /**
+     * NFC Forum Type 4 well-known application AID under which the meowl NDEF tag is instantiated,
+     * so stock phones discover it on tap. The NDEF CAP declares {@code F06D656F776C0301}; GP {@code
+     * install [for install]} assigns this instance AID.
+     */
+    public static final String NDEF_INSTANCE_HEX = "D2760000850101";
+
     /** Minimum AID length per ISO/IEC 7816-5 §8.2.1.2 (5 bytes). */
     public static final int MIN_LEN = 5;
 

@@ -20,13 +20,14 @@ NDEF_AID ?= D2760000850101
 PIN ?= 123456
 PUK ?= 12345678
 SEED ?=
+URI ?=
 CDKenc ?= 5A9E63D03BADBC2A240FE8F534709EDF
 CDKmac ?= 7CCC1E79D64FC5FA263B8F2955282998
 CDKkek ?= B040703EC3DE23EE8AE4CFB6D632AA80
 GP_KEYS ?= --key-enc $(CDKenc) --key-mac $(CDKmac) --key-kek $(CDKkek)
 
 .DEFAULT_GOAL := all
-.PHONY: all help check test bench fmt lint build cap build-ndef install-ndef install uninstall init reset-card run shell clean tasks ci
+.PHONY: all help check test tools-test bench fmt lint build cap build-ndef install-ndef read-ndef write-ndef install uninstall init reset-card run shell clean tasks ci
 
 # Default target — the verification gate the user asked for: enforces the
 # Spotless format contract, then runs the full applet test suite.
@@ -46,13 +47,15 @@ help:
 	@echo   make cap         alias for 'make build'
 	@echo   make build-ndef  ./gradlew :ndef:buildCap (NFC Type 4 tag CAP)
 	@echo   make install-ndef build+install NDEF CAP under NFC AID D2760000850101
+	@echo   make read-ndef   read the NDEF tag and print its URI
+	@echo   make write-ndef URI=.. write a URI record to the NDEF tag
 	@echo   make install     build CAP and install it with default CDK ENC/MAC/KEK
 	@echo   make uninstall   uninstall applet/package with default CDK ENC/MAC/KEK
 	@echo   make init        initialize fresh applet: PKI + PIN/PUK + seed
 	@echo   make reset-card  factory reset installed applet state
 	@echo   make run ARGS=.. ./gradlew :tools:run --args=ARGS
 	@echo   make shell       ./gradlew :tools:run --args=shell
-	@echo   make ci          full CI pipeline: spotlessCheck + buildCap + :tests:test
+	@echo   make ci          full CI pipeline: spotlessCheck + CAPs + :tests:test + :tools:test
 	@echo   make tasks       ./gradlew tasks --all (list every Gradle task)
 	@echo   make clean       ./gradlew clean (remove every build/ directory)
 
@@ -63,6 +66,10 @@ check:
 # Run the full applet test suite (jcardsim integration + protocol tests).
 test:
 	$(GRADLE) $(GRADLE_FLAGS) :tests:test
+
+# Run the host-side CLI unit tests (excludes @Tag("real-card")).
+tools-test:
+	$(GRADLE) $(GRADLE_FLAGS) :tools:test
 
 # Run the host-side card benchmark CLI. Pass ARGS, e.g. ARGS="-p 123456 --samples 30".
 bench:
@@ -89,6 +96,14 @@ build-ndef:
 install-ndef: build-ndef
 	$(GRADLE) $(GRADLE_FLAGS) :tools:run --args="gp install $(GP_KEYS) --instance-aid $(NDEF_AID) $(NDEF_CAP)"
 
+# Read the installed NDEF tag and print its URI (openly readable; no keys needed).
+read-ndef:
+	$(GRADLE) $(GRADLE_FLAGS) :tools:run --args="ndef read"
+
+# Write a URI to the NDEF tag, e.g. make write-ndef URI=https://meowl.social/p/<nprofile>
+write-ndef:
+	$(GRADLE) $(GRADLE_FLAGS) :tools:run --args="ndef write-uri $(URI)"
+
 install: build
 	$(GRADLE) $(GRADLE_FLAGS) :tools:run --args="gp install $(GP_KEYS) $(CAP)"
 
@@ -111,7 +126,7 @@ shell:
 	$(GRADLE) $(GRADLE_FLAGS) :tools:run --args="shell"
 
 # Reproduce the GitHub Actions verification job locally (matches ci.yml).
-ci: check build test
+ci: check build build-ndef test tools-test
 
 # List every Gradle task (useful when discovering subproject-scoped tasks).
 tasks:

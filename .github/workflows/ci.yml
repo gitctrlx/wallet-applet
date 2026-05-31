@@ -46,7 +46,7 @@ jobs:
         run: ./gradlew :wallet:buildCap :ndef:buildCap
 
       - name: Run tests
-        run: ./gradlew :tests:test
+        run: ./gradlew :tests:test :tools:test
 
       - name: Upload wallet CAP
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
