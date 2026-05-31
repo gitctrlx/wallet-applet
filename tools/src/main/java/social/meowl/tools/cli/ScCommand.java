@@ -46,4 +46,11 @@ public final class ScCommand implements Callable<Integer> {
         spec.commandLine().usage(System.out);
         return CommandLine.ExitCode.USAGE;
     }
+
+    /**
+     * The root {@link MeowlCli}, so leaf subcommands can reach the shared {@link GlobalOptions}.
+     */
+    MeowlCli root() {
+        return (MeowlCli) spec.commandLine().getParent().getCommand();
+    }
 }

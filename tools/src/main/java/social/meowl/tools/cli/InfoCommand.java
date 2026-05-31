@@ -4,22 +4,17 @@
  */
 package social.meowl.tools.cli;
 
-import apdu4j.core.APDUBIBO;
-import apdu4j.core.BIBOException;
-import apdu4j.core.CommandAPDU;
-import apdu4j.core.ResponseAPDU;
 import java.io.PrintStream;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.SequencedMap;
 import java.util.concurrent.Callable;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.ParentCommand;
+import social.meowl.tools.card.MeowlCard;
 import social.meowl.tools.core.Hex;
-import social.meowl.tools.core.MeowlInsn;
-import social.meowl.tools.core.MeowlSw;
-import social.meowl.tools.core.Tlv;
+import social.meowl.tools.core.MeowlInfo;
 import social.meowl.tools.transport.CardTransport;
 
 /**
@@ -45,123 +40,55 @@ import social.meowl.tools.transport.CardTransport;
         description = "Returns the applet's TLV-encoded capability and identity profile.")
 public final class InfoCommand implements Callable<Integer> {
 
-    private static final byte TAG_PROTOCOL_VERSION = 0x01;
-    private static final byte TAG_APPLET_VERSION = 0x02;
-    private static final byte TAG_LIFECYCLE_STATE = 0x03;
-    private static final byte TAG_CAPABILITIES = 0x04;
-    private static final byte TAG_AUTHENTIKEY_PUBKEY = 0x05;
-
     @ParentCommand private MeowlCli parent;
 
     @Mixin public AidOption aid = new AidOption();
 
     @Override
     public Integer call() {
-        SequencedMap<Byte, byte[]> tlv =
-                CardTransport.run(parent.globalOptions.toReaderPreferences(), this::queryInfo);
+        MeowlInfo info =
+                CardTransport.run(
+                        parent.globalOptions.toReaderPreferences(),
+                        bibo -> new MeowlCard(bibo, aid.bytes()).getInfo());
 
         if (parent.globalOptions.json) {
-            JsonOutput.write(System.out, toJsonModel(tlv));
+            JsonOutput.write(System.out, toJsonModel(info));
         } else {
-            renderText(System.out, tlv);
+            renderText(System.out, info);
         }
         return 0;
     }
 
-    private SequencedMap<Byte, byte[]> queryInfo(APDUBIBO bibo) throws BIBOException {
-        MeowlSession.select(bibo, aid.bytes());
-        ResponseAPDU resp =
-                bibo.transmit(
-                        new CommandAPDU(
-                                MeowlInsn.CLA_MEOWL & 0xFF,
-                                MeowlInsn.GET_INFO.value() & 0xFF,
-                                0,
-                                0));
-        if (!MeowlSw.isSuccess(resp.getSW())) {
-            throw new ProtocolException(resp.getSW(), "GET_INFO failed");
-        }
-        return Tlv.parse(resp.getData());
+    private static void renderText(PrintStream out, MeowlInfo info) {
+        out.printf("  protocol version : %s%n", info.protocolVersion());
+        out.printf("  applet version   : %s%n", info.appletVersion());
+        out.printf("  lifecycle        : %s%n", info.lifecycleName());
+        out.printf(
+                "  capabilities     : 0x%04X (%s)%n",
+                info.capabilityBits(), String.join(", ", capabilityNames(info)));
+        out.printf("  authentikey      : 0x%s%n", Hex.encode(info.authentikey()));
     }
 
-    private static void renderText(PrintStream out, SequencedMap<Byte, byte[]> tlv) {
-        byte[] proto = tlv.get(TAG_PROTOCOL_VERSION);
-        byte[] applet = tlv.get(TAG_APPLET_VERSION);
-        byte[] lifecycle = tlv.get(TAG_LIFECYCLE_STATE);
-        byte[] caps = tlv.get(TAG_CAPABILITIES);
-        byte[] authentikey = tlv.get(TAG_AUTHENTIKEY_PUBKEY);
-
-        if (proto != null) out.printf("  protocol version : %s%n", versionStr(proto));
-        if (applet != null) out.printf("  applet version   : %s%n", versionStr(applet));
-        if (lifecycle != null && lifecycle.length == 1) {
-            out.printf("  lifecycle        : %s%n", lifecycleName(lifecycle[0]));
-        }
-        if (caps != null && caps.length == 2) {
-            int bits = ((caps[0] & 0xFF) << 8) | (caps[1] & 0xFF);
-            out.printf("  capabilities     : 0x%04X (%s)%n", bits, capsStr(bits));
-        }
-        if (authentikey != null) {
-            out.printf("  authentikey      : 0x%s%n", Hex.encode(authentikey));
-        }
-    }
-
-    private static Map<String, Object> toJsonModel(SequencedMap<Byte, byte[]> tlv) {
+    private static Map<String, Object> toJsonModel(MeowlInfo info) {
         Map<String, Object> json = new LinkedHashMap<>();
-        byte[] proto = tlv.get(TAG_PROTOCOL_VERSION);
-        if (proto != null) json.put("protocol_version", versionStr(proto));
-        byte[] applet = tlv.get(TAG_APPLET_VERSION);
-        if (applet != null) json.put("applet_version", versionStr(applet));
-        byte[] lifecycle = tlv.get(TAG_LIFECYCLE_STATE);
-        if (lifecycle != null && lifecycle.length == 1) {
-            Map<String, Object> lc = new LinkedHashMap<>();
-            lc.put("code", lifecycle[0] & 0xFF);
-            lc.put("name", lifecycleName(lifecycle[0]));
-            json.put("lifecycle", lc);
-        }
-        byte[] caps = tlv.get(TAG_CAPABILITIES);
-        if (caps != null && caps.length == 2) {
-            int bits = ((caps[0] & 0xFF) << 8) | (caps[1] & 0xFF);
-            Map<String, Object> capObj = new LinkedHashMap<>();
-            capObj.put("bits", "0x%04X".formatted(bits));
-            capObj.put("flags", java.util.Arrays.asList(capabilityNames(bits)));
-            json.put("capabilities", capObj);
-        }
-        byte[] authentikey = tlv.get(TAG_AUTHENTIKEY_PUBKEY);
-        if (authentikey != null) {
-            json.put("authentikey", "0x" + Hex.encode(authentikey));
-        }
+        json.put("protocol_version", info.protocolVersion().toString());
+        json.put("applet_version", info.appletVersion().toString());
+
+        Map<String, Object> lifecycle = new LinkedHashMap<>();
+        lifecycle.put("code", info.lifecycleCode());
+        lifecycle.put("name", info.lifecycleName());
+        json.put("lifecycle", lifecycle);
+
+        Map<String, Object> capabilities = new LinkedHashMap<>();
+        capabilities.put("bits", "0x%04X".formatted(info.capabilityBits()));
+        capabilities.put("flags", capabilityNames(info));
+        json.put("capabilities", capabilities);
+
+        json.put("authentikey", "0x" + Hex.encode(info.authentikey()));
         return json;
     }
 
-    private static String versionStr(byte[] bytes) {
-        if (bytes.length != 2) return "0x" + Hex.encode(bytes);
-        return "%d.%d".formatted(bytes[0] & 0xFF, bytes[1] & 0xFF);
-    }
-
-    private static String lifecycleName(byte b) {
-        return switch (b) {
-            case 0 -> "UNINITIALIZED";
-            case 1 -> "PERSONALIZED";
-            case 2 -> "SETUP_DONE";
-            case 3 -> "SEEDED";
-            default -> "UNKNOWN(0x%02X)".formatted(b & 0xFF);
-        };
-    }
-
-    private static String capsStr(int bits) {
-        return String.join(", ", capabilityNames(bits));
-    }
-
-    private static String[] capabilityNames(int bits) {
-        var names = new java.util.ArrayList<String>();
-        if ((bits & 0x0001) != 0) names.add("ECDSA_K1");
-        if ((bits & 0x0002) != 0) names.add("SCHNORR_K1");
-        if ((bits & 0x0004) != 0) names.add("ED25519");
-        if ((bits & 0x0008) != 0) names.add("SC_GCM");
-        if ((bits & 0x0010) != 0) names.add("SC_CBC_HMAC");
-        if ((bits & 0x0020) != 0) names.add("PKI");
-        if ((bits & 0x0040) != 0) names.add("RESET_TO_FACTORY");
-        if ((bits & 0x0080) != 0) names.add("BIP32");
-        if ((bits & 0x0100) != 0) names.add("SLIP10");
-        return names.toArray(String[]::new);
+    private static List<String> capabilityNames(MeowlInfo info) {
+        return info.capabilities().stream().map(Enum::name).toList();
     }
 }

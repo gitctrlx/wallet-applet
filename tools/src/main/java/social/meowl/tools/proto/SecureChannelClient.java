@@ -63,6 +63,7 @@ public final class SecureChannelClient {
     private long inboundCounter;
     private long lastOutboundCounter;
     private boolean invalidated;
+    private Handshake lastHandshake;
 
     /**
      * @param bibo the underlying APDU transport (typically a decorated PC/SC channel)
@@ -77,6 +78,20 @@ public final class SecureChannelClient {
                             .formatted(HostCrypto.EC_POINT_COMPRESSED_LEN));
         }
         this.authentikeyCompressed = authentikeyCompressed.clone();
+    }
+
+    /**
+     * Convenience factory that constructs a client and immediately drives the handshake, returning
+     * the connected client ready for {@link #sendInner}. Equivalent to {@code new
+     * SecureChannelClient(bibo, authentikey)} followed by {@link #handshake()}.
+     *
+     * @throws SecureChannelException on any wire or cryptographic failure during the handshake
+     */
+    public static SecureChannelClient open(APDUBIBO bibo, byte[] authentikeyCompressed)
+            throws BIBOException {
+        SecureChannelClient client = new SecureChannelClient(bibo, authentikeyCompressed);
+        client.handshake();
+        return client;
     }
 
     /**
@@ -162,7 +177,9 @@ public final class SecureChannelClient {
         lastOutboundCounter = 0L;
         invalidated = false;
 
-        return new Handshake(cardEphPub.clone(), handshakeSignature.clone(), ivBase.clone());
+        lastHandshake =
+                new Handshake(cardEphPub.clone(), handshakeSignature.clone(), ivBase.clone());
+        return lastHandshake;
     }
 
     /**
@@ -207,6 +224,28 @@ public final class SecureChannelClient {
         return decryptOutbound(resp.getData());
     }
 
+    /**
+     * Frames {@code [CLA_MEOWL | ins | p1 | p2 | lc | data]} into an inner APDU and sends it
+     * through the Secure Channel. Convenience over {@link #sendInner(byte[])} for the common case
+     * of a single inner-band command with a known INS, removing per-caller APDU-framing
+     * boilerplate.
+     */
+    public byte[] sendInner(int ins, int p1, int p2, byte[] data) throws BIBOException {
+        Objects.requireNonNull(data, "data");
+        if (data.length > 0xFF) {
+            throw new IllegalArgumentException(
+                    "inner APDU data exceeds the single-byte LC field: " + data.length + " bytes");
+        }
+        byte[] inner = new byte[5 + data.length];
+        inner[0] = (byte) CLA_MEOWL;
+        inner[1] = (byte) ins;
+        inner[2] = (byte) p1;
+        inner[3] = (byte) p2;
+        inner[4] = (byte) data.length;
+        System.arraycopy(data, 0, inner, 5, data.length);
+        return sendInner(inner);
+    }
+
     /** Returns the card's ephemeral public key (SEC1 uncompressed, 65 bytes). */
     public byte[] cardEphPub() {
         requireSession();
@@ -223,6 +262,12 @@ public final class SecureChannelClient {
     public byte[] ivBase() {
         requireSession();
         return ivBase.clone();
+    }
+
+    /** The handshake snapshot from the most recent {@link #handshake()} / {@link #open}. */
+    public Handshake lastHandshake() {
+        requireSession();
+        return lastHandshake;
     }
 
     /** Snapshot of the per-handshake state, returned by {@link #handshake}. */

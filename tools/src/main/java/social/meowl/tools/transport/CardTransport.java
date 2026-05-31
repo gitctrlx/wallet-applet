@@ -64,6 +64,19 @@ public final class CardTransport {
                 });
     }
 
+    /**
+     * Opens a long-lived card connection per {@code prefs}, returning a decorated {@link APDUBIBO}
+     * the caller is responsible for {@code close()}-ing. Unlike {@link #run}, the connection
+     * survives across many operations — used by {@code meowl shell} to hold a single PC/SC session
+     * for the REPL lifetime. The same {@link BiboStack} decorators (retry, GET-RESPONSE, dump,
+     * trace) are applied, so tracing and dumping behave identically in the shell and the one-shot
+     * subcommands.
+     */
+    public static APDUBIBO connect(ReaderPreferences prefs) {
+        APDUBIBO raw = configureReader(prefs).connect();
+        return new APDUBIBO(BiboStack.decorate(raw, prefs));
+    }
+
     private static ReaderSelector configureReader(ReaderPreferences prefs) {
         ReaderSelector selector = Readers.select();
         if (prefs.hasReaderConstraint()) {

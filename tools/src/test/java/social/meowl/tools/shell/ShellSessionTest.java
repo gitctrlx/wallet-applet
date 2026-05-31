@@ -16,6 +16,7 @@ import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import social.meowl.tools.core.ProtocolException;
 
 /**
  * Tests for the {@link ShellSession} engine — exercises the line-dispatcher logic without involving
@@ -37,10 +38,10 @@ class ShellSessionTest {
     }
 
     @Test
-    @DisplayName("`info` prints every TLV tag from the GET_INFO blob")
+    @DisplayName("`info` prints the decoded GET_INFO profile")
     void infoCommand() throws Exception {
         // TLV: 01 02 0100 (proto v1.0) | 02 02 0001 (applet v0.1)
-        //    | 03 01 00 (lifecycle UNINITIALIZED) | 04 02 0080 (caps bit 7)
+        //    | 03 01 01 (lifecycle PERSONALIZED) | 04 02 0080 (caps bit 7 = BIP32)
         //    | 05 03 33DEAD (synthetic short pubkey for test rendering)
         // followed by SW 9000.
         MockBIBO mock =
@@ -53,8 +54,9 @@ class ShellSessionTest {
         session.execute("info");
 
         String rendered = sink.toString(StandardCharsets.UTF_8);
-        assertTrue(rendered.contains("tag 0x01"), rendered);
-        assertTrue(rendered.contains("tag 0x05"), rendered);
+        assertTrue(rendered.contains("1.0"), rendered);
+        assertTrue(rendered.contains("PERSONALIZED"), rendered);
+        assertTrue(rendered.contains("BIP32"), rendered);
         assertTrue(rendered.contains("33DEAD"), rendered);
     }
 
@@ -149,8 +151,8 @@ class ShellSessionTest {
         ByteArrayOutputStream sink = new ByteArrayOutputStream();
         ShellSession session = newSession(mock, sink);
 
-        ShellSession.ShellException ex =
-                assertThrows(ShellSession.ShellException.class, () -> session.execute("reset"));
+        ProtocolException ex =
+                assertThrows(ProtocolException.class, () -> session.execute("reset"));
 
         assertTrue(ex.getMessage().contains("RESET_TO_FACTORY step 1"), ex.getMessage());
         assertFalse(sink.toString(StandardCharsets.UTF_8).contains("factory reset complete"));
@@ -168,8 +170,8 @@ class ShellSessionTest {
         ByteArrayOutputStream sink = new ByteArrayOutputStream();
         ShellSession session = newSession(mock, sink);
 
-        ShellSession.ShellException ex =
-                assertThrows(ShellSession.ShellException.class, () -> session.execute("reset"));
+        ProtocolException ex =
+                assertThrows(ProtocolException.class, () -> session.execute("reset"));
 
         assertTrue(ex.getMessage().contains("did not complete"), ex.getMessage());
         assertFalse(sink.toString(StandardCharsets.UTF_8).contains("factory reset complete"));

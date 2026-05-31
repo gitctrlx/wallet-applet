@@ -6,8 +6,6 @@ package social.meowl.tools.cli;
 
 import apdu4j.core.APDUBIBO;
 import apdu4j.core.BIBOException;
-import apdu4j.core.CommandAPDU;
-import apdu4j.core.ResponseAPDU;
 import java.io.PrintStream;
 import java.security.SecureRandom;
 import java.util.Arrays;
@@ -18,8 +16,8 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ParentCommand;
+import social.meowl.tools.card.MeowlCard;
 import social.meowl.tools.core.MeowlInsn;
-import social.meowl.tools.core.MeowlSw;
 import social.meowl.tools.proto.SecureChannelClient;
 import social.meowl.tools.transport.CardTransport;
 
@@ -98,22 +96,9 @@ public final class BenchCommand implements Callable<Integer> {
 
     private Map<String, Stats> runOnCard(APDUBIBO bibo) throws BIBOException {
         long t0 = System.nanoTime();
-        MeowlSession.select(bibo, aid.bytes());
-
-        ResponseAPDU akResp =
-                bibo.transmit(
-                        new CommandAPDU(
-                                SecureChannelClient.CLA_MEOWL,
-                                MeowlInsn.GET_AUTHENTIKEY.value() & 0xFF,
-                                0,
-                                0));
-        if (!MeowlSw.isSuccess(akResp.getSW())) {
-            throw new ProtocolException(
-                    akResp.getSW(), "GET_AUTHENTIKEY failed during bench setup");
-        }
-
-        SecureChannelClient sc = new SecureChannelClient(bibo, akResp.getData());
-        sc.handshake();
+        MeowlCard card = new MeowlCard(bibo, aid.bytes());
+        byte[] authentikey = card.getAuthentikey();
+        SecureChannelClient sc = SecureChannelClient.open(bibo, authentikey);
         verifyPin(sc, pin.getBytes());
         progress(
                 "setup complete in %.1fs (SELECT + GET_AUTHENTIKEY + handshake + VERIFY_PIN);"
@@ -166,7 +151,7 @@ public final class BenchCommand implements Callable<Integer> {
             // `bibo` and creates a fresh client / new ECDH ephemerals each call.
             out.put(
                     "OPEN_SECURE_CHANNEL",
-                    benchOp("OPEN_SECURE_CHANNEL", () -> reHandshake(bibo, akResp.getData())));
+                    benchOp("OPEN_SECURE_CHANNEL", () -> reHandshake(bibo, authentikey)));
         }
         progress("bench complete; total wall %.1fs", (System.nanoTime() - t0) / 1e9);
         return out;
@@ -185,8 +170,7 @@ public final class BenchCommand implements Callable<Integer> {
     }
 
     private void verifyPin(SecureChannelClient sc, byte[] pinBytes) throws BIBOException {
-        byte[] inner = innerApdu(MeowlInsn.VERIFY_PIN.value(), (byte) 0, (byte) 0, pinBytes);
-        sc.sendInner(inner);
+        sc.sendInner(MeowlInsn.VERIFY_PIN.value(), 0, 0, pinBytes);
     }
 
     @FunctionalInterface
@@ -237,23 +221,11 @@ public final class BenchCommand implements Callable<Integer> {
 
     private static byte[] sendInner(SecureChannelClient sc, byte ins, byte[] data)
             throws BIBOException {
-        return sc.sendInner(innerApdu(ins, (byte) 0, (byte) 0, data));
+        return sc.sendInner(ins, 0, 0, data);
     }
 
     private static void reHandshake(APDUBIBO bibo, byte[] authentikey) throws BIBOException {
-        SecureChannelClient sc = new SecureChannelClient(bibo, authentikey);
-        sc.handshake();
-    }
-
-    private static byte[] innerApdu(byte ins, byte p1, byte p2, byte[] data) {
-        byte[] out = new byte[5 + data.length];
-        out[0] = (byte) 0x80;
-        out[1] = ins;
-        out[2] = p1;
-        out[3] = p2;
-        out[4] = (byte) data.length;
-        System.arraycopy(data, 0, out, 5, data.length);
-        return out;
+        SecureChannelClient.open(bibo, authentikey);
     }
 
     private static byte[] signPayloadK1() {

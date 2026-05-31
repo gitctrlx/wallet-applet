@@ -4,8 +4,6 @@
  */
 package social.meowl.tools.cli;
 
-import apdu4j.core.APDUBIBO;
-import apdu4j.core.BIBOException;
 import apdu4j.core.CommandAPDU;
 import apdu4j.core.ResponseAPDU;
 import java.util.concurrent.Callable;
@@ -14,6 +12,7 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 import picocli.CommandLine.ParentCommand;
+import social.meowl.tools.card.MeowlCard;
 import social.meowl.tools.core.Hex;
 import social.meowl.tools.core.MeowlSw;
 import social.meowl.tools.transport.CardTransport;
@@ -56,7 +55,13 @@ public final class ApduCommand implements Callable<Integer> {
         ResponseAPDU resp =
                 CardTransport.run(
                         parent.globalOptions.toReaderPreferences(),
-                        (APDUBIBO bibo) -> transmit(bibo, command));
+                        bibo -> {
+                            MeowlCard card = new MeowlCard(bibo, aid.bytes());
+                            if (!noSelect) {
+                                card.select();
+                            }
+                            return card.transmit(command);
+                        });
 
         if (parent.globalOptions.json) {
             JsonOutput.writeMap(
@@ -73,12 +78,5 @@ public final class ApduCommand implements Callable<Integer> {
                     Hex.encode(resp.getData()), resp.getSW(), MeowlSw.describe(resp.getSW()));
         }
         return MeowlSw.isSuccess(resp.getSW()) ? 0 : MeowlExecutionExceptionHandler.EXIT_PROTOCOL;
-    }
-
-    private ResponseAPDU transmit(APDUBIBO bibo, CommandAPDU command) throws BIBOException {
-        if (!noSelect) {
-            MeowlSession.select(bibo, aid.bytes());
-        }
-        return bibo.transmit(command);
     }
 }

@@ -53,7 +53,8 @@ Every subcommand inherits the same mixin via picocli:
 | `--reader-ignore=NAME` | Skip readers whose name contains this substring; falls back to `$MEOWL_READER_IGNORE`. |
 | `--protocol=PROTO` | PC/SC protocol; default `T=1`. |
 | `--exclusive` | Acquire the reader exclusively. |
-| `-v, --verbose` | Trace every APDU at SLF4J `TRACE` level. |
+| `--trace` | Log every APDU at SLF4J `TRACE` level. |
+| `-v, --verbose` | Print full stack traces on error instead of a single-line message. |
 | `--dump=FILE` | Append every APDU exchange to `FILE` in the apdu4j `MockBIBO` replay format. |
 | `--json` | Emit machine-readable JSON output (where the subcommand supports it). |
 | `-h, --help` / `-V, --version` | Standard. |
@@ -157,24 +158,28 @@ Until the rotation+lock flow is automated end-to-end, the safe operating mode is
 | Code | Meaning |
 | --- | --- |
 | `0` | Success. |
-| `1` | Generic error (`USAGE`-class issues, refused destructive operations). |
+| `1` | Generic / unexpected error (also: refused destructive operations such as `reset` without `--confirm`). |
 | `2` | Picocli usage error (unknown option, missing argument, malformed input). |
 | `3` | Card-layer I/O failure (no reader, card removed, PC/SC error). |
 | `4` | Protocol failure (the card returned a non-9000 status word in a context where success was asserted). |
+| `5` | Secure Channel failure (host/card crypto mismatch, MAC failure, malformed envelope). |
+| `6` | GlobalPlatform card-management failure (`gp` subcommands: wrong ISD keys, install/delete error). |
 
-Run with `-v` to see the underlying stack trace.
+Run with `-v` / `--verbose` to see the underlying stack trace. APDU-level tracing is the separate `--trace` flag.
 
 ## Architecture at a glance
 
 ```text
 tools/src/main/java/social/meowl/tools/
 ├── Main.java                     ── one-line entry: System.exit(MeowlCli.commandLine().execute(args))
-├── core/                         ── pure helpers (Hex, Tlv, MeowlInsn, MeowlSw, MeowlAid)
-├── transport/                    ── apdu4j BIBO stack + ReaderPreferences + visitor wrapper
+├── core/                         ── pure helpers + wire mirrors (Hex, Tlv, MeowlAid, MeowlInsn, MeowlSw,
+│                                     MeowlCapability, MeowlLifecycle, MeowlInfo, ProtocolException)
+├── transport/                    ── apdu4j BIBO stack + ReaderPreferences + visitor run() / connect()
 ├── proto/                        ── Secure Channel host client (KdfCmac, HostCrypto, SecureChannelClient)
+├── card/                         ── MeowlCard operations facade, shared by cli + shell
 ├── gp/                           ── in-process GlobalPlatformPro (GpFacade)
-├── shell/                        ── stateful REPL engine (ShellSession)
-└── cli/                          ── picocli command tree (MeowlCli + 12 subcommands)
+├── shell/                        ── stateful REPL engine (ShellSession, delegates to MeowlCard)
+└── cli/                          ── picocli command tree (MeowlCli + subcommands)
 ```
 
 Test pyramid:
@@ -183,6 +188,7 @@ Test pyramid:
 | --- | --- | --- |
 | `core/` & helpers | strict hex / TLV / INS / SW / AID round-trips | <100 ms |
 | `proto/` | RFC 5869 vectors, AES / ECDH round-trips, BouncyCastle oracles | ~1 s |
+| `card/` | MockBIBO-driven `MeowlCard` operations (select / info / reset) | <100 ms |
 | `cli/` | picocli registration, JSON output, exit-code mapping | <100 ms |
 | `shell/` | MockBIBO-driven dispatcher tests | <100 ms |
 | `transport/` | MockBIBO decorator / dump-replay / PrintStream layering | <100 ms |

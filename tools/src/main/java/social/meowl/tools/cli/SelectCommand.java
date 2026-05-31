@@ -8,6 +8,7 @@ import java.util.concurrent.Callable;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.ParentCommand;
+import social.meowl.tools.card.MeowlCard;
 import social.meowl.tools.core.Hex;
 import social.meowl.tools.transport.CardTransport;
 
@@ -33,7 +34,7 @@ public final class SelectCommand implements Callable<Integer> {
         byte[] fci =
                 CardTransport.run(
                         parent.globalOptions.toReaderPreferences(),
-                        bibo -> MeowlSession.select(bibo, aid.bytes()));
+                        bibo -> new MeowlCard(bibo, aid.bytes()).select());
 
         if (parent.globalOptions.json) {
             JsonOutput.writeMap(

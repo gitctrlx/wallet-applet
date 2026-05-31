@@ -6,16 +6,13 @@ package social.meowl.tools.cli;
 
 import apdu4j.core.APDUBIBO;
 import apdu4j.core.BIBOException;
-import apdu4j.core.CommandAPDU;
-import apdu4j.core.ResponseAPDU;
 import java.util.concurrent.Callable;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Parameters;
 import picocli.CommandLine.ParentCommand;
+import social.meowl.tools.card.MeowlCard;
 import social.meowl.tools.core.Hex;
-import social.meowl.tools.core.MeowlInsn;
-import social.meowl.tools.core.MeowlSw;
 import social.meowl.tools.proto.SecureChannelClient;
 import social.meowl.tools.transport.CardTransport;
 
@@ -49,7 +46,7 @@ public final class ScSendCommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
-        MeowlCli root = (MeowlCli) parent.spec.commandLine().getParent().getCommand();
+        MeowlCli root = parent.root();
         byte[] innerApdu = Hex.decode(innerHex);
 
         byte[] response =
@@ -66,21 +63,7 @@ public final class ScSendCommand implements Callable<Integer> {
     }
 
     private byte[] handshakeAndSend(APDUBIBO bibo, byte[] innerApdu) throws BIBOException {
-        MeowlSession.select(bibo, aid.bytes());
-
-        ResponseAPDU akResp =
-                bibo.transmit(
-                        new CommandAPDU(
-                                SecureChannelClient.CLA_MEOWL,
-                                MeowlInsn.GET_AUTHENTIKEY.value() & 0xFF,
-                                0,
-                                0));
-        if (!MeowlSw.isSuccess(akResp.getSW())) {
-            throw new ProtocolException(akResp.getSW(), "GET_AUTHENTIKEY failed during sc send");
-        }
-
-        SecureChannelClient sc = new SecureChannelClient(bibo, akResp.getData());
-        sc.handshake();
+        SecureChannelClient sc = new MeowlCard(bibo, aid.bytes()).openSecureChannel();
         return sc.sendInner(innerApdu);
     }
 }

@@ -4,17 +4,12 @@
  */
 package social.meowl.tools.cli;
 
-import apdu4j.core.APDUBIBO;
-import apdu4j.core.BIBOException;
-import apdu4j.core.CommandAPDU;
-import apdu4j.core.ResponseAPDU;
 import java.util.concurrent.Callable;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.ParentCommand;
+import social.meowl.tools.card.MeowlCard;
 import social.meowl.tools.core.Hex;
-import social.meowl.tools.core.MeowlInsn;
-import social.meowl.tools.core.MeowlSw;
 import social.meowl.tools.transport.CardTransport;
 
 /**
@@ -38,7 +33,8 @@ public final class AuthentikeyCommand implements Callable<Integer> {
     public Integer call() {
         byte[] pubkey =
                 CardTransport.run(
-                        parent.globalOptions.toReaderPreferences(), this::queryAuthentikey);
+                        parent.globalOptions.toReaderPreferences(),
+                        bibo -> new MeowlCard(bibo, aid.bytes()).getAuthentikey());
 
         if (parent.globalOptions.json) {
             JsonOutput.writeMap(
@@ -47,20 +43,5 @@ public final class AuthentikeyCommand implements Callable<Integer> {
             System.out.println("0x" + Hex.encode(pubkey));
         }
         return 0;
-    }
-
-    private byte[] queryAuthentikey(APDUBIBO bibo) throws BIBOException {
-        MeowlSession.select(bibo, aid.bytes());
-        ResponseAPDU resp =
-                bibo.transmit(
-                        new CommandAPDU(
-                                MeowlInsn.CLA_MEOWL & 0xFF,
-                                MeowlInsn.GET_AUTHENTIKEY.value() & 0xFF,
-                                0,
-                                0));
-        if (!MeowlSw.isSuccess(resp.getSW())) {
-            throw new ProtocolException(resp.getSW(), "GET_AUTHENTIKEY failed");
-        }
-        return resp.getData();
     }
 }

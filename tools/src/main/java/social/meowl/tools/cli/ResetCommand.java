@@ -4,16 +4,12 @@
  */
 package social.meowl.tools.cli;
 
-import apdu4j.core.APDUBIBO;
-import apdu4j.core.BIBOException;
-import apdu4j.core.CommandAPDU;
-import apdu4j.core.ResponseAPDU;
 import java.util.concurrent.Callable;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ParentCommand;
-import social.meowl.tools.core.MeowlInsn;
+import social.meowl.tools.card.MeowlCard;
 import social.meowl.tools.core.MeowlSw;
 import social.meowl.tools.transport.CardTransport;
 
@@ -36,12 +32,6 @@ import social.meowl.tools.transport.CardTransport;
                 "Wipes all secrets on the card by walking the RESET_TO_FACTORY countdown to"
                         + " completion. Requires --confirm.")
 public final class ResetCommand implements Callable<Integer> {
-
-    /**
-     * Mirrors {@code Constants.RESET_REQUIRED_INVOCATIONS}; bumping this on the card requires
-     * bumping it here too.
-     */
-    private static final int REQUIRED_INVOCATIONS = 4;
 
     @ParentCommand private MeowlCli parent;
 
@@ -67,7 +57,9 @@ public final class ResetCommand implements Callable<Integer> {
         }
 
         int[] sequence =
-                CardTransport.run(parent.globalOptions.toReaderPreferences(), this::driveCountdown);
+                CardTransport.run(
+                        parent.globalOptions.toReaderPreferences(),
+                        bibo -> new MeowlCard(bibo, aid.bytes()).resetToFactory());
 
         if (parent.globalOptions.json) {
             JsonOutput.writeMap(
@@ -83,37 +75,5 @@ public final class ResetCommand implements Callable<Integer> {
             System.out.println("OK (factory reset complete)");
         }
         return 0;
-    }
-
-    private int[] driveCountdown(APDUBIBO bibo) throws BIBOException {
-        MeowlSession.select(bibo, aid.bytes());
-        int[] sequence = new int[REQUIRED_INVOCATIONS];
-        for (int i = 0; i < REQUIRED_INVOCATIONS; i++) {
-            ResponseAPDU resp =
-                    bibo.transmit(
-                            new CommandAPDU(
-                                    MeowlInsn.CLA_MEOWL & 0xFF,
-                                    MeowlInsn.RESET_TO_FACTORY.value() & 0xFF,
-                                    0,
-                                    0));
-            int sw = resp.getSW();
-            sequence[i] = sw;
-            // Each step must report a countdown SW (0x6FA0..0x6FAF); otherwise a non-meowl
-            // applet could silently return e.g. 6D00 four times and the final-SW assertion would
-            // miss it (catches the value, not the kind).
-            if ((sw & 0xFFF0) != MeowlSw.RESET_COUNTDOWN_BASE) {
-                throw new ProtocolException(
-                        sw,
-                        "RESET_TO_FACTORY step "
-                                + (i + 1)
-                                + " returned %04X, expected a 6FAx countdown".formatted(sw));
-            }
-        }
-        // Last step must report the wipe-complete sentinel (0x6FA0).
-        int last = sequence[sequence.length - 1];
-        if ((last & 0x000F) != 0) {
-            throw new ProtocolException(last, "RESET_TO_FACTORY did not complete the wipe");
-        }
-        return sequence;
     }
 }

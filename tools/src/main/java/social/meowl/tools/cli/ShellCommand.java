@@ -5,8 +5,6 @@
 package social.meowl.tools.cli;
 
 import apdu4j.core.APDUBIBO;
-import apdu4j.pcsc.ReaderSelector;
-import apdu4j.pcsc.Readers;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.UncheckedIOException;
@@ -27,7 +25,10 @@ import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.ParentCommand;
+import social.meowl.tools.core.ProtocolException;
+import social.meowl.tools.proto.SecureChannelException;
 import social.meowl.tools.shell.ShellSession;
+import social.meowl.tools.transport.CardTransport;
 import social.meowl.tools.transport.ReaderPreferences;
 
 /**
@@ -48,7 +49,7 @@ public final class ShellCommand implements Callable<Integer> {
     @Override
     public Integer call() throws IOException {
         ReaderPreferences prefs = parent.globalOptions.toReaderPreferences();
-        APDUBIBO bibo = openCard(prefs);
+        APDUBIBO bibo = CardTransport.connect(prefs);
 
         try (Terminal terminal = TerminalBuilder.builder().system(true).build()) {
             Path historyFile = ensureHistoryFile();
@@ -83,11 +84,11 @@ public final class ShellCommand implements Callable<Integer> {
                 }
                 try {
                     session.execute(trimmed);
-                } catch (ShellSession.ShellException ex) {
+                } catch (ProtocolException | SecureChannelException ex) {
                     out.println("error: " + ex.getMessage());
                 } catch (Exception ex) {
                     out.println("error: " + ex.getClass().getSimpleName() + ": " + ex.getMessage());
-                    if (parent.globalOptions.trace) {
+                    if (parent.globalOptions.verbose) {
                         ex.printStackTrace(out);
                     }
                 }
@@ -97,21 +98,6 @@ public final class ShellCommand implements Callable<Integer> {
             bibo.close();
         }
         return 0;
-    }
-
-    private static APDUBIBO openCard(ReaderPreferences prefs) {
-        ReaderSelector selector = Readers.select();
-        if (prefs.hasReaderConstraint()) {
-            selector = selector.select(prefs.readerName());
-        }
-        if (prefs.hasIgnoreFilter()) {
-            selector = selector.ignore(prefs.readerIgnore());
-        }
-        selector = selector.protocol(prefs.protocol());
-        if (prefs.requireExclusive()) {
-            selector = selector.exclusive();
-        }
-        return selector.withCard().connect();
     }
 
     private static AggregateCompleter buildCompleter() {

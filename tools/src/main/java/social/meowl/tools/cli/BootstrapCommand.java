@@ -6,16 +6,14 @@ package social.meowl.tools.cli;
 
 import apdu4j.core.APDUBIBO;
 import apdu4j.core.BIBOException;
-import apdu4j.core.CommandAPDU;
-import apdu4j.core.ResponseAPDU;
 import java.util.concurrent.Callable;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ParentCommand;
+import social.meowl.tools.card.MeowlCard;
 import social.meowl.tools.core.Hex;
 import social.meowl.tools.core.MeowlInsn;
-import social.meowl.tools.core.MeowlSw;
 import social.meowl.tools.proto.SecureChannelClient;
 import social.meowl.tools.transport.CardTransport;
 
@@ -107,21 +105,7 @@ public final class BootstrapCommand implements Callable<Integer> {
     }
 
     private Void runOnCard(APDUBIBO bibo) throws BIBOException {
-        MeowlSession.select(bibo, aid.bytes());
-
-        ResponseAPDU akResp =
-                bibo.transmit(
-                        new CommandAPDU(
-                                SecureChannelClient.CLA_MEOWL,
-                                MeowlInsn.GET_AUTHENTIKEY.value() & 0xFF,
-                                0,
-                                0));
-        if (!MeowlSw.isSuccess(akResp.getSW())) {
-            throw new ProtocolException(akResp.getSW(), "GET_AUTHENTIKEY failed during bootstrap");
-        }
-
-        SecureChannelClient sc = new SecureChannelClient(bibo, akResp.getData());
-        sc.handshake();
+        SecureChannelClient sc = new MeowlCard(bibo, aid.bytes()).openSecureChannel();
         log("Secure Channel established.");
 
         // 1. IMPORT_PKI_CERT (init / write / finalize).
@@ -129,17 +113,17 @@ public final class BootstrapCommand implements Callable<Integer> {
         log("IMPORT_PKI_CERT: %d bytes installed.", certSize);
 
         // 2. LOCK_PKI → PERSONALIZED.
-        sendInner(sc, MeowlInsn.LOCK_PKI.value(), (byte) 0, (byte) 0, new byte[0]);
+        sc.sendInner(MeowlInsn.LOCK_PKI.value(), 0, 0, new byte[0]);
         log("LOCK_PKI: applet now in PERSONALIZED.");
 
         // 3. SETUP → SETUP_DONE.
         byte[] pinBytes = pin.getBytes();
         byte[] pukBytes = puk.getBytes();
-        sendInner(sc, MeowlInsn.SETUP.value(), (byte) 0, (byte) 0, encodeSetup(pinBytes, pukBytes));
+        sc.sendInner(MeowlInsn.SETUP.value(), 0, 0, encodeSetup(pinBytes, pukBytes));
         log("SETUP: PIN/PUK installed (PIN=%d B, PUK=%d B).", pinBytes.length, pukBytes.length);
 
         // 4. VERIFY_PIN — establishes the session-scoped PIN authorisation IMPORT_SEED needs.
-        sendInner(sc, MeowlInsn.VERIFY_PIN.value(), (byte) 0, (byte) 0, pinBytes);
+        sc.sendInner(MeowlInsn.VERIFY_PIN.value(), 0, 0, pinBytes);
         log("VERIFY_PIN: authorised.");
 
         // 5. IMPORT_SEED → SEEDED.
@@ -147,7 +131,7 @@ public final class BootstrapCommand implements Callable<Integer> {
         byte[] seedPayload = new byte[1 + seed.length];
         seedPayload[0] = (byte) seed.length;
         System.arraycopy(seed, 0, seedPayload, 1, seed.length);
-        sendInner(sc, MeowlInsn.IMPORT_SEED.value(), (byte) 0, (byte) 0, seedPayload);
+        sc.sendInner(MeowlInsn.IMPORT_SEED.value(), 0, 0, seedPayload);
         log("IMPORT_SEED: %d-byte seed installed; lifecycle now SEEDED.", seed.length);
 
         log("bootstrap complete — card is ready for `meowl bench --pin %s`.", pin);
@@ -161,7 +145,7 @@ public final class BootstrapCommand implements Callable<Integer> {
         }
         // INIT: declare total size (2 bytes BE).
         byte[] sizeBe = {(byte) (certSize >>> 8), (byte) (certSize & 0xFF)};
-        sendInner(sc, MeowlInsn.IMPORT_PKI_CERT.value(), PKI_IMPORT_P1_INIT, (byte) 0, sizeBe);
+        sc.sendInner(MeowlInsn.IMPORT_PKI_CERT.value(), PKI_IMPORT_P1_INIT, 0, sizeBe);
 
         // WRITE: stream the deterministic ramp 0x00, 0x01, ..., (certSize - 1) & 0xFF in chunks.
         int written = 0;
@@ -173,18 +157,12 @@ public final class BootstrapCommand implements Callable<Integer> {
             for (int i = 0; i < chunkLen; i++) {
                 payload[2 + i] = (byte) ((written + i) & 0xFF);
             }
-            sendInner(
-                    sc, MeowlInsn.IMPORT_PKI_CERT.value(), PKI_IMPORT_P1_WRITE, (byte) 0, payload);
+            sc.sendInner(MeowlInsn.IMPORT_PKI_CERT.value(), PKI_IMPORT_P1_WRITE, 0, payload);
             written += chunkLen;
         }
 
         // FINALIZE: commit the staged size.
-        sendInner(
-                sc,
-                MeowlInsn.IMPORT_PKI_CERT.value(),
-                PKI_IMPORT_P1_FINALIZE,
-                (byte) 0,
-                new byte[0]);
+        sc.sendInner(MeowlInsn.IMPORT_PKI_CERT.value(), PKI_IMPORT_P1_FINALIZE, 0, new byte[0]);
     }
 
     private byte[] resolveSeed() {
@@ -201,18 +179,6 @@ public final class BootstrapCommand implements Callable<Integer> {
             throw new IllegalArgumentException("--seed must be 16-64 bytes; got " + bytes.length);
         }
         return bytes;
-    }
-
-    private static void sendInner(SecureChannelClient sc, byte ins, byte p1, byte p2, byte[] data)
-            throws BIBOException {
-        byte[] inner = new byte[5 + data.length];
-        inner[0] = (byte) 0x80;
-        inner[1] = ins;
-        inner[2] = p1;
-        inner[3] = p2;
-        inner[4] = (byte) data.length;
-        System.arraycopy(data, 0, inner, 5, data.length);
-        sc.sendInner(inner);
     }
 
     private static byte[] encodeSetup(byte[] pinBytes, byte[] pukBytes) {

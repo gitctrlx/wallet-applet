@@ -46,10 +46,13 @@ public final class GlobalOptions {
             description = "Acquire the reader exclusively; fail if another process holds the card.")
     public boolean exclusive = false;
 
+    @Option(names = "--trace", description = "Log every APDU exchange at TRACE level via SLF4J.")
+    public boolean trace = false;
+
     @Option(
             names = {"-v", "--verbose"},
-            description = "Trace every APDU exchange at TRACE level via SLF4J.")
-    public boolean trace = false;
+            description = "Print full stack traces on error instead of a single-line message.")
+    public boolean verbose = false;
 
     @Option(
             names = "--dump",

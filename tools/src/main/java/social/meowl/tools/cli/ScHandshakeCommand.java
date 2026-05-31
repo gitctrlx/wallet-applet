@@ -6,15 +6,12 @@ package social.meowl.tools.cli;
 
 import apdu4j.core.APDUBIBO;
 import apdu4j.core.BIBOException;
-import apdu4j.core.CommandAPDU;
-import apdu4j.core.ResponseAPDU;
 import java.util.concurrent.Callable;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.ParentCommand;
+import social.meowl.tools.card.MeowlCard;
 import social.meowl.tools.core.Hex;
-import social.meowl.tools.core.MeowlInsn;
-import social.meowl.tools.core.MeowlSw;
 import social.meowl.tools.proto.SecureChannelClient;
 import social.meowl.tools.transport.CardTransport;
 
@@ -37,7 +34,7 @@ public final class ScHandshakeCommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
-        MeowlCli root = (MeowlCli) parent.spec.commandLine().getParent().getCommand();
+        MeowlCli root = parent.root();
         SecureChannelClient.Handshake hs =
                 CardTransport.run(root.globalOptions.toReaderPreferences(), this::handshake);
 
@@ -62,21 +59,6 @@ public final class ScHandshakeCommand implements Callable<Integer> {
     }
 
     private SecureChannelClient.Handshake handshake(APDUBIBO bibo) throws BIBOException {
-        MeowlSession.select(bibo, aid.bytes());
-
-        // Fetch the authentikey first so we can verify the handshake signature against it.
-        // GET_AUTHENTIKEY uses the meowl CLA (0x80), not ISO 0x00.
-        ResponseAPDU resp =
-                bibo.transmit(
-                        new CommandAPDU(
-                                SecureChannelClient.CLA_MEOWL,
-                                MeowlInsn.GET_AUTHENTIKEY.value() & 0xFF,
-                                0,
-                                0));
-        if (!MeowlSw.isSuccess(resp.getSW())) {
-            throw new ProtocolException(resp.getSW(), "GET_AUTHENTIKEY failed during sc handshake");
-        }
-        SecureChannelClient sc = new SecureChannelClient(bibo, resp.getData());
-        return sc.handshake();
+        return new MeowlCard(bibo, aid.bytes()).openSecureChannel().lastHandshake();
     }
 }
