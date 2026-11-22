@@ -85,12 +85,19 @@ public final class Memory {
         return Cipher.getInstance(algorithm, paddingAlgorithm, externalAccess);
     }
 
+    /**
+     * The signature engine instrumented code receives; {@code ALG_ECDSA_SHA_256} is always wrapped
+     * in the {@link Fault#armEcdsaFlip} delegate so arming acts on engines created at install — the
+     * delegate is a pure pass-through while nothing is armed. Engine charging is unchanged — the
+     * wrap happens after the same charge a bare engine gets.
+     */
     public static Signature signature(byte algorithm, boolean externalAccess) {
         CardRuntime rt = CardRuntime.current();
         if (rt != null) {
             rt.chargeEngine("signature", algorithm);
         }
-        return Signature.getInstance(algorithm, externalAccess);
+        Signature engine = Signature.getInstance(algorithm, externalAccess);
+        return algorithm == Signature.ALG_ECDSA_SHA_256 ? new FlippingSignature(engine) : engine;
     }
 
     public static Signature signature(
@@ -126,12 +133,18 @@ public final class Memory {
         return KeyAgreement.getInstance(algorithm, externalAccess);
     }
 
+    /**
+     * The random engine instrumented code receives, always wrapped in the {@link Rng#fix} delegate
+     * so arming acts on engines created at install; the delegate is a pure pass-through while
+     * nothing is fixed. Engine charging is unchanged — the wrap happens after the same charge a
+     * bare engine gets.
+     */
     public static RandomData randomData(byte algorithm) {
         CardRuntime rt = CardRuntime.current();
         if (rt != null) {
             rt.chargeEngine("random", algorithm);
         }
-        return RandomData.getInstance(algorithm);
+        return new FixedRandom(RandomData.getInstance(algorithm));
     }
 
     private static void charge(int bytes, String description) {
