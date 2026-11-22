@@ -2,7 +2,9 @@ plugins {
     alias(libs.plugins.spotless)
 }
 
-val gjfVersion = libs.versions.google.java.format.get()
+val gjfVersion =
+    libs.versions.google.java.format
+        .get()
 val ktlintVersion = libs.versions.ktlint.get()
 
 fun spdxHeader(license: String) = "// SPDX-FileCopyrightText: 2026 QuantX\n// SPDX-License-Identifier: $license\n"
@@ -41,7 +43,12 @@ subprojects {
 
     plugins.withId("java") {
         extensions.configure<JavaPluginExtension> {
-            toolchain.languageVersion = JavaLanguageVersion.of(libs.versions.jdk.get().toInt())
+            toolchain.languageVersion =
+                JavaLanguageVersion.of(
+                    libs.versions.jdk
+                        .get()
+                        .toInt(),
+                )
         }
         tasks.withType<JavaCompile>().configureEach {
             options.encoding = "UTF-8"
