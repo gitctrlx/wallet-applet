@@ -1,47 +1,12 @@
-# Gradle
 .gradle/
 build/
 !gradle/wrapper/gradle-wrapper.jar
-!**/src/main/**/build/
-!**/src/test/**/build/
-
-# IDE
+node_modules/
 .idea/
 *.iml
-*.iws
-*.ipr
-out/
-# .vscode/
-!.vscode/launch.json
-!.vscode/settings.json
-!.vscode/extensions.json
-.project
-.classpath
-.settings/
-bin/
-
-# OS
+.vscode/
 .DS_Store
-Thumbs.db
-desktop.ini
-
-# Java
 *.class
-hs_err_pid*
-replay_pid*
-
-# JavaCard build artefacts (kept under build/, but a belt for stray ones)
 *.cap
-*.exp
-*.jca
-
-# Logs / temp
 *.log
-*.tmp
-
-# Local overrides
 local.properties
-gradle.properties.local
-
-# Third-party reference repos
-3rdparty
