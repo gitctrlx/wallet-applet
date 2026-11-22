@@ -106,12 +106,16 @@ public final class Memory {
                 signatureAlgorithm, cipherAlgorithm, messageDigestAlgorithm, externalAccess);
     }
 
+    /**
+     * The wrapped digest instrumented code receives: {@code update}/{@code doFinal} calls are
+     * counted per algorithm and per command ({@link Card#digests}, {@link Card#digestBytes}).
+     */
     public static MessageDigest messageDigest(byte algorithm, boolean externalAccess) {
         CardRuntime rt = CardRuntime.current();
         if (rt != null) {
             rt.chargeEngine("digest", algorithm);
         }
-        return MessageDigest.getInstance(algorithm, externalAccess);
+        return new CountingDigest(algorithm, MessageDigest.getInstance(algorithm, externalAccess));
     }
 
     public static KeyAgreement keyAgreement(byte algorithm, boolean externalAccess) {

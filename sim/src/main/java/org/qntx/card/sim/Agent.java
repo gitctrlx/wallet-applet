@@ -194,6 +194,9 @@ public final class Agent {
         }
 
         private void rewriteInvoke(CodeBuilder builder, InvokeInstruction invoke) {
+            if (skipGuard(builder, invoke)) {
+                return;
+            }
             if (invoke.opcode() == Opcode.INVOKESTATIC) {
                 rewriteStatic(builder, invoke);
             } else {
@@ -210,6 +213,92 @@ public final class Agent {
             builder.ldc(owner.substring(slash + 1) + "." + invoke.method().name().stringValue());
             builder.invokestatic(
                     FAULT, "ret", MethodTypeDesc.ofDescriptor("(SLjava/lang/String;)S"));
+        }
+
+        /**
+         * Guards every void call whose owner is instrumented — and {@code JCSystem.begin}/ {@code
+         * commit}/{@code abortTransaction} — with {@code Fault.skip} so {@code armSkip} can drop
+         * the call. The arguments (one {@code pop} per slot, {@code pop2} for categories two) and
+         * the receiver go down when the guard fires.
+         */
+        private boolean skipGuard(CodeBuilder builder, InvokeInstruction invoke) {
+            if (!invoke.method().type().stringValue().endsWith(")V")) {
+                return false;
+            }
+            String methodName = invoke.method().name().stringValue();
+            // a skipped <init> leaves the object uninitialized and the guarded
+            // branch unverifiable; constructors are not armable methods
+            if (methodName.equals("<init>") || methodName.equals("<clinit>")) {
+                return false;
+            }
+            String owner = invoke.method().owner().name().stringValue();
+            int slash = owner.lastIndexOf('/');
+            String pkg = slash < 0 ? "" : owner.substring(0, slash);
+            boolean transaction =
+                    owner.equals("javacard/framework/JCSystem")
+                            && (invoke.method().name().stringValue().equals("beginTransaction")
+                                    || invoke.method()
+                                            .name()
+                                            .stringValue()
+                                            .equals("commitTransaction")
+                                    || invoke.method()
+                                            .name()
+                                            .stringValue()
+                                            .equals("abortTransaction"));
+            if (!packages.contains(pkg) && !transaction) {
+                return false;
+            }
+            builder.ldc(owner.substring(slash + 1) + "." + invoke.method().name().stringValue());
+            builder.invokestatic(
+                    FAULT, "skip", MethodTypeDesc.ofDescriptor("(Ljava/lang/String;)Z"));
+            Label skip = builder.newLabel();
+            Label end = builder.newLabel();
+            builder.branch(Opcode.IFNE, skip);
+            if (invoke.opcode() == Opcode.INVOKESTATIC) {
+                rewriteStatic(builder, invoke);
+            } else {
+                builder.with(invoke);
+            }
+            builder.goto_(end);
+            builder.labelBinding(skip);
+            emitPops(builder, invoke);
+            builder.labelBinding(end);
+            return true;
+        }
+
+        /** Pops the arguments of {@code invoke} (last first) and, for non-static, the receiver. */
+        private static void emitPops(CodeBuilder builder, InvokeInstruction invoke) {
+            String desc = invoke.method().type().stringValue();
+            List<Integer> slots = new ArrayList<>();
+            int i = 1;
+            while (desc.charAt(i) != ')') {
+                int size = 1;
+                char c = desc.charAt(i);
+                if (c == 'L') {
+                    i = desc.indexOf(';', i);
+                } else if (c == '[') {
+                    while (desc.charAt(i) == '[') {
+                        i++;
+                    }
+                    if (desc.charAt(i) == 'L') {
+                        i = desc.indexOf(';', i);
+                    }
+                } else if (c == 'J' || c == 'D') {
+                    size = 2;
+                }
+                i++;
+                slots.add(0, size);
+            }
+            if (invoke.opcode() != Opcode.INVOKESTATIC) {
+                slots.add(1); // the receiver sits below the arguments: popped last
+            }
+            for (int size : slots) {
+                if (size == 2) {
+                    builder.pop2();
+                } else {
+                    builder.pop();
+                }
+            }
         }
 
         private void rewriteStatic(CodeBuilder builder, InvokeInstruction invoke) {

@@ -67,6 +67,8 @@ public final class CardRuntime extends SimulatorRuntime {
     private final Set<Object> appletArrays = Collections.newSetFromMap(new IdentityHashMap<>());
     private int transientUsed;
     private final List<String> transientAllocations = new ArrayList<>();
+    private final int[] digestCalls = new int[64];
+    private final int[] digestBytes = new int[64];
 
     void bind(Phase newPhase) {
         CURRENT.set(this);
@@ -86,6 +88,8 @@ public final class CardRuntime extends SimulatorRuntime {
     void startCommand() {
         writes = 0;
         commits.clear();
+        java.util.Arrays.fill(digestCalls, 0);
+        java.util.Arrays.fill(digestBytes, 0);
         // lastCommitBytes intentionally survives: it reports the last
         // transaction's commit-buffer consumption until the next one ends
         bind(Phase.COMMAND);
@@ -93,6 +97,27 @@ public final class CardRuntime extends SimulatorRuntime {
 
     boolean inCommand() {
         return phase == Phase.COMMAND;
+    }
+
+    /**
+     * Records a wrapped digest's input (patch 6): {@code doFinal} calls count once per call; {@code
+     * update} and {@code doFinal} inputs add to the command's byte total.
+     */
+    void digest(byte algorithm, int inputBytes, boolean isFinal) {
+        digestBytes[algorithm & 0xFF] += inputBytes;
+        if (isFinal) {
+            digestCalls[algorithm & 0xFF]++;
+        }
+    }
+
+    /** {@code doFinal} calls on wrapped {@code algorithm} engines during the last command. */
+    int digests(byte algorithm) {
+        return digestCalls[algorithm & 0xFF];
+    }
+
+    /** Input bytes fed to wrapped {@code algorithm} engines during the last command. */
+    int digestBytes(byte algorithm) {
+        return digestBytes[algorithm & 0xFF];
     }
 
     /** Registers an array allocated by instrumented applet bytecode as applet-owned card memory. */

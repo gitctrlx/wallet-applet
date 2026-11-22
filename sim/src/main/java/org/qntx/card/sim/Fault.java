@@ -15,6 +15,9 @@ import javacard.security.CryptoException;
  * <p>Method keys are {@code "SimpleClass.method"} — e.g. {@code "State.life"}, {@code
  * "Bytes.equal"}, {@code "Identity.verify"} — regardless of the caller. Counting runs only while a
  * fault is armed so the unwoven fast path is a single flag check.
+ *
+ * <p>Void methods are covered by {@link #armSkip} over the agent's woven guard: the n-th call is
+ * skipped entirely. {@link #armStore} faults the value a persistent {@code Util.setShort} writes.
  */
 public final class Fault {
 
@@ -23,11 +26,15 @@ public final class Fault {
         int nth;
         short value;
         boolean throwing;
+        boolean skipping;
     }
 
     private static final Map<String, Slot> armed = new HashMap<>();
     private static final Map<String, Integer> counts = new HashMap<>();
     private static volatile boolean active;
+    private static int storeArmed;
+    private static int storeSeen;
+    private static short storeValue;
 
     private Fault() {}
 
@@ -41,6 +48,7 @@ public final class Fault {
         s.nth = nth;
         s.value = value;
         s.throwing = false;
+        s.skipping = false;
         active = true;
     }
 
@@ -53,6 +61,42 @@ public final class Fault {
         s.calls = 0;
         s.nth = nth;
         s.throwing = true;
+        s.skipping = false;
+        active = true;
+    }
+
+    /**
+     * Makes the {@code nth} call (counted since arming) of the <em>void</em> method {@code method}
+     * return without running its body — the agent's woven guard pops the arguments and continues.
+     * {@code JCSystem.beginTransaction}/{@code commitTransaction}/{@code abortTransaction} are also
+     * woven, so a skipped commit leaves the transaction open.
+     */
+    public static void armSkip(String method, int nth) {
+        Slot s = armed.computeIfAbsent(method, k -> new Slot());
+        s.calls = 0;
+        s.nth = nth;
+        s.throwing = false;
+        s.skipping = true;
+        active = true;
+    }
+
+    /**
+     * Makes the {@code nth} persistent {@code Util.setShort} (counted since arming; only writes to
+     * applet persistent arrays count) store {@code value} instead of its argument.
+     */
+    public static void armStore(int nth, short value) {
+        storeArmed = nth;
+        storeSeen = 0;
+        storeValue = value;
+        active = true;
+    }
+
+    /**
+     * Turns call counting on ({@link #calls}) without arming a fault; {@link #reset} turns it off.
+     */
+    public static void countCalls() {
+        armed.clear();
+        counts.clear();
         active = true;
     }
 
@@ -66,6 +110,31 @@ public final class Fault {
         armed.clear();
         counts.clear();
         active = false;
+        storeArmed = 0;
+    }
+
+    /**
+     * The woven guard of void calls: {@code true} means skip the call. Counts on the same counters
+     * as {@link #ret}, returns {@code false} fast when nothing is armed.
+     */
+    public static boolean skip(String method) {
+        if (!active) {
+            return false;
+        }
+        counts.merge(method, 1, Integer::sum);
+        Slot s = armed.get(method);
+        return s != null && s.skipping && ++s.calls == s.nth;
+    }
+
+    /**
+     * Called by {@link Nvm#setShort} before a persistent store: returns the argument, or the armed
+     * fault value on the n-th persistent store since arming.
+     */
+    public static short storeValue(short value) {
+        if (storeArmed != 0 && ++storeSeen == storeArmed) {
+            return storeValue;
+        }
+        return value;
     }
 
     /** The woven entry point: the untouched result normally, the armed fault on the n-th call. */
