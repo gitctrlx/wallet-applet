@@ -25,7 +25,17 @@
     "seed.masterPublicKey": "response only, 33 bytes: compressed BIP-32 master public key of {seed} (derivation.json templates.masterPublicKey)",
     "masterPublicKey.any": "response only, 33 bytes: a compressed secp256k1 point (prefix 02 or 03, x on the curve); the value is random",
     "pk.secp.evm": "response only, 65 bytes: publicKey(33) \u2016 chainCode(32) of m/44'/60'/0'/0/0 under {seed} (derivation.json templates)",
-    "pk.ed.solana": "response only, 64 bytes: W(A) of m/44'/501'/0'/0' under {seed} (derivation.json templates)"
+    "pk.ed.solana": "response only, 64 bytes: W(A) of m/44'/501'/0'/0' under {seed} (derivation.json templates)",
+    "digest": "32 bytes: a fixed SIGN_ECDSA digest (any value)",
+    "message": "32 bytes: a fixed SIGN_BIP340 message (any value)",
+    "tweak.bip86": "32 bytes: TaggedHash(\"TapTweak\", x(P)) (BIP-341) where P is the public key of m/86'/0'/0'/0/0 under {seed} (derivation.json templates btc-bip86)",
+    "tweak.zeroKey": "32 bytes: n - d0' where d0' is the private key of m/86'/0'/0'/0/0 under {seed}, replaced by n - d0 when its public key has odd y (\u00a712.2); the tweaked key d0' + t is 0 mod n",
+    "sig.ecdsa.evm": "response only, 64 bytes: r \u2016 s with r, s in [1, n-1], a valid ECDSA signature (\u00a712.1, e = int({digest})) under the public key of m/44'/60'/0'/0/0 under {seed} (derivation.json templates evm); random nonce",
+    "sig.ecdsa.bip84Account": "response only, 64 bytes: r \u2016 s with r, s in [1, n-1], a valid ECDSA signature of {digest} under the public key of m/84'/0'/0' under {seed} (derivation.json templates btc-bip84-account); random nonce",
+    "sig.bip340.bip86": "response only, 64 bytes: R_x \u2016 s, a valid BIP-340 signature of {message} under the x-only output key x(P_even + int({tweak.bip86})\u00b7G) of m/86'/0'/0'/0/0 under {seed}; random aux",
+    "sig.bip340.untweaked": "response only, 64 bytes: R_x \u2016 s, a valid BIP-340 signature of {message} under x(P) where P is the public key of m/86'/0'/0'/0/0 under {seed}; random aux",
+    "wei.any": "response only, 64 bytes: X \u2016 Y of a point on Wei25519 (\u00a710.4) other than the base point; the nonce is random",
+    "ed25519.S.any": "response only, 32 bytes: le32(S) with int_le(S) < l; S depends on the random nonce of the stream's begin"
   },
   "states": {
     "FACTORY": "a freshly installed card",
@@ -33,7 +43,8 @@
     "LOADED": "BLANK, then OPEN and CREATE P1 = 01 with {accessHash} \u2016 {seed} (no other members), then a new OPEN",
     "session none": "no OPEN after the setup",
     "session open": "the last OPEN of the setup (OPEN once for BLANK); not verified",
-    "session verified": "session open, then VERIFY {accessHash} returned 9000"
+    "session verified": "session open, then VERIFY {accessHash} returned 9000",
+    "session streaming": "session verified, then SIGN_ED25519 begin (P1 = 00) with path m/44'/501'/0'/0' returned 9000"
   },
   "commands": [
     {
@@ -708,6 +719,391 @@
           "inner": true,
           "sw": "9000",
           "response": "{pk.ed.solana}"
+        }
+      ]
+    },
+    {
+      "name": "SIGN_ECDSA",
+      "section": "9.9",
+      "cases": [
+        {
+          "name": "life-blank",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "31010000",
+          "inner": true,
+          "sw": "6985"
+        },
+        {
+          "name": "p1",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "31010000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "p2",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "310001{digest}058000002c8000003c800000000000000000000000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "length-empty",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "310000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "length-no-path",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "310000{digest}",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "length-short",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "310000{digest}058000002c8000003c8000000000000000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "length-long",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "310000{digest}058000002c8000003c80000000000000000000000000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "unverified",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "310000{digest}058000002c8000003c800000000000000000000000",
+          "inner": true,
+          "sw": "6982"
+        },
+        {
+          "name": "depth-zero",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "310000{digest}00",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "depth-eleven",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "310000{digest}0b8000000080000000800000008000000080000000800000008000000080000000800000008000000080000000",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "success-evm",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "310000{digest}058000002c8000003c800000000000000000000000",
+          "inner": true,
+          "sw": "9000",
+          "response": "{sig.ecdsa.evm}"
+        },
+        {
+          "name": "success-hardened-leaf",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "310000{digest}03800000548000000080000000",
+          "inner": true,
+          "sw": "9000",
+          "response": "{sig.ecdsa.bip84Account}"
+        }
+      ]
+    },
+    {
+      "name": "SIGN_BIP340",
+      "section": "9.10",
+      "cases": [
+        {
+          "name": "life-blank",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "32010000",
+          "inner": true,
+          "sw": "6985"
+        },
+        {
+          "name": "p1",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "32010000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "p2",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320001{message}{tweak.bip86}058000005680000000800000000000000000000000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "length-empty",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "length-no-path",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320000{message}{tweak.bip86}",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "length-short",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320000{message}{tweak.bip86}0580000056800000008000000000000000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "length-long",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320000{message}{tweak.bip86}05800000568000000080000000000000000000000000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "unverified",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "320000{message}{tweak.bip86}058000005680000000800000000000000000000000",
+          "inner": true,
+          "sw": "6982"
+        },
+        {
+          "name": "depth-zero",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320000{message}fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd036414100",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "depth-eleven",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320000{message}{tweak.bip86}0b8000000080000000800000008000000080000000800000008000000080000000800000008000000080000000",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "tweak-n",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320000{message}fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141058000005680000000800000000000000000000000",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "tweak-max",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320000{message}ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff058000005680000000800000000000000000000000",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "tweaked-key-zero",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320000{message}{tweak.zeroKey}058000005680000000800000000000000000000000",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "success-bip86",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320000{message}{tweak.bip86}058000005680000000800000000000000000000000",
+          "inner": true,
+          "sw": "9000",
+          "response": "{sig.bip340.bip86}"
+        },
+        {
+          "name": "success-untweaked",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320000{message}0000000000000000000000000000000000000000000000000000000000000000058000005680000000800000000000000000000000",
+          "inner": true,
+          "sw": "9000",
+          "response": "{sig.bip340.untweaked}"
+        }
+      ]
+    },
+    {
+      "name": "SIGN_ED25519",
+      "section": "9.11",
+      "cases": [
+        {
+          "name": "life-blank",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "33030000",
+          "inner": true,
+          "sw": "6985"
+        },
+        {
+          "name": "p1",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "33030000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "p2",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "330001048000002c800001f58000000080000000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "begin-length-empty",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "330000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "begin-length-short",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "330000048000002c800001f580000000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "begin-length-long",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "330000048000002c800001f5800000008000000000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "update-length-empty",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "330100",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "begin-unverified",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "330000048000002c800001f58000000080000000",
+          "inner": true,
+          "sw": "6982"
+        },
+        {
+          "name": "update-unverified",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "330100aa",
+          "inner": true,
+          "sw": "6982"
+        },
+        {
+          "name": "finish-unverified",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "330200",
+          "inner": true,
+          "sw": "6982"
+        },
+        {
+          "name": "update-no-stream",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "330100aa",
+          "inner": true,
+          "sw": "6985"
+        },
+        {
+          "name": "finish-no-stream",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "330200",
+          "inner": true,
+          "sw": "6985"
+        },
+        {
+          "name": "begin-depth-zero",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "33000000",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "begin-depth-eleven",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "3300000b8000000080000000800000008000000080000000800000008000000080000000800000008000000080000000",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "begin-not-hardened",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "330000048000002c800001f58000000000000000",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "begin-success",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "330000048000002c800001f58000000080000000",
+          "inner": true,
+          "sw": "9000",
+          "response": "{wei.any}"
+        },
+        {
+          "name": "update-success",
+          "life": "LOADED",
+          "session": "streaming",
+          "apdu": "33010000112233",
+          "inner": true,
+          "sw": "9000",
+          "response": ""
+        },
+        {
+          "name": "finish-success",
+          "life": "LOADED",
+          "session": "streaming",
+          "apdu": "33020044556677",
+          "inner": true,
+          "sw": "9000",
+          "response": "{ed25519.S.any}"
         }
       ]
     }

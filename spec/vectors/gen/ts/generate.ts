@@ -7,8 +7,11 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { accessDoc } from './access.ts';
+import { bip340Doc } from './bip340.ts';
 import { certDoc } from './cert.ts';
 import { derivationDoc } from './derivation.ts';
+import { ecdsaDoc } from './ecdsa.ts';
+import { ed25519Doc } from './ed25519.ts';
 import { kdfDoc } from './kdf.ts';
 import { recordDoc } from './record.ts';
 import { selftest } from './selftest.ts';
@@ -24,6 +27,9 @@ const FILES: Record<string, () => unknown> = {
   'access.json': accessDoc,
   'wrap.json': wrapDoc,
   'derivation.json': derivationDoc,
+  'ecdsa.json': ecdsaDoc,
+  'bip340.json': bip340Doc,
+  'ed25519.json': ed25519Doc,
 };
 
 const out = process.argv[2];

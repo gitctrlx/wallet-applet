@@ -482,9 +482,8 @@ final class DerivationDoc {
                     {"btc-bip48", "m/48'/0'/0'/2'/0/0"},
                     {"depth-10", "m/0/1'/2/3'/4/5'/6/7'/8/9'"},
                 }) {
-            secp256k1.add(secpEntry(e[0], e[1], bip32Derive(master, e[1])));
+            secp256k1.add(secpEntry(e[0], e[1], Hd.bip32Derive(TEMPLATE_SEED, e[1])));
         }
-        Hd.Node edMaster = Hd.slip10Master(TEMPLATE_SEED);
         List<Object> ed25519 = new ArrayList<>();
         for (String[] e :
                 new String[][] {
@@ -492,7 +491,7 @@ final class DerivationDoc {
                     {"solana-1", "m/44'/501'/1'/0'"},
                     {"depth-10", "m/0'/1'/2'/3'/4'/5'/6'/7'/8'/9'"},
                 }) {
-            ed25519.add(edEntry(e[0], e[1], slipDerive(edMaster, e[1])));
+            ed25519.add(edEntry(e[0], e[1], Hd.slip10Derive(TEMPLATE_SEED, e[1])));
         }
         return Vec.object(
                 "seed",
@@ -503,23 +502,6 @@ final class DerivationDoc {
                 secp256k1,
                 "ed25519",
                 ed25519);
-    }
-
-    private static Hd.Node bip32Derive(Hd.Node node, String path) {
-        for (long index : Hd.indices(path)) {
-            node = Hd.bip32Child(node, index);
-            if (node == null) {
-                throw new IllegalStateException("invalid child on template path " + path);
-            }
-        }
-        return node;
-    }
-
-    private static Hd.Node slipDerive(Hd.Node node, String path) {
-        for (long index : Hd.indices(path)) {
-            node = Hd.slip10Child(node, index);
-        }
-        return node;
     }
 
     private static Object secpEntry(String name, String path, Hd.Node node) {

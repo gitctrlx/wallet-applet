@@ -4,11 +4,15 @@
 """Generates spec/vectors/apdu.json from the protocol tables (spec/protocol.md §18).
 
 Transcribes the checks of §8.1 (OPEN), §8.3 (SESSION, outer only — the record-level cases
-live in record.json), §9.2 (checking order and the unknown-INS case), §9.3–9.8 and §9.15
-(STATUS, CREATE, VERIFY, CHANGE, ERASE, PUBLIC_KEY, WAIT) and §14.1–14.2 (GET_IDENTITY,
-PERSONALIZE). Preconditions that need a prepared failure count (the WAIT gate of §9.5) are in
-verify-sequence.json; data checks that no fixed input can reach (an invalid BIP-32 master or
-child, probability about 2^-127) are tested by fault injection, not listed here. APDUs are templates with {symbol} placeholders;
+live in record.json), §9.2 (checking order and the unknown-INS case), §9.3–9.11 and §9.15
+(STATUS, CREATE, VERIFY, CHANGE, ERASE, PUBLIC_KEY, SIGN_ECDSA, SIGN_BIP340, SIGN_ED25519,
+WAIT) and §14.1–14.2 (GET_IDENTITY, PERSONALIZE). Preconditions that need a prepared failure
+count (the WAIT gate of §9.5) are in verify-sequence.json; data checks that no fixed input can
+reach (an invalid BIP-32 master or child, probability about 2^-127) are tested by fault
+injection, and the exhausted Ed25519 counter (edCounter = 0xFFFFFFFF after 2^32 - 1
+signatures) by a prepared persistent state, not listed here. An update chunk of more than 236
+bytes cannot be carried by a command record (§8.3), so its length case is not listed either.
+APDUs are templates with {symbol} placeholders;
 this script computes each Lc byte from the symbol lengths. In every command, case k violates
 check k and every later check that can be violated at the same time, and expects check k's
 status word; the last case is the success case. Stdlib only; output is canonical
@@ -43,6 +47,10 @@ SYMBOL_LEN = {
     "id.self": 16,
     "id.other1": 16,
     "id.other2": 16,
+    "digest": 32,
+    "message": 32,
+    "tweak.bip86": 32,
+    "tweak.zeroKey": 32,
 }
 
 SYMBOLS = {
@@ -72,6 +80,16 @@ SYMBOLS = {
     "masterPublicKey.any": "response only, 33 bytes: a compressed secp256k1 point (prefix 02 or 03, x on the curve); the value is random",
     "pk.secp.evm": "response only, 65 bytes: publicKey(33) ‖ chainCode(32) of m/44'/60'/0'/0/0 under {seed} (derivation.json templates)",
     "pk.ed.solana": "response only, 64 bytes: W(A) of m/44'/501'/0'/0' under {seed} (derivation.json templates)",
+    "digest": "32 bytes: a fixed SIGN_ECDSA digest (any value)",
+    "message": "32 bytes: a fixed SIGN_BIP340 message (any value)",
+    "tweak.bip86": "32 bytes: TaggedHash(\"TapTweak\", x(P)) (BIP-341) where P is the public key of m/86'/0'/0'/0/0 under {seed} (derivation.json templates btc-bip86)",
+    "tweak.zeroKey": "32 bytes: n - d0' where d0' is the private key of m/86'/0'/0'/0/0 under {seed}, replaced by n - d0 when its public key has odd y (§12.2); the tweaked key d0' + t is 0 mod n",
+    "sig.ecdsa.evm": "response only, 64 bytes: r ‖ s with r, s in [1, n-1], a valid ECDSA signature (§12.1, e = int({digest})) under the public key of m/44'/60'/0'/0/0 under {seed} (derivation.json templates evm); random nonce",
+    "sig.ecdsa.bip84Account": "response only, 64 bytes: r ‖ s with r, s in [1, n-1], a valid ECDSA signature of {digest} under the public key of m/84'/0'/0' under {seed} (derivation.json templates btc-bip84-account); random nonce",
+    "sig.bip340.bip86": "response only, 64 bytes: R_x ‖ s, a valid BIP-340 signature of {message} under the x-only output key x(P_even + int({tweak.bip86})·G) of m/86'/0'/0'/0/0 under {seed}; random aux",
+    "sig.bip340.untweaked": "response only, 64 bytes: R_x ‖ s, a valid BIP-340 signature of {message} under x(P) where P is the public key of m/86'/0'/0'/0/0 under {seed}; random aux",
+    "wei.any": "response only, 64 bytes: X ‖ Y of a point on Wei25519 (§10.4) other than the base point; the nonce is random",
+    "ed25519.S.any": "response only, 32 bytes: le32(S) with int_le(S) < l; S depends on the random nonce of the stream's begin",
 }
 
 # Setup of each life/session combination named by the cases.
@@ -82,6 +100,7 @@ STATES = {
     "session none": "no OPEN after the setup",
     "session open": "the last OPEN of the setup (OPEN once for BLANK); not verified",
     "session verified": "session open, then VERIFY {accessHash} returned 9000",
+    "session streaming": "session verified, then SIGN_ED25519 begin (P1 = 00) with path m/44'/501'/0'/0' returned 9000",
 }
 
 
@@ -123,9 +142,15 @@ def case(name, life, session, apdu_hex, inner, sw, response=None):
 PATH_EVM = "05" + "8000002c" + "8000003c" + "80000000" + "00000000" + "00000000"  # m/44'/60'/0'/0/0
 PATH_SOLANA = "04" + "8000002c" + "800001f5" + "80000000" + "80000000"  # m/44'/501'/0'/0'
 PATH_SOLANA_SOFT = "04" + "8000002c" + "800001f5" + "80000000" + "00000000"  # m/44'/501'/0'/0
+PATH_BIP84_ACCOUNT = "03" + "80000054" + "80000000" + "80000000"  # m/84'/0'/0'
+PATH_BIP86 = "05" + "80000056" + "80000000" + "80000000" + "00000000" + "00000000"  # m/86'/0'/0'/0/0
+DEPTH_ELEVEN = "0b" + "80000000" * 11
+# secp256k1 group order n and the largest 32-byte value, both rejected as tweaks (§12.2)
+ORDER_N = "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141"
+MAX_32 = "ff" * 32
 
 # life values: FACTORY, BLANK, LOADED (§4.1) or "any".
-# session: "none", "open" or "verified" (see STATES).
+# session: "none", "open", "verified" or "streaming" (see STATES).
 COMMANDS = [
     {
         "name": "DISPATCH",
@@ -397,6 +422,75 @@ COMMANDS = [
             case("ed25519-not-hardened", "LOADED", "verified", "300100" + PATH_SOLANA_SOFT, True, "6a80"),
             case("success-secp256k1", "LOADED", "verified", "300000" + PATH_EVM, True, "9000", "{pk.secp.evm}"),
             case("success-ed25519", "LOADED", "verified", "300100" + PATH_SOLANA, True, "9000", "{pk.ed.solana}"),
+        ],
+    },
+    {
+        "name": "SIGN_ECDSA",
+        "section": "9.9",
+        "cases": [
+            # life first: P1 and length are also wrong here
+            case("life-blank", "BLANK", "open", "31010000", True, "6985"),
+            case("p1", "LOADED", "verified", "31010000", True, "6a86"),
+            case("p2", "LOADED", "verified", "310001{digest}" + PATH_EVM, True, "6a86"),
+            case("length-empty", "LOADED", "verified", "310000", True, "6700"),
+            # the depth byte is missing: 32 bytes is shorter than 33 + 4d for every d
+            case("length-no-path", "LOADED", "verified", "310000{digest}", True, "6700"),
+            case("length-short", "LOADED", "verified", "310000{digest}" + PATH_EVM[:-8], True, "6700"),
+            case("length-long", "LOADED", "verified", "310000{digest}" + PATH_EVM + "00", True, "6700"),
+            case("unverified", "LOADED", "open", "310000{digest}" + PATH_EVM, True, "6982"),
+            case("depth-zero", "LOADED", "verified", "310000{digest}00", True, "6a80"),
+            case("depth-eleven", "LOADED", "verified", "310000{digest}" + DEPTH_ELEVEN, True, "6a80"),
+            # a non-hardened leaf (public derivation check) and a hardened leaf (k·G check)
+            case("success-evm", "LOADED", "verified", "310000{digest}" + PATH_EVM, True, "9000", "{sig.ecdsa.evm}"),
+            case("success-hardened-leaf", "LOADED", "verified", "310000{digest}" + PATH_BIP84_ACCOUNT, True, "9000", "{sig.ecdsa.bip84Account}"),
+        ],
+    },
+    {
+        "name": "SIGN_BIP340",
+        "section": "9.10",
+        "cases": [
+            case("life-blank", "BLANK", "open", "32010000", True, "6985"),
+            case("p1", "LOADED", "verified", "32010000", True, "6a86"),
+            case("p2", "LOADED", "verified", "320001{message}{tweak.bip86}" + PATH_BIP86, True, "6a86"),
+            case("length-empty", "LOADED", "verified", "320000", True, "6700"),
+            # the depth byte is missing: 64 bytes is shorter than 65 + 4d for every d
+            case("length-no-path", "LOADED", "verified", "320000{message}{tweak.bip86}", True, "6700"),
+            case("length-short", "LOADED", "verified", "320000{message}{tweak.bip86}" + PATH_BIP86[:-8], True, "6700"),
+            case("length-long", "LOADED", "verified", "320000{message}{tweak.bip86}" + PATH_BIP86 + "00", True, "6700"),
+            case("unverified", "LOADED", "open", "320000{message}{tweak.bip86}" + PATH_BIP86, True, "6982"),
+            # path before tweak: the tweak is also invalid here
+            case("depth-zero", "LOADED", "verified", "320000{message}" + ORDER_N + "00", True, "6a80"),
+            case("depth-eleven", "LOADED", "verified", "320000{message}{tweak.bip86}" + DEPTH_ELEVEN, True, "6a80"),
+            case("tweak-n", "LOADED", "verified", "320000{message}" + ORDER_N + PATH_BIP86, True, "6a80"),
+            case("tweak-max", "LOADED", "verified", "320000{message}" + MAX_32 + PATH_BIP86, True, "6a80"),
+            case("tweaked-key-zero", "LOADED", "verified", "320000{message}{tweak.zeroKey}" + PATH_BIP86, True, "6a80"),
+            case("success-bip86", "LOADED", "verified", "320000{message}{tweak.bip86}" + PATH_BIP86, True, "9000", "{sig.bip340.bip86}"),
+            case("success-untweaked", "LOADED", "verified", "320000{message}" + "00" * 32 + PATH_BIP86, True, "9000", "{sig.bip340.untweaked}"),
+        ],
+    },
+    {
+        "name": "SIGN_ED25519",
+        "section": "9.11",
+        "cases": [
+            case("life-blank", "BLANK", "open", "33030000", True, "6985"),
+            case("p1", "LOADED", "verified", "33030000", True, "6a86"),
+            case("p2", "LOADED", "verified", "330001" + PATH_SOLANA, True, "6a86"),
+            case("begin-length-empty", "LOADED", "verified", "330000", True, "6700"),
+            case("begin-length-short", "LOADED", "verified", "330000" + PATH_SOLANA[:-8], True, "6700"),
+            case("begin-length-long", "LOADED", "verified", "330000" + PATH_SOLANA + "00", True, "6700"),
+            # length before the stream precondition: no stream is active here either
+            case("update-length-empty", "LOADED", "verified", "330100", True, "6700"),
+            case("begin-unverified", "LOADED", "open", "330000" + PATH_SOLANA, True, "6982"),
+            case("update-unverified", "LOADED", "open", "330100aa", True, "6982"),
+            case("finish-unverified", "LOADED", "open", "330200", True, "6982"),
+            case("update-no-stream", "LOADED", "verified", "330100aa", True, "6985"),
+            case("finish-no-stream", "LOADED", "verified", "330200", True, "6985"),
+            case("begin-depth-zero", "LOADED", "verified", "33000000", True, "6a80"),
+            case("begin-depth-eleven", "LOADED", "verified", "330000" + DEPTH_ELEVEN, True, "6a80"),
+            case("begin-not-hardened", "LOADED", "verified", "330000" + PATH_SOLANA_SOFT, True, "6a80"),
+            case("begin-success", "LOADED", "verified", "330000" + PATH_SOLANA, True, "9000", "{wei.any}"),
+            case("update-success", "LOADED", "streaming", "330100" + "00112233", True, "9000", ""),
+            case("finish-success", "LOADED", "streaming", "330200" + "44556677", True, "9000", "{ed25519.S.any}"),
         ],
     },
 ]
