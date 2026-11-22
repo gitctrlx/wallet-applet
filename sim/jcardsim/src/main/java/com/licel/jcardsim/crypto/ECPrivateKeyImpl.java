@@ -19,6 +19,8 @@ import javacard.security.CryptoException;
 import javacard.security.ECPrivateKey;
 import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.params.ECPrivateKeyParameters;
+import org.qntx.card.sim.Nvm;
+import org.qntx.card.sim.CardRuntime;
 
 /**
  * Implementation <code>ECPrivateKey</code> based
@@ -58,6 +60,8 @@ public class ECPrivateKeyImpl extends ECKeyImpl implements ECPrivateKey {
     }
 
     public void setS(byte[] buffer, short offset, short length) throws CryptoException {
+        // persistent key-object write: charge, count, journal (patch 4)
+        Nvm.keyWrite(this, CardRuntime.SET_KEY_CHARGE);
         s.setBytes(buffer, offset, length);
     }
 

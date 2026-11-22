@@ -28,6 +28,8 @@ import org.bouncycastle.crypto.generators.DHKeyPairGenerator;
 import org.bouncycastle.crypto.generators.DSAKeyPairGenerator;
 import org.bouncycastle.crypto.generators.ECKeyPairGenerator;
 import org.bouncycastle.crypto.generators.RSAKeyPairGenerator;
+import org.qntx.card.sim.Nvm;
+import org.qntx.card.sim.CardRuntime;
 
 /**
  * Implementation
@@ -86,6 +88,8 @@ public final class KeyPairImpl {
      */
     public final void genKeyPair()
             throws CryptoException {
+        // persistent key-pair write: 1024 B charge covering both keys (patch 4)
+        Nvm.keyPairWrite(publicKey, privateKey);
         initEngine();        
         createKeys();
         AsymmetricCipherKeyPair kp = engine.generateKeyPair();

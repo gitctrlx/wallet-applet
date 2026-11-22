@@ -29,6 +29,8 @@ import org.bouncycastle.crypto.params.ECDomainParameters;
 import org.bouncycastle.crypto.params.ECKeyGenerationParameters;
 import org.bouncycastle.crypto.params.ECKeyParameters;
 import org.bouncycastle.math.ec.ECCurve;
+import org.qntx.card.sim.Nvm;
+import org.qntx.card.sim.CardRuntime;
 
 /**
  * Base class for
@@ -80,6 +82,8 @@ public abstract class ECKeyImpl extends KeyImpl implements ECKey {
     }
 
     public void clearKey() {
+        // persistent key-object write: free charge, counted, journaled (patch 4)
+        Nvm.keyWrite(this, 0);
         a.clear();
         b.clear();
         g.clear();

@@ -26,6 +26,8 @@ import org.bouncycastle.crypto.engines.DESEngine;
 import org.bouncycastle.crypto.engines.DESedeEngine;
 import org.bouncycastle.crypto.engines.SEEDEngine;
 import org.bouncycastle.crypto.params.KeyParameter;
+import org.qntx.card.sim.Nvm;
+import org.qntx.card.sim.CardRuntime;
 
 /**
  * Implementation of secret key.
@@ -73,6 +75,8 @@ public class SymmetricKeyImpl extends KeyImpl implements DESKey, AESKey, HMACKey
      * Clears the key and sets its initialized state to false.
      */
     public void clearKey() {
+        // persistent key-object write: free charge, counted, journaled (patch 4)
+        Nvm.keyWrite(this, 0);
         key.clear();
     }
 
@@ -80,6 +84,8 @@ public class SymmetricKeyImpl extends KeyImpl implements DESKey, AESKey, HMACKey
      * Sets the <code>Key</code> data.
      */
     public void setKey(byte[] keyData, short kOff) throws CryptoException, NullPointerException, ArrayIndexOutOfBoundsException {
+        // persistent key-object write: charge, count, journal (patch 4)
+        Nvm.keyWrite(this, CardRuntime.SET_KEY_CHARGE);
         key.setBytes(keyData, kOff, (short) (size / 8));
     }
 
@@ -87,6 +93,8 @@ public class SymmetricKeyImpl extends KeyImpl implements DESKey, AESKey, HMACKey
      * Sets the <code>Key</code> data.
      */
     public void setKey(byte[] keyData, short kOff, short kLen) throws CryptoException, NullPointerException, ArrayIndexOutOfBoundsException {
+        // persistent key-object write: charge, count, journal (patch 4)
+        Nvm.keyWrite(this, CardRuntime.SET_KEY_CHARGE);
         key.setBytes(keyData, kOff, kLen);
     }
     /**

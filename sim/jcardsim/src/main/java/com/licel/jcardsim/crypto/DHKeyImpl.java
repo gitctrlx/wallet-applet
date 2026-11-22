@@ -26,6 +26,8 @@ import org.bouncycastle.crypto.params.DHKeyGenerationParameters;
 import org.bouncycastle.crypto.params.DHKeyParameters;
 import org.bouncycastle.crypto.params.DHParameters;
 import org.bouncycastle.util.encoders.Hex;
+import org.qntx.card.sim.Nvm;
+import org.qntx.card.sim.CardRuntime;
 
 public abstract class DHKeyImpl extends KeyImpl implements DHKey {
     
@@ -102,6 +104,8 @@ public abstract class DHKeyImpl extends KeyImpl implements DHKey {
     }
 
     public void clearKey() {
+        // persistent key-object write: free charge, counted, journaled (patch 4)
+        Nvm.keyWrite(this, 0);
         p.clear();
         q.clear();
         g.clear();

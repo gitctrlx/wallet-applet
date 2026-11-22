@@ -21,6 +21,8 @@ import javacard.security.ECPublicKey;
 import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.params.ECDomainParameters;
 import org.bouncycastle.crypto.params.ECPublicKeyParameters;
+import org.qntx.card.sim.Nvm;
+import org.qntx.card.sim.CardRuntime;
 
 /**
  * Implementation <code>ECPublicKey</code> based
@@ -60,6 +62,8 @@ public class ECPublicKeyImpl extends ECKeyImpl implements ECPublicKey {
     
 
     public void setW(byte[] buffer, short offset, short length) throws CryptoException {
+        // persistent key-object write: charge, count, journal (patch 4)
+        Nvm.keyWrite(this, CardRuntime.SET_W_CHARGE);
         w.setBytes(buffer, offset, length);
     }
 

@@ -26,6 +26,8 @@ import org.bouncycastle.crypto.params.DSAKeyGenerationParameters;
 import org.bouncycastle.crypto.params.DSAKeyParameters;
 import org.bouncycastle.crypto.params.DSAParameters;
 import org.bouncycastle.crypto.params.DSAValidationParameters;
+import org.qntx.card.sim.Nvm;
+import org.qntx.card.sim.CardRuntime;
 
 /**
  * Base class for <code>DSAPublicKeyImpl/DSAPrivateKeyImpl</code>
@@ -70,6 +72,8 @@ public class DSAKeyImpl extends KeyImpl implements DSAKey {
     }
     
     public void clearKey() {
+        // persistent key-object write: free charge, counted, journaled (patch 4)
+        Nvm.keyWrite(this, 0);
         p.clear();
         q.clear();
         g.clear();

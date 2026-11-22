@@ -33,14 +33,14 @@ public final class CardRuntime extends SimulatorRuntime {
         COMMAND
     }
 
-    static final int MAX_COMMIT = 5120;
-    static final int COMMIT_SPAN = 1024;
-    static final int COMMIT_PAGE = 512;
-    static final int SET_KEY_CHARGE = 512;
-    static final int SET_W_CHARGE = 1024;
-    static final int KEY_GEN_CHARGE = 1024;
-    static final int TRANSIENT_POOL = 3990;
-    static final int TRANSIENT_BUDGET = 3990;
+    public static final int MAX_COMMIT = 5120;
+    public static final int COMMIT_SPAN = 1024;
+    public static final int COMMIT_PAGE = 512;
+    public static final int SET_KEY_CHARGE = 512;
+    public static final int SET_W_CHARGE = 1024;
+    public static final int KEY_GEN_CHARGE = 1024;
+    public static final int TRANSIENT_POOL = 3990;
+    public static final int TRANSIENT_BUDGET = 3990;
 
     private static final ThreadLocal<CardRuntime> CURRENT = new ThreadLocal<>();
 
@@ -78,7 +78,8 @@ public final class CardRuntime extends SimulatorRuntime {
     void startCommand() {
         writes = 0;
         commits.clear();
-        lastCommitBytes = 0;
+        // lastCommitBytes intentionally survives: it reports the last
+        // transaction's commit-buffer consumption until the next one ends
         bind(Phase.COMMAND);
     }
 

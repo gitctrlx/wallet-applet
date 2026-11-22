@@ -25,6 +25,8 @@ import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.KeyGenerationParameters;
 import org.bouncycastle.crypto.params.RSAKeyGenerationParameters;
 import org.bouncycastle.crypto.params.RSAKeyParameters;
+import org.qntx.card.sim.Nvm;
+import org.qntx.card.sim.CardRuntime;
 
 /**
  * Implementation
@@ -80,6 +82,8 @@ public class RSAKeyImpl extends KeyImpl implements RSAPrivateKey, RSAPublicKey {
     }
 
     public void setExponent(byte[] buffer, short offset, short length) throws CryptoException {
+        // persistent key-object write: charge, count, journal (patch 4)
+        Nvm.keyWrite(this, CardRuntime.SET_KEY_CHARGE);
         exponent.setBytes(buffer, offset, length);
     }
 
@@ -88,6 +92,8 @@ public class RSAKeyImpl extends KeyImpl implements RSAPrivateKey, RSAPublicKey {
     }
 
     public void clearKey() {
+        // persistent key-object write: free charge, counted, journaled (patch 4)
+        Nvm.keyWrite(this, 0);
         exponent.clear();
         modulus.clear();
     }
