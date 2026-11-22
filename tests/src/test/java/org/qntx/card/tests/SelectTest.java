@@ -52,9 +52,13 @@ final class SelectTest {
     }
 
     @Test
-    void everyInstructionIsUnknownBeforeTheCommandsExist() {
+    void everyInstructionOutsideTheOuterTableIsUnknown() {
         card.transmit(Spec.SELECT);
         for (int ins = 0; ins < 256; ins++) {
+            // §9.1: implemented outer commands have their own checks, not 6D00
+            if (ins == 0xE0 || ins == 0xE2 || ins == 0x10 || ins == 0x12) {
+                continue;
+            }
             assertArrayEquals(
                     Spec.SW_INS,
                     card.transmit(new byte[] {(byte) 0x80, (byte) ins, 0, 0, 0}),
