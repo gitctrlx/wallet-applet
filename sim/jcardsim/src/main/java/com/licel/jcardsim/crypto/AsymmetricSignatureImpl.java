@@ -410,7 +410,8 @@ public class AsymmetricSignatureImpl extends Signature implements SignatureMessa
         if (!isInitialized) {
             CryptoException.throwIt(CryptoException.INVALID_INIT);
         }
-        preSig = JCSystem.makeTransientByteArray(sigLength, JCSystem.CLEAR_ON_RESET);
+        // internal temporary: not charged applet transient memory (architecture section 8, patch 6)
+        preSig = new byte[sigLength];
         Util.arrayCopyNonAtomic(sigAndRecDataBuff, buffOffset, preSig, (short) 0, sigLength);
         try {
             ((SignerWithRecovery) engine).updateWithRecoveredMessage(preSig);

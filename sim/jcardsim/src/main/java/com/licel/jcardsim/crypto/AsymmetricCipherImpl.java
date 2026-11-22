@@ -81,7 +81,8 @@ public class AsymmetricCipherImpl extends Cipher {
         }
         ParametersWithRandom params = new ParametersWithRandom(((KeyWithParameters) theKey).getParameters(), new SecureRandomNullProvider());
         engine.init(theMode == MODE_ENCRYPT, params);
-        buffer = JCSystem.makeTransientByteArray((short) engine.getInputBlockSize(), JCSystem.CLEAR_ON_DESELECT);
+        // internal engine buffer: not charged applet transient memory (architecture section 8, patch 6)
+        buffer = new byte[engine.getInputBlockSize()];
         initMode = theMode;
         bufferPos = 0;
         isInitialized = true;

@@ -188,7 +188,8 @@ public class AuthenticatedSymmetricCipherImpl extends AEADCipher {
         }
 
         selectCipherEngine(theKey);
-        byte[] iv = JCSystem.makeTransientByteArray(bLen, JCSystem.CLEAR_ON_RESET);
+        // internal temporary: not charged applet transient memory (architecture section 8, patch 6)
+        byte[] iv = new byte[bLen];
         Util.arrayCopyNonAtomic(bArray, bOff, iv, (short) 0, bLen);
         ParametersWithIV parametersWithIV = new ParametersWithIV(((SymmetricKeyImpl) theKey).getParameters(),iv);
         try{
@@ -241,7 +242,8 @@ public class AuthenticatedSymmetricCipherImpl extends AEADCipher {
 
         selectCipherEngine(theKey);
 
-        byte[] iv_nonce = JCSystem.makeTransientByteArray(nonceLen, JCSystem.CLEAR_ON_RESET);
+        // internal temporary: not charged applet transient memory (architecture section 8, patch 6)
+        byte[] iv_nonce = new byte[nonceLen];
         Util.arrayCopyNonAtomic(nonceBuf, nonceOff, iv_nonce, (short) 0, nonceLen);
 
         parameters = new AEADParameters((KeyParameter) ((SymmetricKeyImpl) theKey).getParameters(),tagSize * Byte.SIZE, iv_nonce );

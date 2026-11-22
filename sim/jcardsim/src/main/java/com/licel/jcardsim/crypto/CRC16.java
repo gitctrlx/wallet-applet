@@ -32,7 +32,8 @@ public class CRC16 extends Checksum {
     private byte crc16[];
 
     public CRC16() {
-        crc16 = JCSystem.makeTransientByteArray(LENGTH, JCSystem.CLEAR_ON_DESELECT);
+        // internal temporary: not charged applet transient memory (architecture section 8, patch 6)
+        crc16 = new byte[LENGTH];
     }
 
     public byte getAlgorithm() {

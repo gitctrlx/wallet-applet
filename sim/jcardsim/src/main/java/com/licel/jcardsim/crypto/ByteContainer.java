@@ -15,6 +15,7 @@
  */
 package com.licel.jcardsim.crypto;
 
+import com.licel.jcardsim.base.SimulatorSystem;
 import java.math.BigInteger;
 import javacard.framework.JCSystem;
 import javacard.framework.Util;
@@ -138,7 +139,9 @@ public final class ByteContainer {
         if (length == 0) {
             CryptoException.throwIt(CryptoException.UNINITIALIZED_KEY);
         }
-        byte[] result = JCSystem.makeTransientByteArray(length, event);
+        // internal temporary: not charged applet transient memory
+        // (architecture section 8, patch 6)
+        byte[] result = new byte[length];
         getBytes(result, (short) 0);
         return result;
     }
@@ -181,12 +184,18 @@ public final class ByteContainer {
 
 
     private void allocateData(short length) {
+        // transient key storage registers directly with the runtime's
+        // TransientMemory so clear-on-reset/deselect still applies; the
+        // charged JCSystem path is only for applet bytecode
+        // (architecture section 8, patch 6)
         switch (memoryType) {
             case JCSystem.MEMORY_TYPE_TRANSIENT_DESELECT:
-                data = JCSystem.makeTransientByteArray(length, JCSystem.CLEAR_ON_DESELECT);
+                data = SimulatorSystem.instance().getTransientMemory()
+                        .makeByteArray(length, JCSystem.CLEAR_ON_DESELECT);
                 break;
             case JCSystem.MEMORY_TYPE_TRANSIENT_RESET:
-                data = JCSystem.makeTransientByteArray(length, JCSystem.CLEAR_ON_RESET);
+                data = SimulatorSystem.instance().getTransientMemory()
+                        .makeByteArray(length, JCSystem.CLEAR_ON_RESET);
                 break;
             default:
                 data = new byte[length];
