@@ -26,6 +26,7 @@ public final class Card {
         }
         runtime = new CardRuntime();
         simulator = new Simulator(runtime);
+        Fault.reset();
     }
 
     /**
@@ -38,6 +39,7 @@ public final class Card {
     }
 
     public void install(byte[] aid, Class<? extends Applet> appletClass, byte[] params) {
+        Fault.reset();
         byte[] data = new byte[aid.length + params.length + 3];
         data[0] = (byte) aid.length;
         System.arraycopy(aid, 0, data, 1, aid.length);
@@ -86,6 +88,11 @@ public final class Card {
         runtime.reset();
     }
 
+    /** The installed applet object, for tests that inspect transient state by reflection. */
+    public Applet applet(byte[] aid) {
+        return runtime.applet(new AID(aid, (short) 0, (byte) aid.length));
+    }
+
     /** Persistent writes counted during the last command. */
     public int writes() {
         return runtime.writes();
@@ -109,5 +116,10 @@ public final class Card {
     /** One line per charged transient allocation plus a usage total. */
     public String memoryReport() {
         return runtime.memoryReport();
+    }
+
+    /** A copy of the APDU buffer as the last command left it. */
+    public byte[] apduBuffer() {
+        return runtime.apduBuffer();
     }
 }

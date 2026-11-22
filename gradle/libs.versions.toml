@@ -10,6 +10,7 @@ pit-core = "1.30.2"
 pit-junit5 = "1.2.3"
 google-java-format = "1.35.0"
 ktlint = "1.8.0"
+jackson-jr = "2.19.1"
 
 [libraries]
 ant-javacard = { module = "com.github.martinpaljak:ant-javacard", version.ref = "ant-javacard" }
@@ -19,6 +20,7 @@ asm-tree = { module = "org.ow2.asm:asm-tree", version.ref = "asm" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+jackson-jr = { module = "com.fasterxml.jackson.jr:jackson-jr-objects", version.ref = "jackson-jr" }
 
 [plugins]
 spotless = { id = "com.diffplug.spotless", version = "8.5.1" }

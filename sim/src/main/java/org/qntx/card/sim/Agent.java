@@ -14,6 +14,8 @@ import java.lang.classfile.instruction.ArrayStoreInstruction;
 import java.lang.classfile.instruction.ExceptionCatch;
 import java.lang.classfile.instruction.FieldInstruction;
 import java.lang.classfile.instruction.InvokeInstruction;
+import java.lang.classfile.instruction.LocalVariable;
+import java.lang.classfile.instruction.LocalVariableType;
 import java.lang.classfile.instruction.NewMultiArrayInstruction;
 import java.lang.classfile.instruction.NewPrimitiveArrayInstruction;
 import java.lang.classfile.instruction.NewReferenceArrayInstruction;
@@ -39,12 +41,15 @@ import java.util.Set;
  * rewrites {@code Util.arrayCopy*}/{@code setShort}, {@code JCSystem.makeTransient*}, factory
  * {@code getInstance} calls and {@code KeyBuilder.buildKey*} through {@link Nvm}/{@link Memory},
  * and prepends a {@link Nvm#rethrowPowerLoss} stub to every exception handler so a {@link
- * PowerLoss} skips handler bodies entirely.
+ * PowerLoss} skips handler bodies entirely. Every call an instrumented class makes to an
+ * instrumented method returning {@code short} is routed through {@link Fault#ret} so a test can arm
+ * a chosen call to return a fault value or throw (architecture spec section 9).
  */
 public final class Agent {
 
     private static final ClassDesc NVM = ClassDesc.of("org.qntx.card.sim.Nvm");
     private static final ClassDesc MEMORY = ClassDesc.of("org.qntx.card.sim.Memory");
+    private static final ClassDesc FAULT = ClassDesc.of("org.qntx.card.sim.Fault");
 
     private static volatile boolean installed;
 
@@ -65,7 +70,7 @@ public final class Agent {
         return installed;
     }
 
-    private static final class AppletTransformer implements ClassFileTransformer {
+    static final class AppletTransformer implements ClassFileTransformer {
 
         private final Set<String> packages;
 
@@ -102,7 +107,7 @@ public final class Agent {
                 return cf.transformClass(
                         cf.parse(classfileBuffer),
                         ClassTransform.transformingMethodBodies(
-                                CodeTransform.ofStateful(HookTransform::new)));
+                                CodeTransform.ofStateful(() -> new HookTransform(packages))));
             } catch (RuntimeException e) {
                 throw new IllegalStateException("sim agent failed to transform " + className, e);
             }
@@ -111,7 +116,12 @@ public final class Agent {
 
     private static final class HookTransform implements CodeTransform {
 
+        private final Set<String> packages;
         private List<AbstractMap.SimpleEntry<Label, Label>> stubs;
+
+        HookTransform(Set<String> packages) {
+            this.packages = packages;
+        }
 
         @Override
         public void atStart(CodeBuilder builder) {
@@ -128,6 +138,12 @@ public final class Agent {
                 case NewReferenceArrayInstruction create -> trackNewArray(builder, create);
                 case NewMultiArrayInstruction create -> trackNewArray(builder, create);
                 case ExceptionCatch handler -> redirectHandler(builder, handler);
+                // PIT redefines these woven classes during mutation testing; a mutant whose
+                // conditional becomes unconditional leaves a dead tail, so the recomputed
+                // max_locals shrinks below the slots the local variable table still names
+                // and the JVM refuses the redefinition (ClassFormatError)
+                case LocalVariable var -> {}
+                case LocalVariableType var -> {}
                 default -> builder.with(element);
             }
         }
@@ -178,10 +194,25 @@ public final class Agent {
         }
 
         private void rewriteInvoke(CodeBuilder builder, InvokeInstruction invoke) {
-            if (invoke.opcode() != Opcode.INVOKESTATIC) {
+            if (invoke.opcode() == Opcode.INVOKESTATIC) {
+                rewriteStatic(builder, invoke);
+            } else {
                 builder.with(invoke);
+            }
+            String owner = invoke.method().owner().name().stringValue();
+            int slash = owner.lastIndexOf('/');
+            if (!invoke.method().type().stringValue().endsWith(")S")
+                    || slash < 0
+                    || !packages.contains(owner.substring(0, slash))) {
                 return;
             }
+            // Fault.ret observes and replaces the call's short result
+            builder.ldc(owner.substring(slash + 1) + "." + invoke.method().name().stringValue());
+            builder.invokestatic(
+                    FAULT, "ret", MethodTypeDesc.ofDescriptor("(SLjava/lang/String;)S"));
+        }
+
+        private void rewriteStatic(CodeBuilder builder, InvokeInstruction invoke) {
             String owner = invoke.method().owner().name().stringValue();
             String name = invoke.method().name().stringValue();
             String desc = invoke.method().type().stringValue();

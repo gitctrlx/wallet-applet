@@ -14,7 +14,13 @@ import java.util.Map;
  * selftest.json} is the harness's own agreement check and is never committed.
  */
 public final class Generate {
-    private static final Map<String, Document> FILES = Map.of("selftest.json", Selftest::document);
+    private static final Map<String, Document> FILES =
+            Map.of(
+                    "selftest.json", Selftest::document,
+                    "kdf.json", KdfDoc::document,
+                    "cert.json", CertDoc::document,
+                    "session.json", SessionDoc::document,
+                    "record.json", RecordDoc::document);
 
     private Generate() {}
 

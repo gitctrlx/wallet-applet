@@ -78,6 +78,11 @@ public final class CardRuntime extends SimulatorRuntime {
         phase = null;
     }
 
+    /** The installed applet object, for tests that inspect transient state by reflection. */
+    public javacard.framework.Applet applet(javacard.framework.AID aid) {
+        return getApplet(aid);
+    }
+
     void startCommand() {
         writes = 0;
         commits.clear();
@@ -490,5 +495,11 @@ public final class CardRuntime extends SimulatorRuntime {
                 .append(TRANSIENT_BUDGET)
                 .append(')');
         return report.toString();
+    }
+
+    /** A copy of the simulator's shared APDU buffer as the last command left it. */
+    byte[] apduBuffer() {
+        byte[] buffer = getCurrentAPDU().getBuffer();
+        return java.util.Arrays.copyOf(buffer, buffer.length);
     }
 }
