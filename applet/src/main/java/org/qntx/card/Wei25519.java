@@ -103,4 +103,34 @@ final class Wei25519 {
             scalarKey.setS(Const.ZEROS, (short) 0, (short) 32);
         }
     }
+
+    /**
+     * {@code out = scalar·point} (65-byte uncompressed) via PLAIN_XY, the {@link #mulBase} sibling
+     * for the Ed25519 self-verification's {@code c·A} (§16.2 item 5); {@code scalar} is already
+     * reduced below {@code ℓ} and the scalar slot is overwritten in a {@code finally}.
+     */
+    short mul(byte[] scalar, short sOff, byte[] point, short pOff, byte[] out, short oOff) {
+        try {
+            scalarKey.setS(scalar, sOff, (short) 32);
+            mem.plainXy.init(scalarKey);
+            return mem.plainXy.generateSecret(point, pOff, Const.POINT_LEN, out, oOff);
+        } finally {
+            scalarKey.setS(Const.ZEROS, (short) 0, (short) 32);
+        }
+    }
+
+    /**
+     * {@code out = s·G_W + H} (65-byte uncompressed) via the shared {@link Mem#paceGm} engine — the
+     * {@code S·G_W + T} of the Ed25519 self-verification (§16.2 item 5). The output must not
+     * overlap {@code h}; the scalar slot is overwritten in a {@code finally}.
+     */
+    short mulAdd(byte[] s, short sOff, byte[] h, short hOff, byte[] out, short oOff) {
+        try {
+            scalarKey.setS(s, sOff, (short) 32);
+            mem.paceGm.init(scalarKey);
+            return mem.paceGm.generateSecret(h, hOff, Const.POINT_LEN, out, oOff);
+        } finally {
+            scalarKey.setS(Const.ZEROS, (short) 0, (short) 32);
+        }
+    }
 }

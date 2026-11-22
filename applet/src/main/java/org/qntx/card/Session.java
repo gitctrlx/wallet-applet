@@ -239,7 +239,8 @@ final class Session {
         Bytes.wipe(mem.seed, (short) 0, (short) mem.seed.length);
         Bytes.wipe(mem.secpCache, (short) 0, (short) mem.secpCache.length);
         Bytes.wipe(mem.edCache, (short) 0, (short) mem.edCache.length);
-        setWord(O_PENDING, (short) 0);
+        // the Ed25519 stream, the pending export and import states (§8.5)
+        endPending();
         setWord(O_WAITED, (short) 0);
         kce.setKey(Const.ZEROS, (short) 0);
         kcm.setKey(Const.ZEROS, (short) 0);
@@ -312,7 +313,7 @@ final class Session {
             return 0;
         }
         if (cont == 0) {
-            setWord(O_PENDING, (short) 0);
+            endPending();
         }
         return cont;
     }
@@ -326,8 +327,39 @@ final class Session {
             return;
         }
         if (ins != Const.INS_SIGN_ED25519 || p1 != 1 || sw != ISO7816.SW_NO_ERROR) {
-            setWord(O_PENDING, (short) 0);
+            endPending();
         }
+    }
+
+    /**
+     * Coded read of the pending word (§16.2 item 1): {@code 0x0000} is the platform-cleared no
+     * pending state; any other non-member is a detected fault.
+     */
+    short pending() {
+        short p = getWord(O_PENDING);
+        if (p != 0
+                && p != Const.PENDING_STREAM
+                && p != Const.PENDING_EXPORT
+                && p != Const.PENDING_IMPORT) {
+            ISOException.throwIt(Const.SW_FAULT);
+        }
+        return p;
+    }
+
+    /** A successful {@code SIGN_ED25519} {@code P1 = 0x00} arms the stream pending state (§9.2). */
+    void setPending(short code) {
+        setWord(O_PENDING, code);
+    }
+
+    /**
+     * Ends the active pending state (§9.2): wipes the Ed25519 stream {@link Mem#edStream}, resets
+     * the shared SHA-512 engine the stream hashes with, and clears the word. Idempotent — also runs
+     * when the word is already {@code 0x0000}.
+     */
+    private void endPending() {
+        Bytes.wipe(mem.edStream, (short) 0, (short) mem.edStream.length);
+        mem.sha512.reset();
+        setWord(O_PENDING, (short) 0);
     }
 
     /** Coded read of the open word; a corrupt word is a fault, torn down by {@code process}. */

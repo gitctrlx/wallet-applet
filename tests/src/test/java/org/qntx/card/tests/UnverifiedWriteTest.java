@@ -48,6 +48,20 @@ final class UnverifiedWriteTest {
         assertEquals(0, card.writes(), "ERASE rejected before any write");
         assertEquals(0x6982, run(0x30, 0, Vecs.pathSecpEvm()), "PUBLIC_KEY rejected");
         assertEquals(0, card.writes());
+        byte[] ecdsaData = new byte[32 + Vecs.pathSecpEvm().length];
+        System.arraycopy(Vecs.digest(), 0, ecdsaData, 0, 32);
+        System.arraycopy(Vecs.pathSecpEvm(), 0, ecdsaData, 32, Vecs.pathSecpEvm().length);
+        assertEquals(0x6982, run(0x31, 0, ecdsaData), "SIGN_ECDSA rejected");
+        assertEquals(0, card.writes(), "SIGN_ECDSA writes nothing unverified");
+        byte[] bip340Data = new byte[64 + Vecs.pathSecpEvm().length];
+        System.arraycopy(Vecs.pathSecpEvm(), 0, bip340Data, 64, Vecs.pathSecpEvm().length);
+        assertEquals(0x6982, run(0x32, 0, bip340Data), "SIGN_BIP340 rejected");
+        assertEquals(0, card.writes(), "SIGN_BIP340 writes nothing unverified");
+        assertEquals(0x6982, run(0x33, 0, Vecs.pathEdSolana()), "SIGN_ED25519 begin rejected");
+        assertEquals(0, card.writes(), "begin writes nothing unverified");
+        assertEquals(0x6982, run(0x33, 1, new byte[] {1}), "update rejected");
+        assertEquals(0x6982, run(0x33, 2, new byte[0]), "finish rejected");
+        assertEquals(0, card.writes());
 
         byte[] create = new byte[96];
         System.arraycopy(Vecs.accessHash(), 0, create, 0, 32);

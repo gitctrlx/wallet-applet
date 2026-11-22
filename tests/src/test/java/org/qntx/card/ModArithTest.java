@@ -164,6 +164,175 @@ final class ModArithTest {
         }
     }
 
+    @Test
+    void negateIfSelectsTheAdditiveInverse() {
+        ModArith m = modArith();
+        byte[] moduli = {ModArith.MOD_P, ModArith.MOD_N, ModArith.MOD_L};
+        BigInteger[] mods = {P, N, L};
+        for (int mi = 0; mi < moduli.length; mi++) {
+            BigInteger mod = mods[mi];
+            byte[][] cases = {
+                new byte[32],
+                toBytes(BigInteger.ONE),
+                toBytes(mod.subtract(BigInteger.ONE)),
+                toBytes(of(random32()).mod(mod)),
+            };
+            for (byte[] x : cases) {
+                byte[] keep = x.clone();
+                m.negateIf(moduli[mi], keep, (short) 0, (short) 0);
+                assertArrayEquals(x, keep, "negateIf bit 0 keeps x");
+                byte[] neg = x.clone();
+                m.negateIf(moduli[mi], neg, (short) 0, (short) 1);
+                assertArrayEquals(
+                        toBytes(of(x).negate().mod(mod)), neg, "negateIf bit 1 gives m - x");
+            }
+        }
+    }
+
+    @Test
+    void shareSplitsAdditivelyModM() {
+        ModArith m = modArith();
+        byte[] moduli = {ModArith.MOD_P, ModArith.MOD_N, ModArith.MOD_L};
+        BigInteger[] mods = {P, N, L};
+        for (int mi = 0; mi < moduli.length; mi++) {
+            BigInteger mod = mods[mi];
+            for (int i = 0; i < 1000; i++) {
+                byte[] x = toBytes(of(random32()).mod(mod));
+                byte[] s1 = new byte[32];
+                byte[] s2 = new byte[32];
+                m.share(moduli[mi], x, (short) 0, s1, (short) 0, s2, (short) 0);
+                assertEquals(Const.CHECK_OK, m.below(moduli[mi], s1, (short) 0), "share s1 < m");
+                assertEquals(Const.CHECK_OK, m.below(moduli[mi], s2, (short) 0), "share s2 < m");
+                assertEquals(of(x), of(s1).add(of(s2)).mod(mod), "s1 + s2 = x mod m");
+            }
+        }
+    }
+
+    @Test
+    void mulMaskedRecombinesTheMaskedProduct() {
+        ModArith m = modArith();
+        byte[] moduli = {ModArith.MOD_N, ModArith.MOD_L};
+        BigInteger[] mods = {N, L};
+        long t0 = System.currentTimeMillis();
+        for (int mi = 0; mi < moduli.length; mi++) {
+            BigInteger mod = mods[mi];
+            BigInteger[][] edges = {
+                {BigInteger.ZERO, BigInteger.ZERO, BigInteger.ZERO},
+                {
+                    mod.subtract(BigInteger.ONE),
+                    mod.subtract(BigInteger.ONE),
+                    mod.subtract(BigInteger.ONE)
+                },
+                {BigInteger.ONE, BigInteger.ONE, BigInteger.ONE},
+                {of(random32()).mod(mod), BigInteger.ZERO, of(random32()).mod(mod)},
+            };
+            for (BigInteger[] e : edges) {
+                mulMaskedCheck(m, moduli[mi], mod, e[0], e[1], e[2]);
+            }
+            for (int i = 0; i < 10_000; i++) {
+                mulMaskedCheck(
+                        m,
+                        moduli[mi],
+                        mod,
+                        of(random32()).mod(mod),
+                        of(random32()).mod(mod),
+                        of(random32()).mod(mod));
+            }
+        }
+        System.out.println(
+                "ModArithTest mulMasked: 2 x 10^4 rounds in "
+                        + (System.currentTimeMillis() - t0)
+                        + " ms");
+    }
+
+    /**
+     * One {@code mulMasked} check: {@code x} split by {@code share}, then {@code out = (term +
+     * factor·s1 + factor·s2) mod m} must equal {@code (term + factor·x) mod m} exactly.
+     */
+    private static void mulMaskedCheck(
+            ModArith m,
+            byte mod,
+            BigInteger big,
+            BigInteger term,
+            BigInteger factor,
+            BigInteger x) {
+        byte[] a = new byte[192];
+        byte[] s1 = new byte[32];
+        byte[] s2 = new byte[32];
+        m.share(mod, toBytes(x), (short) 0, s1, (short) 0, s2, (short) 0);
+        System.arraycopy(toBytes(term), 0, a, 0, 32);
+        System.arraycopy(toBytes(factor), 0, a, 32, 32);
+        System.arraycopy(s1, 0, a, 64, 32);
+        System.arraycopy(s2, 0, a, 96, 32);
+        m.mulMasked(
+                mod, a, (short) 0, (short) 32, (short) 64, (short) 96, (short) 128, (short) 160);
+        assertArrayEquals(
+                toBytes(term.add(factor.multiply(x)).mod(big)),
+                java.util.Arrays.copyOfRange(a, 128, 160),
+                "mulMasked");
+    }
+
+    @Test
+    void reduce512MatchesBigInteger() {
+        ModArith m = modArith();
+        long t0 = System.currentTimeMillis();
+        byte[][] edges = new byte[5][64];
+        java.util.Arrays.fill(edges[1], (byte) 0xFF); // 2^512 - 1
+        System.arraycopy(toBytes(L), 0, edges[2], 32, 32); // 1*l
+        System.arraycopy(toBytes(L.multiply(BigInteger.valueOf(3))), 0, edges[3], 32, 32); // 3*l
+        System.arraycopy(toBytes(L.multiply(N)), 0, edges[4], 32, 32); // l*n
+        for (byte[] x : edges) {
+            reduce512Check(m, x);
+        }
+        for (int i = 0; i < 10_000; i++) {
+            byte[] x = new byte[64];
+            RND.nextBytes(x);
+            reduce512Check(m, x);
+        }
+        System.out.println(
+                "ModArithTest reduce512: 10^4 rounds in "
+                        + (System.currentTimeMillis() - t0)
+                        + " ms");
+    }
+
+    private static void reduce512Check(ModArith m, byte[] x) {
+        byte[] in = x.clone();
+        byte[] out = new byte[32];
+        m.reduce512(in, (short) 0, out, (short) 0);
+        assertArrayEquals(toBytes(new BigInteger(1, x).mod(L)), out, "reduce512");
+    }
+
+    /** {@code R256 = 2^256 mod l}, the constant {@code reduce512} multiplies by. */
+    @Test
+    void reduce512ConstantIsPow256ModL() throws Exception {
+        java.lang.reflect.Field f = ModArith.class.getDeclaredField("R256");
+        f.setAccessible(true);
+        assertArrayEquals(toBytes(BigInteger.TWO.pow(256).mod(L)), (byte[]) f.get(null), "R256");
+    }
+
+    @Test
+    void reverseFlipsInPlace() {
+        byte[] src = {1, 2, 3, 4, 5};
+        byte[] dst = new byte[5];
+        Bytes.reverse(src, (short) 0, dst, (short) 0, (short) 5);
+        assertArrayEquals(new byte[] {5, 4, 3, 2, 1}, dst);
+        // a shifted window inside a larger array
+        byte[] big = new byte[16];
+        RND.nextBytes(big);
+        byte[] expect = big.clone();
+        for (int i = 0; i < 8; i++) {
+            expect[4 + i] = big[4 + 7 - i];
+        }
+        byte[] out = new byte[16];
+        Bytes.reverse(big, (short) 4, out, (short) 4, (short) 8);
+        for (int i = 0; i < 8; i++) {
+            assertEquals(expect[4 + i], out[4 + i], "reversed window");
+        }
+        for (int i = 0; i < 4; i++) {
+            assertEquals(0, out[i], "outside the window untouched");
+        }
+    }
+
     private static byte[] random32() {
         byte[] b = new byte[32];
         RND.nextBytes(b);

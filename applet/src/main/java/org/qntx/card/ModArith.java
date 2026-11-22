@@ -154,6 +154,18 @@ final class ModArith {
                 (byte) 0xED,
     };
 
+    /** {@code 2²⁵⁶ mod ℓ}, the high-half weight of {@link #reduce512} (architecture.md §5.5). */
+    static final byte[] R256 = {
+        (byte) 0x0F, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
+                (byte) 0xFF,
+        (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
+                (byte) 0xFE,
+        (byte) 0xC6, (byte) 0xEF, (byte) 0x5B, (byte) 0xF4, (byte) 0x73, (byte) 0x7D, (byte) 0xCF,
+                (byte) 0x70,
+        (byte) 0xD6, (byte) 0xEC, (byte) 0x31, (byte) 0x74, (byte) 0x8D, (byte) 0x98, (byte) 0x95,
+                (byte) 0x1D,
+    };
+
     private static final byte[] EXP2 = {2};
 
     /** {@link Mem#W} offsets of {@link #mul}'s temporaries. */
@@ -310,6 +322,69 @@ final class ModArith {
             out[(short) (oOff + i)] = (byte) t;
             carry = (short) (t >> 8);
         }
+    }
+
+    /**
+     * {@code x ← (m − x) mod m} when {@code bit == 1}, unchanged when {@code bit == 0} — the
+     * constant-time conditional negation of §16.4 (BIP-341/BIP-340 key and nonce parity, §12.2).
+     * Computes {@code m − x} into {@code W[32..64)} then selects under the {@code −bit} mask; no
+     * branch on {@code bit}. {@code x < m} in place.
+     */
+    void negateIf(byte m, byte[] x, short xOff, short bit) {
+        byte[] w = mem.W;
+        subMod(m, Const.ZEROS, (short) 0, x, xOff, w, (short) 32);
+        byte mask = (byte) (0 - (bit & 1));
+        for (short i = 0; i < 32; i++) {
+            short j = (short) (xOff + i);
+            x[j] ^= (byte) (mask & (x[j] ^ w[(short) (32 + i)]));
+        }
+    }
+
+    /**
+     * The §16.2 item 6 additive split {@code x = s1 + s2 mod m}: {@code s1} is 32 fresh random
+     * bytes reduced by {@link #reduce} (no rejection loop — a uniform share needs only a
+     * constant-time reduction), {@code s2 = (x − s1) mod m}. {@code s1} and {@code s2} are distinct
+     * arrays or offsets outside {@link Mem#W}.
+     */
+    void share(byte m, byte[] x, short xOff, byte[] s1, short s1Off, byte[] s2, short s2Off) {
+        mem.random.nextBytes(s1, s1Off, (short) 32);
+        reduce(m, s1, s1Off);
+        subMod(m, x, xOff, s1, s1Off, s2, s2Off);
+    }
+
+    /**
+     * {@code out = (term + factor·share1 + factor·share2) mod m}, the masked recombination of §16.2
+     * item 6 — the shares re-drawn per signature recombine so no intermediate equals {@code
+     * factor·(share1 + share2)}. Every operand is a slot of one array {@code a} outside {@link
+     * Mem#W}; {@code out} and {@code tmp} are distinct from {@code term}, {@code factor} and the
+     * shares. Internal scratch: {@link #mul}'s {@code W} layout per call.
+     */
+    void mulMasked(
+            byte m,
+            byte[] a,
+            short termOff,
+            short factorOff,
+            short share1Off,
+            short share2Off,
+            short outOff,
+            short tmpOff) {
+        mul(m, a, factorOff, a, share1Off, a, outOff);
+        addMod(m, a, outOff, a, termOff, a, outOff);
+        mul(m, a, factorOff, a, share2Off, a, tmpOff);
+        addMod(m, a, outOff, a, tmpOff, a, outOff);
+    }
+
+    /**
+     * {@code out = int(x[0..64)) mod ℓ} for a 64-byte big-endian {@code x} (architecture.md §5.5):
+     * {@code hi ← hi mod ℓ} and {@code lo ← lo mod ℓ} in place — the input is destroyed — then
+     * {@code out = (hi·R256 + lo) mod ℓ}. Only {@code ℓ} needs the 512-bit reduction (§12.3); the
+     * input must live outside {@link Mem#W}.
+     */
+    void reduce512(byte[] x, short xOff, byte[] out, short oOff) {
+        reduce(MOD_L, x, xOff);
+        reduce(MOD_L, x, (short) (xOff + 32));
+        mul(MOD_L, x, xOff, R256, (short) 0, out, oOff);
+        addMod(MOD_L, out, oOff, x, (short) (xOff + 32), out, oOff);
     }
 
     /** Coded {@code CHECK_OK} iff the 32-byte {@code x} is below {@code m}, constant time. */

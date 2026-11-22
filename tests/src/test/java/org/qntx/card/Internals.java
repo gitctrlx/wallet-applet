@@ -5,6 +5,7 @@ package org.qntx.card;
 import java.lang.reflect.Field;
 import javacard.framework.Applet;
 import javacard.security.AESKey;
+import javacard.security.KeyPair;
 
 /**
  * Reflection into the installed applet for the simulator tests that inspect transient state and
@@ -113,6 +114,11 @@ public final class Internals {
         return (byte[]) get(mem(applet), "edCache");
     }
 
+    /** The transient {@code Mem.edStream[194]} Ed25519 stream, for wipe assertions. */
+    public static byte[] edStreamBytes(Applet applet) {
+        return (byte[]) get(mem(applet), "edStream");
+    }
+
     /** The transient {@code Mem.N[101]} derivation node, for wipe assertions and pokes. */
     public static byte[] nBytes(Applet applet) {
         return (byte[]) get(mem(applet), "N");
@@ -156,6 +162,26 @@ public final class Internals {
     /** The identity public key of {@link Identity}, for direct verify calls. */
     public static javacard.security.ECPublicKey idPublic(Applet applet) {
         return (javacard.security.ECPublicKey) get(identity(applet), "idPublic");
+    }
+
+    /**
+     * Overwrites the generated identity key pair with the private scalar {@code d} and its public
+     * point — the ed25519.json {@code cardId} setup, run before PERSONALIZE so the certificate
+     * binds the vector's identity.
+     */
+    public static void setIdentity(Applet applet, java.math.BigInteger d) {
+        KeyPair idKey = (KeyPair) get(identity(applet), "idKey");
+        byte[] s = new byte[32];
+        byte[] db = d.toByteArray();
+        System.arraycopy(
+                db,
+                Math.max(0, db.length - 32),
+                s,
+                Math.max(0, 32 - db.length),
+                Math.min(32, db.length));
+        ((javacard.security.ECPrivateKey) idKey.getPrivate()).setS(s, (short) 0, (short) 32);
+        byte[] w = org.qntx.card.host.Crypto.publicKey(d);
+        ((javacard.security.ECPublicKey) idKey.getPublic()).setW(w, (short) 0, (short) w.length);
     }
 
     private static Object get(Object o, String field) {

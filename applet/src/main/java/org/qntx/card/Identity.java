@@ -7,7 +7,6 @@ import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
 import javacard.framework.Util;
-import javacard.security.CryptoException;
 import javacard.security.ECKey;
 import javacard.security.ECPrivateKey;
 import javacard.security.ECPublicKey;
@@ -205,23 +204,10 @@ final class Identity {
     }
 
     /**
-     * Verifies {@code r ‖ s} over a 32-byte precomputed hash; {@code CHECK_MALFORMED} on an
-     * out-of-range scalar (it cannot have come from a signature), {@code CHECK_FAIL} on a bad
-     * signature or a {@link CryptoException} from the engine.
+     * Verifies {@code r ‖ s} over a 32-byte precomputed hash; {@link Secp256k1#verifyHash} owns the
+     * ECDSA engine and the DER codec.
      */
     short verifyHash(ECPublicKey key, byte[] hash, short hOff, byte[] rs, short rsOff) {
-        short derLen = secp.rsToDer(rs, rsOff, mem.W, Mem.W_DER);
-        if (derLen == 0) {
-            return Const.CHECK_MALFORMED;
-        }
-        try {
-            secp.ecdsa.init(key, Signature.MODE_VERIFY);
-            return secp.ecdsa.verifyPreComputedHash(
-                            hash, hOff, Const.HASH_LEN, mem.W, Mem.W_DER, derLen)
-                    ? Const.CHECK_OK
-                    : Const.CHECK_FAIL;
-        } catch (CryptoException e) {
-            return Const.CHECK_FAIL;
-        }
+        return secp.verifyHash(key, hash, hOff, rs, rsOff);
     }
 }

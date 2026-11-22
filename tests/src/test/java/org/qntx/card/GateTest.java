@@ -79,7 +79,12 @@ final class GateTest {
             words[6] = (byte) (c[0] >>> 8);
             words[7] = (byte) c[0];
             var r = Vecs.roundtrip(card, session, c[1], c[2], 0, new byte[0]);
-            assertEquals(0x6D00, r.sw(), "pending " + Integer.toHexString(c[0]));
+            // SIGN_ED25519 exists now: on BLANK it fails the life-state check (6985);
+            // the unimplemented EXPORT/IMPORT still fail the row lookup (6D00)
+            assertEquals(
+                    c[0] == Const.PENDING_STREAM ? 0x6985 : 0x6D00,
+                    r.sw(),
+                    "pending " + Integer.toHexString(c[0]));
             assertEquals(0, words[6] | words[7], "pending word not cleared after failed command");
         }
     }

@@ -342,7 +342,7 @@ final class FaultMutantTest {
         Fault.arm("Wallet.fingerprint", 1, Const.CHECK_FAIL);
         assertEquals(0x6F00, verify(Vecs.accessHash()).sw());
         assertEquals(
-                12,
+                13,
                 Fault.calls("Bytes.wipe"),
                 "the fingerprint-fault path wiped seed, caches and scratch");
         assertArrayEquals(new byte[64], Internals.seedBytes(applet()));
@@ -352,7 +352,7 @@ final class FaultMutantTest {
         Fault.arm("Wallet.fingerprint", 2, Const.CHECK_FAIL);
         assertEquals(0x6F00, verify(Vecs.accessHash()).sw());
         assertEquals(
-                12,
+                13,
                 Fault.calls("Bytes.wipe"),
                 "the second fingerprint-fault path wiped seed, caches and scratch");
         assertArrayEquals(new byte[64], Internals.seedBytes(applet()));
@@ -469,7 +469,7 @@ final class FaultMutantTest {
                 new byte[49], Arrays.copyOfRange(p, State.OFF_MEMBERS, State.OFF_MEMBERS + 49));
         assertEquals(Const.OFFER_NONE, Util.getShort(p, State.OFF_OFFER));
         assertArrayEquals(new byte[64], Internals.seedBytes(applet()));
-        assertArrayEquals(new byte[138], Internals.secpCacheBytes(applet()));
+        assertArrayEquals(new byte[170], Internals.secpCacheBytes(applet()));
         // the verified word itself is cleared — a skipped clearVerified is observable
         assertEquals(Const.VERIFIED_NO, Util.getShort(Internals.words(applet()), (short) 2));
     }
@@ -573,7 +573,7 @@ final class FaultMutantTest {
         verified();
         Fault.countCalls();
         assertEquals(0x9000, inner(0x30, 1, Vecs.pathEdSolana()).sw());
-        assertEquals(7, Fault.calls("Bytes.wipe"), "H, P and scratch wipes ran");
+        assertEquals(8, Fault.calls("Bytes.wipe"), "H, P and scratch wipes ran");
         assertArrayEquals(new byte[96], Arrays.copyOf(Internals.hBytes(applet()), 96));
         assertArrayEquals(new byte[130], Internals.pBytes(applet()));
     }
@@ -809,7 +809,7 @@ final class FaultMutantTest {
         System.arraycopy(Vecs.accessHash(), 0, data, 0, 32);
         System.arraycopy(Vecs.seed(), 0, data, 32, 64);
         assertEquals(0x9000, inner(0x21, 1, data).sw());
-        assertArrayEquals(new byte[138], Internals.secpCacheBytes(applet()));
+        assertArrayEquals(new byte[170], Internals.secpCacheBytes(applet()));
         assertArrayEquals(new byte[105], Internals.edCacheBytes(applet()));
     }
 
@@ -885,23 +885,27 @@ final class FaultMutantTest {
         byte[] n = Internals.nBytes(applet());
         Arrays.fill(n, (byte) 0x11);
         byte[] idx = {0, 0, 0, 5};
-        byte[] pub = new byte[33];
+        byte[] pub = new byte[65];
         Class<?>[] sig = {byte[].class, short.class, byte.class, byte[].class, short.class};
-        pub[0] = 0x02;
+        // the slot is the 65-byte uncompressed point itself: 0x04 is the point prefix and
+        // doubles as the presence marker; every other marker recomputes and refills
+        pub[0] = 0x04;
+        pub[64] = 0x02;
         Fault.countCalls();
         Internals.invoke(d, "child", sig, idx, (short) 0, Derivation.CURVE_SECP, pub, (short) 0);
-        assertEquals(0, Fault.calls("Secp256k1.mul"), "marker 02 reuses the slot");
+        assertEquals(0, Fault.calls("Secp256k1.mul"), "marker 04 reuses the slot");
         Fault.reset();
         Fault.countCalls();
-        pub[0] = 0x03;
+        pub[0] = 0x02;
         Internals.invoke(d, "child", sig, idx, (short) 0, Derivation.CURVE_SECP, pub, (short) 0);
-        assertEquals(0, Fault.calls("Secp256k1.mul"), "marker 03 reuses the slot");
+        assertEquals(1, Fault.calls("Secp256k1.mul"), "marker 02 computes the point");
+        assertEquals(0x04, pub[0], "the slot was refilled uncompressed");
         Fault.reset();
         Fault.countCalls();
         pub[0] = 0;
         Internals.invoke(d, "child", sig, idx, (short) 0, Derivation.CURVE_SECP, pub, (short) 0);
         assertEquals(1, Fault.calls("Secp256k1.mul"), "marker 0 computes the point");
-        assertTrue(pub[0] == 0x02 || pub[0] == 0x03, "the slot was filled");
+        assertEquals(0x04, pub[0], "the slot was filled");
     }
 
     @Test

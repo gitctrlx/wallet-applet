@@ -40,6 +40,8 @@ final class Const {
     static final byte INS_ERASE = (byte) 0x24;
     static final byte INS_WAIT = (byte) 0x25;
     static final byte INS_PUBLIC_KEY = (byte) 0x30;
+    static final byte INS_SIGN_ECDSA = (byte) 0x31;
+    static final byte INS_SIGN_BIP340 = (byte) 0x32;
 
     /** §9.2: only these (INS, P1) pairs continue a pending state. */
     static final byte INS_SIGN_ED25519 = (byte) 0x33;
@@ -107,6 +109,56 @@ final class Const {
         (byte) 0x64,
     };
 
+    /** §1: the Ed25519 nonce label "qntx-card/v1/ed25519-nonce" (§12.3), 26 bytes. */
+    static final byte[] LABEL_ED25519_NONCE = {
+        (byte) 0x71, (byte) 0x6E, (byte) 0x74, (byte) 0x78, (byte) 0x2D, (byte) 0x63, (byte) 0x61,
+                (byte) 0x72,
+        (byte) 0x64, (byte) 0x2F, (byte) 0x76, (byte) 0x31, (byte) 0x2F, (byte) 0x65, (byte) 0x64,
+                (byte) 0x32,
+        (byte) 0x35, (byte) 0x35, (byte) 0x31, (byte) 0x39, (byte) 0x2D, (byte) 0x6E, (byte) 0x6F,
+                (byte) 0x6E,
+        (byte) 0x63, (byte) 0x65,
+    };
+
+    /**
+     * BIP-340 tagged-hash tags (BIP-340 "Tagged Hashes", §12.2): each constant is {@code
+     * SHA-256(tag)}; the tagged hash of {@code data} is {@code SHA-256(tag ‖ tag ‖ data)}.
+     */
+    static final byte[] TAG_AUX = {
+        (byte) 0xF1, (byte) 0xEF, (byte) 0x4E, (byte) 0x5E, (byte) 0xC0, (byte) 0x63, (byte) 0xCA,
+                (byte) 0xDA,
+        (byte) 0x6D, (byte) 0x94, (byte) 0xCA, (byte) 0xFA, (byte) 0x9D, (byte) 0x98, (byte) 0x7E,
+                (byte) 0xA0,
+        (byte) 0x69, (byte) 0x26, (byte) 0x58, (byte) 0x39, (byte) 0xEC, (byte) 0xC1, (byte) 0x1F,
+                (byte) 0x97,
+        (byte) 0x2D, (byte) 0x77, (byte) 0xA5, (byte) 0x2E, (byte) 0xD8, (byte) 0xC1, (byte) 0xCC,
+                (byte) 0x90,
+    };
+
+    /** SHA-256("BIP0340/nonce"), the {@link #TAG_AUX} sibling for the nonce tag. */
+    static final byte[] TAG_NONCE = {
+        (byte) 0x07, (byte) 0x49, (byte) 0x77, (byte) 0x34, (byte) 0xA7, (byte) 0x9B, (byte) 0xCB,
+                (byte) 0x35,
+        (byte) 0x5B, (byte) 0x9B, (byte) 0x8C, (byte) 0x7D, (byte) 0x03, (byte) 0x4F, (byte) 0x12,
+                (byte) 0x1C,
+        (byte) 0xF4, (byte) 0x34, (byte) 0xD7, (byte) 0x3E, (byte) 0xF7, (byte) 0x2D, (byte) 0xDA,
+                (byte) 0x19,
+        (byte) 0x87, (byte) 0x00, (byte) 0x61, (byte) 0xFB, (byte) 0x52, (byte) 0xBF, (byte) 0xEB,
+                (byte) 0x2F,
+    };
+
+    /** SHA-256("BIP0340/challenge"), the {@link #TAG_AUX} sibling for the challenge tag. */
+    static final byte[] TAG_CHALLENGE = {
+        (byte) 0x7B, (byte) 0xB5, (byte) 0x2D, (byte) 0x7A, (byte) 0x9F, (byte) 0xEF, (byte) 0x58,
+                (byte) 0x32,
+        (byte) 0x3E, (byte) 0xB1, (byte) 0xBF, (byte) 0x7A, (byte) 0x40, (byte) 0x7D, (byte) 0xB3,
+                (byte) 0x82,
+        (byte) 0xD2, (byte) 0xF3, (byte) 0xF2, (byte) 0xD8, (byte) 0x1B, (byte) 0xB1, (byte) 0x22,
+                (byte) 0x4F,
+        (byte) 0x49, (byte) 0xFE, (byte) 0x51, (byte) 0x8F, (byte) 0x6D, (byte) 0x48, (byte) 0xD3,
+                (byte) 0x7C,
+    };
+
     /** §10.2: the SLIP-10 HMAC key "ed25519 seed". */
     static final byte[] HMAC_ED25519 = {
         (byte) 0x65,
@@ -153,7 +205,16 @@ final class Const {
      * the session must be verified. Constant tables, not runtime flags.
      */
     static final byte[] INNER_INS = {
-        INS_STATUS, INS_CREATE, INS_VERIFY, INS_CHANGE, INS_ERASE, INS_WAIT, INS_PUBLIC_KEY
+        INS_STATUS,
+        INS_CREATE,
+        INS_VERIFY,
+        INS_CHANGE,
+        INS_ERASE,
+        INS_WAIT,
+        INS_PUBLIC_KEY,
+        INS_SIGN_ECDSA,
+        INS_SIGN_BIP340,
+        INS_SIGN_ED25519,
     };
 
     static final byte[] INNER_LIFE = {
@@ -164,9 +225,12 @@ final class Const {
         (byte) LIFE_BIT_LOADED, // ERASE
         (byte) LIFE_BIT_LOADED, // WAIT
         (byte) LIFE_BIT_LOADED, // PUBLIC_KEY
+        (byte) LIFE_BIT_LOADED, // SIGN_ECDSA
+        (byte) LIFE_BIT_LOADED, // SIGN_BIP340
+        (byte) LIFE_BIT_LOADED, // SIGN_ED25519
     };
-    static final byte[] INNER_P1_MAX = {0, 1, 0, 0, 0, 0, 1};
-    static final byte[] INNER_VERIFIED = {0, 0, 0, 1, 1, 0, 1};
+    static final byte[] INNER_P1_MAX = {0, 1, 0, 0, 0, 0, 1, 0, 0, 2};
+    static final byte[] INNER_VERIFIED = {0, 0, 0, 1, 1, 0, 1, 1, 1, 1};
 
     /** §7.3: failure limit L, free attempts F, wait units per attempt W. */
     static final short FAIL_LIMIT = 10;
