@@ -41,6 +41,7 @@ public final class TxProbe extends Applet {
     private static final byte INS_TX_BUF_SETW = 0x2E;
     private static final byte INS_TX_OPEN = 0x2F;
     private static final byte INS_TX_WIDE = 0x38;
+    private static final byte INS_TX_OPEN_SEND = 0x39;
     private static final byte INS_READ_BUF = 0x30;
     private static final byte INS_READ_SPAN = 0x31;
     private static final byte INS_READ_AES = 0x32;
@@ -215,6 +216,15 @@ public final class TxProbe extends Applet {
                     return;
                 }
             case INS_TX_OPEN:
+                JCSystem.beginTransaction();
+                buf[0] = p2;
+                return;
+            case INS_TX_OPEN_SEND:
+                // send a response prefix, then leave the transaction
+                // open: the card auto-aborts and reports 6F00
+                buffer[ISO7816.OFFSET_CDATA] = 0x41;
+                buffer[(short) (ISO7816.OFFSET_CDATA + 1)] = 0x42;
+                apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short) 2);
                 JCSystem.beginTransaction();
                 buf[0] = p2;
                 return;

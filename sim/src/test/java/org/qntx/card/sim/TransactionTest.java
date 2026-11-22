@@ -31,6 +31,8 @@ class TransactionTest {
     private static final byte INS_TX_FILL = 0x2D;
     private static final byte INS_TX_BUF_SETW = 0x2E;
     private static final byte INS_TX_WIDE = 0x38;
+    private static final byte INS_TX_OPEN = 0x2F;
+    private static final byte INS_TX_OPEN_SEND = 0x39;
     private static final byte INS_READ_BUF = 0x30;
     private static final byte INS_READ_AES = 0x32;
     private static final byte INS_READ_S = 0x33;
@@ -253,6 +255,24 @@ class TransactionTest {
         // restored everything else
         byte[] buf = read(INS_READ_BUF, 4);
         assertEquals((byte) 0, buf[0]);
+    }
+
+    @Test
+    void openTransactionAtProcessReturnAutoAborts() {
+        card.transmit(cmd(INS_TX_STORE, COMMIT, (byte) 0x41));
+        byte[] response = card.transmit(cmd(INS_TX_OPEN, (byte) 0, (byte) 0x7F));
+        assertSw(response, 0x6F00);
+        // the aborted write rolled back
+        assertEquals((byte) 0x41, read(INS_READ_BUF, 4)[0]);
+    }
+
+    @Test
+    void autoAbortKeepsAlreadySentResponseData() {
+        card.transmit(cmd(INS_TX_STORE, COMMIT, (byte) 0x41));
+        byte[] response = card.transmit(cmd(INS_TX_OPEN_SEND, (byte) 0, (byte) 0x7F));
+        assertSw(response, 0x6F00);
+        assertArrayEquals(new byte[] {0x41, 0x42}, data(response));
+        assertEquals((byte) 0x41, read(INS_READ_BUF, 4)[0]);
     }
 
     @Test

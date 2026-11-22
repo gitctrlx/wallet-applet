@@ -393,7 +393,15 @@ public class SimulatorRuntime {
             resetAPDU(apdu, apduCase, command);
 
             applet.process(apdu);
-            Util.setShort(theSW, (short) 0, (short) 0x9000);
+            if (transactionDepth != 0) {
+                // an open transaction at process() return is aborted by
+                // the card; the response reports SW_UNKNOWN and keeps
+                // already-sent data (patch 4)
+                abortTransaction();
+                Util.setShort(theSW, (short) 0, ISO7816.SW_UNKNOWN);
+            } else {
+                Util.setShort(theSW, (short) 0, (short) 0x9000);
+            }
         } catch (Throwable e) {
             // power loss must not be converted into a status word;
             // it has to reach Card.transmit (patch 5)
@@ -410,8 +418,10 @@ public class SimulatorRuntime {
             resetAPDU(apdu, null, null);
         }
 
-        // if theSW = 0x61XX or 0x9XYZ than return data (ISO7816-3)
-        if(theSW[0] == 0x61 || theSW[0] == 0x62 || theSW[0] == 0x63 || (theSW[0] >= (byte)0x90 && theSW[0] <= (byte)0x9F) || isNotAbortingCase(theSW) ) {
+        // if theSW = 0x61XX or 0x9XYZ than return data (ISO7816-3);
+        // an auto-abort reports SW_UNKNOWN but the already-sent data
+        // prefix still leaves the card
+        if(theSW[0] == 0x61 || theSW[0] == 0x62 || theSW[0] == 0x63 || (theSW[0] >= (byte)0x90 && theSW[0] <= (byte)0x9F) || isNotAbortingCase(theSW) || (theSW[0] == (byte) 0x6F && responseBufferSize > 0)) {
             response = new byte[responseBufferSize + 2];
             Util.arrayCopyNonAtomic(responseBuffer, (short) 0, response, (short) 0, responseBufferSize);
             Util.arrayCopyNonAtomic(theSW, (short) 0, response, responseBufferSize, (short) 2);
