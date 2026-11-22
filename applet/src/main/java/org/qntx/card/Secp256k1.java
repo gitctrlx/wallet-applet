@@ -4,8 +4,10 @@ package org.qntx.card;
 
 import javacard.framework.ISOException;
 import javacard.framework.Util;
+import javacard.security.CryptoException;
 import javacard.security.ECKey;
 import javacard.security.ECPrivateKey;
+import javacard.security.ECPublicKey;
 import javacard.security.KeyBuilder;
 import javacard.security.Signature;
 
@@ -169,10 +171,9 @@ final class Secp256k1 {
     /**
      * Verifies {@code r ‖ s} over a 32-byte precomputed hash; {@code CHECK_MALFORMED} on an
      * out-of-range scalar (it cannot have come from a signature), {@code CHECK_FAIL} on a bad
-     * signature or a {@link javacard.security.CryptoException} from the engine.
+     * signature or a {@link CryptoException} from the engine.
      */
-    short verifyHash(
-            javacard.security.ECPublicKey key, byte[] hash, short hOff, byte[] rs, short rsOff) {
+    short verifyHash(ECPublicKey key, byte[] hash, short hOff, byte[] rs, short rsOff) {
         short derLen = rsToDer(rs, rsOff, mem.W, Mem.W_DER);
         if (derLen == 0) {
             return Const.CHECK_MALFORMED;
@@ -182,7 +183,7 @@ final class Secp256k1 {
             return ecdsa.verifyPreComputedHash(hash, hOff, Const.HASH_LEN, mem.W, Mem.W_DER, derLen)
                     ? Const.CHECK_OK
                     : Const.CHECK_FAIL;
-        } catch (javacard.security.CryptoException e) {
+        } catch (CryptoException e) {
             return Const.CHECK_FAIL;
         }
     }

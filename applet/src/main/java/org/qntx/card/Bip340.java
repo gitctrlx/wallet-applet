@@ -77,7 +77,7 @@ final class Bip340 {
         mem.random.nextBytes(h, (short) 96, (short) 32);
         tagged(Const.TAG_AUX);
         mem.sha256.doFinal(h, (short) 96, (short) 32, h, (short) 64);
-        for (short i = 0; i < 32; i++) {
+        for (short i = 0; i != 32; i++) {
             h[(short) (64 + i)] ^= h[i];
         }
         // k' = int(TaggedHash_nonce(t_aux ‖ x(Q) ‖ m)) mod n
@@ -85,8 +85,8 @@ final class Bip340 {
         mem.sha256.update(h, (short) 64, (short) 32);
         mem.sha256.update(p, (short) 66, (short) 32);
         mem.sha256.doFinal(buf, dataOff, (short) 32, h, (short) 32);
-        modArith.reduce(ModArith.MOD_N, h, (short) 32);
-        if (ModArith.isZero(h, (short) 32) == Const.CHECK_OK) {
+        if (modArith.reduce(ModArith.MOD_N, h, (short) 32) != Const.CHECK_OK
+                || ModArith.isZero(h, (short) 32) == Const.CHECK_OK) {
             // probability 2^-256; a fault is the plausible explanation
             ISOException.throwIt(Const.SW_FAULT);
         }
@@ -98,7 +98,9 @@ final class Bip340 {
         mem.sha256.update(p, (short) 1, (short) 32);
         mem.sha256.update(p, (short) 66, (short) 32);
         mem.sha256.doFinal(buf, dataOff, (short) 32, h, (short) 64);
-        modArith.reduce(ModArith.MOD_N, h, (short) 64);
+        if (modArith.reduce(ModArith.MOD_N, h, (short) 64) != Const.CHECK_OK) {
+            ISOException.throwIt(Const.SW_FAULT);
+        }
         // s = ((k + e·d₁) + e·d₂) mod n, shares re-drawn per signature (§16.2 item 6)
         modArith.share(ModArith.MOD_N, h, (short) 0, h, (short) 96, h, (short) 128);
         modArith.mulMasked(
@@ -135,8 +137,8 @@ final class Bip340 {
 
     /** Starts a BIP-340 tagged hash: {@code SHA-256(tag ‖ tag ‖ …)}. */
     private void tagged(byte[] tag) {
+        // every sha256 use on the card ends in doFinal, which resets the engine
         MessageDigest sha = mem.sha256;
-        sha.reset();
         sha.update(tag, (short) 0, (short) 32);
         sha.update(tag, (short) 0, (short) 32);
     }

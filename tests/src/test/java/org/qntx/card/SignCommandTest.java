@@ -139,6 +139,7 @@ final class SignCommandTest {
         int[][] ends = {
             {0x20, 0}, // STATUS
             {0x22, 0}, // VERIFY (wrong hash)
+            {0x23, 0}, // CHANGE (session stays verified under the new hash)
             {0x30, 0}, // PUBLIC_KEY
             {0x31, 0}, // SIGN_ECDSA
             {0x32, 0}, // SIGN_BIP340
@@ -152,26 +153,36 @@ final class SignCommandTest {
             byte[] data =
                     e[0] == 0x22
                             ? Vecs.accessHashWrong()
-                            : e[0] == 0x30
-                                    ? Vecs.pathSecpEvm()
-                                    : e[0] == 0x31
-                                            ? ecdsaData(Vecs.pathSecpEvm())
-                                            : e[0] == 0x32
-                                                    ? new byte[64 + Vecs.pathSecpEvm().length]
-                                                    : new byte[0];
+                            : e[0] == 0x23
+                                    ? Vecs.accessHashNew()
+                                    : e[0] == 0x30
+                                            ? Vecs.pathSecpEvm()
+                                            : e[0] == 0x31
+                                                    ? ecdsaData(Vecs.pathSecpEvm())
+                                                    : e[0] == 0x32
+                                                            ? new byte
+                                                                    [64 + Vecs.pathSecpEvm().length]
+                                                            : new byte[0];
             if (e[0] == 0x32) {
                 System.arraycopy(Vecs.message(), 0, data, 0, 32);
                 System.arraycopy(Vecs.tweakBip86(), 0, data, 32, 32);
                 System.arraycopy(Vecs.pathSecpEvm(), 0, data, 64, Vecs.pathSecpEvm().length);
             }
             inner(e[0], e[1], data);
-            // re-verify so the update reaches the stream check whatever the row left
-            assertEquals(0x9000, inner(0x22, 0, Vecs.accessHash()).sw(), "re-verify");
+            // isolate the row: the pending word and edStream must be gone before any
+            // further command runs — VERIFY below would end a leftover stream itself
+            byte[] words = Internals.words(applet());
+            assertEquals(
+                    0, words[6] | words[7], "pending word after INS " + Integer.toHexString(e[0]));
+            assertArrayEquals(new byte[194], Internals.edStreamBytes(applet()), "edStream wiped");
+            // re-verify so the update reaches the stream check whatever the row left;
+            // CHANGE stored the new access hash (§9.6) and the session stays verified
+            byte[] reverify = e[0] == 0x23 ? Vecs.accessHashNew() : Vecs.accessHash();
+            assertEquals(0x9000, inner(0x22, 0, reverify).sw(), "re-verify");
             assertEquals(
                     0x6985,
                     inner(0x33, 1, new byte[] {1}).sw(),
                     "INS " + Integer.toHexString(e[0]) + " ended the stream");
-            assertArrayEquals(new byte[194], Internals.edStreamBytes(applet()), "edStream wiped");
         }
     }
 
@@ -320,5 +331,17 @@ final class SignCommandTest {
         assertEquals(0x9000, inner(0x33, 1, new byte[] {1}).sw());
         Fault.arm("Bytes.equal", 3, Const.CHECK_FAIL);
         assertEquals(0x6F00, inner(0x33, 2, new byte[0]).sw());
+    }
+
+    @Test
+    void streamChunkLengthBounds() throws Exception {
+        // §9.11: update carries 1..236 bytes, finish 0..236 — the bounds are checkLength's,
+        // so the wrong lengths never reach the stream
+        verified();
+        assertEquals(0x9000, inner(0x33, 0, Vecs.pathEdSolana()).sw());
+        assertEquals(0x6700, inner(0x33, 1, new byte[0]).sw(), "empty update");
+        // the failed row ended the stream; begin again for the finish bounds
+        assertEquals(0x9000, inner(0x33, 0, Vecs.pathEdSolana()).sw());
+        assertEquals(0x9000, inner(0x33, 2, new byte[236]).sw(), "a 236-byte tail signs");
     }
 }

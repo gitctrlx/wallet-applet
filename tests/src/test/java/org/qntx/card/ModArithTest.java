@@ -229,7 +229,7 @@ final class ModArithTest {
             for (BigInteger[] e : edges) {
                 mulMaskedCheck(m, moduli[mi], mod, e[0], e[1], e[2]);
             }
-            for (int i = 0; i < 10_000; i++) {
+            for (int i = 0; i < RANDOM_ROUNDS / 10; i++) {
                 mulMaskedCheck(
                         m,
                         moduli[mi],
@@ -284,7 +284,7 @@ final class ModArithTest {
         for (byte[] x : edges) {
             reduce512Check(m, x);
         }
-        for (int i = 0; i < 10_000; i++) {
+        for (int i = 0; i < RANDOM_ROUNDS / 10; i++) {
             byte[] x = new byte[64];
             RND.nextBytes(x);
             reduce512Check(m, x);

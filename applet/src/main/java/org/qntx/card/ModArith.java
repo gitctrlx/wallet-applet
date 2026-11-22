@@ -417,7 +417,7 @@ final class ModArith {
      * conditional subtraction of {@code m} for {@code n} and {@code p}. Internal scratch {@code
      * W[0..32)}; {@code x} lives outside it.
      */
-    void reduce(byte m, byte[] x, short xOff) {
+    short reduce(byte m, byte[] x, short xOff) {
         if (m == MOD_L) {
             for (short i = 0; i < 4; i++) {
                 condSub(x, xOff, RED_L, (short) (i * 32));
@@ -425,6 +425,10 @@ final class ModArith {
         } else {
             condSub(x, xOff, MOD, (short) (m * 64 + M32));
         }
+        // the coded return keeps the call inside the fault weave: a dropped reduce is
+        // statistically invisible (x ≥ m happens with probability ≈ 2⁻²⁰⁰) yet must
+        // stay killable, so callers gate on {@code != CHECK_OK}
+        return Const.CHECK_OK;
     }
 
     /**

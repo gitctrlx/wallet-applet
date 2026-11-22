@@ -306,7 +306,7 @@ final class Derivation {
                             (short) (dataOff + 1 + i * 4),
                             curve,
                             cache,
-                            (curve == CURVE_SECP && cached) ? C_PUB : (short) -1);
+                            cached ? C_PUB : (short) -1);
             if (c != Const.CHECK_OK) {
                 Bytes.wipe(n, (short) 0, (short) 64);
                 ISOException.throwIt(ISO7816.SW_WRONG_DATA);
@@ -342,7 +342,9 @@ final class Derivation {
         h[31] &= (byte) 0x7F;
         h[31] |= (byte) 0x40;
         Bytes.reverse(h, (short) 0, out, aOff, (short) 32);
-        modArith.reduce(ModArith.MOD_L, out, aOff);
+        if (modArith.reduce(ModArith.MOD_L, out, aOff) != Const.CHECK_OK) {
+            ISOException.throwIt(Const.SW_FAULT);
+        }
         Util.arrayCopy(h, (short) 32, out, prefixOff, (short) 32);
         Bytes.wipe(h, (short) 0, (short) 64);
     }

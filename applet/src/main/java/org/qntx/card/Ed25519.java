@@ -17,13 +17,14 @@ import javacard.framework.Util;
  * r} big-endian scalars, {@code R}, {@code A} uncompressed Wei25519 points.
  *
  * <p>Scratch layout of {@link #begin}: {@code H[0..64)} the nonce digest, {@code H[96..128)} {@code
- * prefix}, {@code H[128..144)} {@code ID(A_card)}, {@code H[144..148)} {@code u32(N)}, {@code
- * H[160..192)} {@code a} (copied to {@code edStream[0..32)}); {@code N[0..64)} the reversed digest
- * for {@code reduce512}. {@link #finish}: {@code N[0..64)} the challenge digest, {@code H[0..64)}
- * the reversed digest then the shares {@code a₁ ‖ a₂}, {@code H[64..96)} {@code r}, {@code
- * H[96..128)} {@code S}, {@code H[128..160)} the {@code mulMasked} temporary, {@code H[160..192)}
- * {@code k} then {@code c = ℓ − k}; {@code P[0..65)} {@code T = c·A}, {@code P[65..130)} {@code V}.
- * {@link Mem#W} belongs to {@link ModArith} throughout.
+ * prefix}, {@code H[128..144)} {@code ID(A_card)}, {@code H[160..192)} {@code a} (copied to {@code
+ * edStream[0..32)}); {@code N[0..64)} the reversed digest for {@code reduce512}, {@code N[64..72)}
+ * the counter {@code u32(N)} and its read-back — read there also for the pre-derive exhaustion
+ * precondition. {@link #finish}: {@code N[0..64)} the challenge digest, {@code H[0..64)} the
+ * reversed digest then the shares {@code a₁ ‖ a₂}, {@code H[64..96)} {@code r}, {@code H[96..128)}
+ * {@code S}, {@code H[128..160)} the {@code mulMasked} temporary, {@code H[160..192)} {@code k}
+ * then {@code c = ℓ − k}; {@code P[0..65)} {@code T = c·A}, {@code P[65..130)} {@code V}. {@link
+ * Mem#W} belongs to {@link ModArith} throughout.
  */
 final class Ed25519 {
     /** {@link Mem#edStream} layout: {@code a ‖ r ‖ R ‖ A}. */
@@ -33,14 +34,13 @@ final class Ed25519 {
     private static final short ED_PT_R = 64;
     private static final short ED_PT_A = 129;
 
-    /** {@link Mem#N} slot of the re-read counter (u32) and its read-back, free post-derive. */
+    /** {@link Mem#N} slot of the counter u32 and its read-back — free before and post-derive. */
     private static final short N_CTR = 64;
 
     /** {@link Mem#H} layout of {@link #begin}. */
     private static final short H_PREFIX = 96;
 
     private static final short H_ID = 128;
-    private static final short H_CTR = 144;
     private static final short H_SCALAR = 160;
 
     /** {@link Mem#H} layout of {@link #finish}. */
@@ -84,11 +84,13 @@ final class Ed25519 {
         byte[] h = mem.H;
         byte[] n = mem.N;
         byte[] ed = mem.edStream;
-        state.read(State.OFF_EDCOUNTER, h, H_CTR, (short) 4);
-        if (h[H_CTR] == (byte) 0xFF
-                && h[(short) (H_CTR + 1)] == (byte) 0xFF
-                && h[(short) (H_CTR + 2)] == (byte) 0xFF
-                && h[(short) (H_CTR + 3)] == (byte) 0xFF) {
+        // the exhaustion precondition precedes derive (§9.11); the bytes in N are dead —
+        // derive overwrites the array, and the counter is re-read below for the increment
+        state.read(State.OFF_EDCOUNTER, n, N_CTR, (short) 4);
+        if (n[N_CTR] == (byte) 0xFF
+                && n[(short) (N_CTR + 1)] == (byte) 0xFF
+                && n[(short) (N_CTR + 2)] == (byte) 0xFF
+                && n[(short) (N_CTR + 3)] == (byte) 0xFF) {
             ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
         }
         derivation.derive(buf, Derivation.CURVE_ED, dataOff);
@@ -104,8 +106,7 @@ final class Ed25519 {
         if (session.verified() != Const.VERIFIED_YES) {
             ISOException.throwIt(Const.SW_FAULT);
         }
-        // the counter is re-read here: the earlier bytes sat in H, which derive's
-        // HMACs own — N[64..101) is free after derivation
+        // the counter is re-read: derive's HMACs own H and overwrote the N copy above
         state.read(State.OFF_EDCOUNTER, n, N_CTR, (short) 4);
         for (short i = (short) (N_CTR + 3); ; i--) {
             n[i]++;
@@ -115,16 +116,16 @@ final class Ed25519 {
         }
         tEdctr(n, N_CTR);
         // §16.1 item 3 read-back gate: committed before r is computed
-        if (JCSystem.getTransactionDepth() != 0) {
+        if (session.txDepth() != 0) {
             ISOException.throwIt(Const.SW_FAULT);
         }
         state.read(State.OFF_EDCOUNTER, n, (short) (N_CTR + 4), (short) 4);
         if (Bytes.equal(n, (short) (N_CTR + 4), n, N_CTR, (short) 4) != Const.CHECK_OK) {
             ISOException.throwIt(Const.SW_FAULT);
         }
-        // r = int_le(SHA-512(label ‖ Zr ‖ prefix ‖ ID ‖ u32(N))) mod ℓ, one 110-byte block
+        // r = int_le(SHA-512(label ‖ Zr ‖ prefix ‖ ID ‖ u32(N))) mod ℓ, one 110-byte block —
+        // the engine is clean: doFinal resets it and endPending clears abandoned streams
         mem.random.nextBytes(h, (short) 0, (short) 32); // Zr
-        mem.sha512.reset();
         mem.sha512.update(
                 Const.LABEL_ED25519_NONCE, (short) 0, (short) Const.LABEL_ED25519_NONCE.length);
         mem.sha512.update(h, (short) 0, (short) 32);
@@ -133,8 +134,8 @@ final class Ed25519 {
         mem.sha512.doFinal(n, N_CTR, (short) 4, h, (short) 0);
         Bytes.reverse(h, (short) 0, n, (short) 0, (short) 64);
         modArith.reduce512(n, (short) 0, ed, ED_R);
-        wei.mulBase(ed, ED_R, ed, ED_PT_R); // R = r·G_W
-        mem.sha512.reset(); // the empty stream context H of §12.3
+        wei.mulBase(ed, ED_R, ed, ED_PT_R); // R = r·G_W — the doFinal reset left
+        // the empty stream context H of §12.3 that update/finish extend
         session.setPending(Const.PENDING_STREAM); // armed last (§9.2)
         Util.arrayCopy(ed, (short) (ED_PT_R + 1), buf, (short) 0, (short) 64);
         return (short) 64;

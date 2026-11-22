@@ -13,9 +13,10 @@ the invariants every change keeps.
 
 ## Status
 
-The repository is being rewritten from zero against `spec/protocol.md`. This revision contains the
-build, the simulator and the empty applet: it answers `SELECT` and rejects every command
-(`6E00`, `6D00`). The commands follow in the next stages.
+The repository is being rewritten from zero against `spec/protocol.md`. This revision implements
+identity, personalisation, the secure session, the wallet commands, derivation and the three
+signing commands (§5–§9.11, §9.15, §10.1–10.4, §12); multi-card transfer, NDEF and the tools
+follow.
 
 ## Layout
 

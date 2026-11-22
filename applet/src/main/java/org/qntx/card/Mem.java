@@ -97,6 +97,11 @@ final class Mem {
                         KeyBuilder.TYPE_AES_TRANSIENT_DESELECT, KeyBuilder.LENGTH_AES_128, false);
     }
 
+    /** Resets the shared SHA-512 engine through a woven call the fault tests can count. */
+    void resetSha512() {
+        sha512.reset();
+    }
+
     /**
      * Per-command scratch only: {@code P}, {@code W}, {@code H}, {@code N} and the wrap keys
      * (overwritten, never {@code clearKey}; architecture.md §4). Session state — {@code seed} and

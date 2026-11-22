@@ -352,13 +352,22 @@ final class Session {
     }
 
     /**
+     * The open-transaction depth, read through a woven short call so a fault test can arm it; a raw
+     * {@code JCSystem.getTransactionDepth} is outside the weave (§16.1 item 3 needs the gate).
+     */
+    short txDepth() {
+        return JCSystem.getTransactionDepth();
+    }
+
+    /**
      * Ends the active pending state (§9.2): wipes the Ed25519 stream {@link Mem#edStream}, resets
      * the shared SHA-512 engine the stream hashes with, and clears the word. Idempotent — also runs
-     * when the word is already {@code 0x0000}.
+     * when the word is already {@code 0x0000}. The digest reset is the only stream-state cleanup:
+     * {@code begin} relies on it rather than resetting again.
      */
     private void endPending() {
         Bytes.wipe(mem.edStream, (short) 0, (short) mem.edStream.length);
-        mem.sha512.reset();
+        mem.resetSha512();
         setWord(O_PENDING, (short) 0);
     }
 

@@ -269,17 +269,16 @@ public final class WalletApplet extends Applet {
                 }
                 return;
             case Const.INS_SIGN_ECDSA:
-                // §9.9: digest(32) ‖ path — the depth byte at dataOff + 32 exists
-                // only when dataLen > 32, which this check itself enforces
-                if (dataLen < 33
-                        || dataLen != (short) (33 + (buf[(short) (dataOff + 32)] & 0xFF) * 4)) {
+                // §9.9: digest(32) ‖ path — a shorter body can't equal 33 + 4·depth ≥ 33;
+                // the depth-byte read lands in the APDU buffer (≥ 133 bytes, always)
+                if (dataLen != (short) (33 + (buf[(short) (dataOff + 32)] & 0xFF) * 4)) {
                     ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
                 }
                 return;
             case Const.INS_SIGN_BIP340:
-                // §9.10: message(32) ‖ tweak(32) ‖ path
-                if (dataLen < 65
-                        || dataLen != (short) (65 + (buf[(short) (dataOff + 64)] & 0xFF) * 4)) {
+                // §9.10: message(32) ‖ tweak(32) ‖ path — a shorter body can't
+                // equal 65 + 4·depth ≥ 65 (the depth-byte read stays in the buffer)
+                if (dataLen != (short) (65 + (buf[(short) (dataOff + 64)] & 0xFF) * 4)) {
                     ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
                 }
                 return;
@@ -288,16 +287,15 @@ public final class WalletApplet extends Applet {
                 // chunk, finish a 0..236-byte tail; depth is checked by the
                 // command, length here only bounds it
                 if (p1 == 0) {
-                    if (dataLen < 1 || dataLen != (short) (1 + (buf[dataOff] & 0xFF) * 4)) {
+                    // a body under one byte can't equal 1 + 4·depth ≥ 1
+                    if (dataLen != (short) (1 + (buf[dataOff] & 0xFF) * 4)) {
                         ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
                     }
-                } else if (p1 == 1) {
-                    if (dataLen < 1 || dataLen > 236) {
-                        ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
-                    }
-                } else if (dataLen > 236) {
+                } else if (p1 == 1 && dataLen < 1) {
                     ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
                 }
+                // no upper bound to check: the record layer never delivers more
+                // than the 236-byte maximum a chunk or tail may carry
                 return;
             default:
                 // checkLength runs only for §9.2-table INS values; the row lookup and

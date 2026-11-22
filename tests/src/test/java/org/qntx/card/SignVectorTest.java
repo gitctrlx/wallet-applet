@@ -157,6 +157,28 @@ final class SignVectorTest {
             System.arraycopy(wire, 0, data, 64, wire.length);
             assertEquals(0x6A80, inner(0x32, 0, data).sw(), (String) c.get("name"));
         }
+        // the official BIP-86 account: a card loaded with the vector's own seed signs
+        // under each of the three published output keys
+        Map<String, Object> bip86 = Vecs.obj(doc, "bip86");
+        session = Vecs.open(card = Vecs.blankSelf());
+        byte[] create = new byte[96];
+        System.arraycopy(Vecs.accessHash(), 0, create, 0, 32);
+        System.arraycopy(Vecs.hex(bip86, "seed"), 0, create, 32, 64);
+        assertEquals(0x9000, Vecs.roundtrip(card, session, 0x21, 1, 0, create).sw(), "CREATE");
+        session = Vecs.open(card);
+        assertEquals(0x9000, Vecs.roundtrip(card, session, 0x22, 0, 0, Vecs.accessHash()).sw());
+        for (Map<String, Object> k : Vecs.list(bip86, "keys")) {
+            byte[] wire = Vecs.hex(k, "wire");
+            byte[] data = new byte[64 + wire.length];
+            System.arraycopy(Vecs.message(), 0, data, 0, 32);
+            System.arraycopy(Vecs.hex(k, "tweak"), 0, data, 32, 32);
+            System.arraycopy(wire, 0, data, 64, wire.length);
+            Response r = inner(0x32, 0, data);
+            assertEquals(0x9000, r.sw(), (String) k.get("path"));
+            assertTrue(
+                    Bip340.verify(Vecs.hex(k, "outputKey"), Vecs.message(), r.data()),
+                    (String) k.get("path"));
+        }
     }
 
     /** Feeds {@code stream} in update chunks cycling {@code sizes} and finishes with the rest. */
