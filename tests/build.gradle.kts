@@ -1,84 +1,95 @@
-// SPDX-FileCopyrightText: 2026 meowl.social contributors
-// SPDX-License-Identifier: AGPL-3.0-or-later
-//
-// Unit tests run in a normal JVM; jcardsim supplies the javacard.* runtime so the
-// applet's arithmetic/helper classes can be exercised directly without loading the CAP.
-
 plugins {
-    `java-library`
+    java
+    alias(libs.plugins.pitest)
 }
 
-description = "meowl-applet — unit tests (real-card tests opt-in)"
+description = "Simulator, vector and mutation tests of the qntx card applet"
 
-java {
-    toolchain.languageVersion =
-        JavaLanguageVersion.of(
-            libs.versions.jdk
-                .get()
-                .toInt(),
-        )
+val agent: Configuration by configurations.creating
+val cap = project(":applet").layout.buildDirectory.file("cap/qntx-card.cap")
+val vectorGen: SourceSet by sourceSets.creating {
+    java.srcDir(rootProject.layout.projectDirectory.dir("spec/vectors/gen/java"))
 }
-
-// The PCSC-backed integration suites live in their own `realCard` source set so they stay both
-// physically and compile-isolated from the jcardsim-backed unit tests in `src/test`. The unit tests
-// need package-private access to applet internals (hence they share package `social.meowl.wallet`),
-// whereas the integration suites are pure black-box APDU drivers in `social.meowl.wallet.realcard`.
-val realCard: SourceSet by sourceSets.creating
-
-configurations["realCardImplementation"].extendsFrom(configurations["testImplementation"])
-configurations["realCardRuntimeOnly"].extendsFrom(configurations["testRuntimeOnly"])
 
 dependencies {
+    agent(project(path = ":sim", configuration = "agent"))
+    testImplementation(project(":sim"))
+    testImplementation(project(":applet"))
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
-    // JUnit 6 requires the launcher to be declared explicitly on the runtime
-    // classpath (it is no longer pulled in transitively by `junit-jupiter`).
     testRuntimeOnly(libs.junit.platform.launcher)
-
-    // jcardsim brings its own javacard.framework.* — it MUST come before any
-    // SDK jar on the classpath; we deliberately do NOT depend on api_classic.
-    testImplementation(libs.jcardsim)
-    testImplementation(libs.bouncycastle.prov)
-    testImplementation(libs.slf4j.api)
-    testRuntimeOnly(libs.slf4j.simple)
-
-    // Reuse applet sources so unit tests can call the applet classes directly.
-    testImplementation(project(":wallet"))
-    testImplementation(project(":ndef"))
-    testImplementation(project(":backup"))
+    "vectorGenImplementation"(libs.bouncycastle.prov)
 }
 
-// Default `test` task: the jcardsim-backed unit suites in `src/test`. The PCSC integration suites
-// live in the separate `realCard` source set (see `realCardTest`), so no tag filtering is needed —
-// the two test kinds are split by source set, not by annotation.
 tasks.test {
     useJUnitPlatform()
+    dependsOn(":applet:cap")
+    inputs.file(cap).withPropertyName("cap")
+    inputs.files(agent).withPropertyName("agent")
+    jvmArgumentProviders.add { listOf("-javaagent:${agent.singleFile.absolutePath}") }
+    systemProperty("qntx.cap", cap.get().asFile.absolutePath)
+    systemProperty(
+        "qntx.reports",
+        layout.buildDirectory
+            .dir("reports")
+            .get()
+            .asFile.absolutePath,
+    )
     testLogging {
-        events("passed", "failed", "skipped")
-        showStandardStreams = true
+        events("failed")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+    finalizedBy(memoryReport)
+}
+
+val memoryReport by tasks.registering {
+    description = "Prints the simulator's transient-memory report of the installed applet."
+    val report = layout.buildDirectory.file("reports/memory.txt")
+    doLast {
+        val file = report.get().asFile
+        if (file.exists()) println(file.readText())
     }
 }
 
-// Opt-in `realCardTest` task: compiles and runs the `realCard` source set against a physical J3R180
-// via PCSC. Drives `RealCardClient` from `social.meowl.wallet.realcard.support`, which talks to
-// `javax.smartcardio` over whatever PCSC reader the environment surfaces. The applet must already be
-// installed on the card.
-//
-// Usage:
-//   ./gradlew :tests:realCardTest                # first PCSC terminal found
-//   ./gradlew :tests:realCardTest -Preader=NAME  # explicit reader by name
-tasks.register<Test>("realCardTest") {
-    description = "Runs the real-card integration suites (src/realCard) against a J3R180 via PCSC."
+val generateVectors by tasks.registering(JavaExec::class) {
     group = "verification"
-    testClassesDirs = realCard.output.classesDirs
-    classpath = realCard.runtimeClasspath
-    useJUnitPlatform()
-    testLogging {
-        events("passed", "failed", "skipped")
-        showStandardStreams = true
-        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
-    }
-    // Reader name flows through to RealCardClient.connect when set.
-    project.findProperty("reader")?.let { systemProperty("cardReader", it.toString()) }
+    description = "Writes every vector file of spec/protocol.md section 18 with the Java generator."
+    val out = layout.buildDirectory.dir("vectors/java")
+    classpath = vectorGen.runtimeClasspath
+    mainClass = "org.qntx.card.vectors.Generate"
+    argumentProviders.add { listOf(out.get().asFile.absolutePath) }
+    outputs.dir(out)
 }
+
+pitest {
+    pitestVersion =
+        libs.versions.pit.core
+            .get()
+    junit5PluginVersion =
+        libs.versions.pit.junit5
+            .get()
+    targetClasses = listOf("org.qntx.card.WalletApplet")
+    targetTests = listOf("org.qntx.card.tests.*")
+    additionalMutableCodePaths =
+        listOf(
+            project(":applet")
+                .layout.buildDirectory
+                .dir("classes/java/main")
+                .get()
+                .asFile,
+        )
+    jvmArgs =
+        provider {
+            listOf(
+                "-javaagent:${agent.singleFile.absolutePath}",
+                "-Dqntx.cap=${cap.get().asFile.absolutePath}",
+                "-Dqntx.reports=${layout.buildDirectory.dir("reports").get().asFile.absolutePath}",
+            )
+        }
+    mutators = listOf("STRONGER")
+    mutationThreshold = 100
+    timestampedReports = false
+    outputFormats = listOf("HTML", "XML")
+}
+
+tasks.named("pitest") { dependsOn(":applet:cap", agent) }

@@ -2,26 +2,34 @@ version = 1
 
 [[annotations]]
 path = [
+    ".editorconfig",
+    ".gitattributes",
+    ".gitignore",
+    ".gitmodules",
     ".github/**",
-    ".vscode/**",
-    "config/**",
     "gradle/**",
-    "**/*.kts",
-    "**/*.toml",
-    "**/*.properties",
-    "**/*.yml",
-    "**/*.yaml",
-    "**/*.editorconfig",
-    "**/*.gitattributes",
-    "**/*.gitignore",
-    "**/*.gitmodules",
+    "gradlew",
+    "gradlew.bat",
+    "**/*.gradle.kts",
+    "gradle.properties",
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "LICENSE",
+    "README.md",
+    "SECURITY.md",
 ]
 precedence = "aggregate"
-SPDX-FileCopyrightText = "2026 meowl.social contributors"
+SPDX-FileCopyrightText = "2026 QuantX"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
 [[annotations]]
-path = ["README.md", "CONTRIBUTING.md", "SECURITY.md", "LICENSE"]
+path = ["spec/**"]
 precedence = "aggregate"
-SPDX-FileCopyrightText = "2026 meowl.social contributors"
-SPDX-License-Identifier = "AGPL-3.0-or-later"
+SPDX-FileCopyrightText = "2026 QuantX"
+SPDX-License-Identifier = "MIT OR Apache-2.0"
+
+[[annotations]]
+path = ["sim/jcardsim/**"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2011 Licel Corporation and jCardSim contributors"
+SPDX-License-Identifier = "Apache-2.0"
