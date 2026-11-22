@@ -8,8 +8,8 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 The single normative specification of the qntx card: the wallet applet and the NDEF applet
 running on the card, and the host side (implemented by the qntx/wallet kernel). An independent
 team can implement an interoperable card or host from this document and the vector files of
-§18 alone. Rationale for every choice is in `decisions.md` (cited as D*n*); the threat model is
-`threat-model.md`.
+§18 alone. The threat model is `docs/threat-model.md`; the applet's architecture and
+implementation plan are `docs/architecture.md`.
 
 A qntx card wallet is a *card set* of one to three cards holding the same 64-byte seed. No
 command outputs a private key, the seed or the access code. The only way key material leaves a
@@ -105,7 +105,7 @@ implementation.
 ## 3. Platform requirements
 
 The applet targets Java Card 3.0.5 Classic and uses only these standard APIs (baseline silicon:
-NXP JCOP 4 P71, J3R180 class; D1):
+NXP JCOP 4 P71, J3R180 class):
 
 | API | Constants and methods | Use |
 | --- | --- | --- |
@@ -119,12 +119,11 @@ NXP JCOP 4 P71, J3R180 class; D1):
 | `javacardx.crypto.Cipher` | `ALG_AES_BLOCK_128_CBC_NOPAD`; `ALG_RSA_NOPAD` | Record layer, wrapping; modular arithmetic |
 
 The silicon MUST additionally behave as follows. Each item is an admission test run on every
-silicon batch before personalisation (`architecture.md` §10). A batch that fails any item is not
-used: there is no fallback implementation and no protocol variant (D19). Items 1–5 and 7 passed
-on the development card (JCOP 4 P71, CPLC IC type `D321`, `$A/audit-impl/evidence/card/`). For
-item 9 the iteration cost was measured on the same card (2.37 ms per 32-byte SHA-256,
-`$A/audit-final/evidence/card/sha-bench.out`), which gives 965 ms per `WAIT`
-(`$A/resolve-2/evidence/budget_r2.out`); the full command is timed by the real-card suite.
+silicon batch before personalisation (`docs/architecture.md` §10). A batch that fails any item is
+not used: there is no fallback implementation and no protocol variant. Items 1–5 and 7 passed on
+the development card (JCOP 4 P71, CPLC IC type `D321`). For item 9 the iteration cost was
+measured on the same card (2.37 ms per 32-byte SHA-256), which gives 965 ms per `WAIT`; the full
+command is timed by the real-card suite.
 
 1. `ALG_RSA_NOPAD` with a `LENGTH_RSA_512` private key accepts a 64-byte modulus whose value is
    below `2²⁵⁶` (leading zero bytes) with the private exponent `2` or a 32-byte exponent, computes
@@ -137,7 +136,7 @@ item 9 the iteration cost was measured on the same card (2.37 ms per 32-byte SHA
 4. `signPreComputedHash` and `verifyPreComputedHash` accept a 32-byte hash.
 5. 256-bit EC keys, persistent and `TRANSIENT_DESELECT`, accept the secp256k1 domain parameters and
    the Wei25519 parameters of §10.4.
-6. `RandomData.ALG_KEYGENERATION` passes the statistical tests of `architecture.md` §10, and its
+6. `RandomData.ALG_KEYGENERATION` passes the statistical tests of `docs/architecture.md` §10, and its
    first 32-byte outputs after 100 consecutive power-ups are pairwise distinct.
 7. `setKey`, `setS`, `setW`, `setExponent` and `genKeyPair` on persistent key objects participate in
    an open transaction (JCRE 3.2 §9.3): an abort or power loss restores the previous key value.
@@ -146,7 +145,8 @@ item 9 the iteration cost was measured on the same card (2.37 ms per 32-byte SHA
    page-granular).
 9. One `WAIT` (§9.15) takes at least 900 ms and at most 1100 ms on a contactless reader. The
    lower bound keeps destruction without the code slow (§7.3); the upper bound keeps `W` units and
-   a `VERIFY` within one iOS connection (`host.md` §8).
+   a `VERIFY` within one iOS NFC connection (about 20 s by the limit commonly assumed for iOS;
+   Apple does not document it, and it is measured on reference phones before freeze).
 
 HMAC-SHA512 is computed in software over `ALG_SHA_512`. Ed25519 is computed through the
 short-Weierstrass curve Wei25519 (§10.4); the card outputs Wei25519 points and the host encodes
@@ -208,7 +208,7 @@ holds a random key unrelated to any ciphertext. After T-CREATE, T-INSTALL and T-
 the link private key is a random scalar unrelated to any published `LK`. `OFFER` may set
 `offer = VALID` in `BLANK` and in `LOADED`. `idKey`, `cert`, `caKey` and `edCounter` survive every
 transition. Every field of this table that is not a key object is kept in one persistent array
-(`architecture.md` §4), so that each named transaction writes that one array and its key objects
+(`docs/architecture.md` §4), so that each named transaction writes that one array and its key objects
 and nothing else (§3 item 8).
 
 ### 4.3 Transactions
@@ -227,7 +227,7 @@ and nothing else (§3 item 8).
 
 The applet constructor (install) allocates every object, generates `idKey` and an initial
 `linkKey`, sets `edCounter = 0`, `fails ← 0`, `offer = NONE`, `life = FACTORY`, and loads the constants of §10.4
-and `architecture.md` §5.5. Commit-buffer consumption is page-granular on the baseline chip; §3
+and `docs/architecture.md` §5.5. Commit-buffer consumption is page-granular on the baseline chip; §3
 item 8 bounds it.
 
 ## 5. Identity and certificates
@@ -253,9 +253,10 @@ cert(97) = A(33) ‖ r(32) ‖ s(32)
 (r, s)   = Sign(caPrivate, "qntx-card/v1/cert" ‖ A)
 ```
 
-Each production batch has its own CA key pair (D14); `caKey` on a card is the public key of its
-batch. A host verifies a certificate by `Verify(anchor, "qntx-card/v1/cert" ‖ A, r ‖ s)` for each
-trusted anchor in turn and accepts it if one succeeds. A card verifies a peer certificate with
+Each production batch has its own CA key pair, so trust can be withdrawn per batch; `caKey` on
+a card is the public key of its batch. A host verifies a certificate by
+`Verify(anchor, "qntx-card/v1/cert" ‖ A, r ‖ s)` for each trusted anchor in turn and accepts it if
+one succeeds. A card verifies a peer certificate with
 its own `caKey`. Production hosts MUST NOT trust test anchors, and test cards MUST be issued
 under test CAs only.
 
@@ -418,7 +419,9 @@ in `select()` and in `OPEN` without relying on deselection.
 
 Outer dispatch order: the `SELECT` that selected the applet returns `9000`; otherwise
 `CLA ≠ 0x80` returns `6E00`; an `INS` not in this table returns `6D00`; then the command's own
-checks apply.
+checks apply. (Non-normative: a command whose CLA names a logical channel other than 0 is answered
+by the platform, `6881` on the baseline chip, and never reaches the applet, which is not
+multiselectable.)
 
 ### 9.2 Inner commands
 
@@ -574,7 +577,7 @@ affected.
 
 ### 9.7 ERASE (`0x24`)
 
-Data: empty (`Lc = 0`, else `6700`). Requires verified (D10). Effect: T-ERASE; clear `verified`,
+Data: empty (`Lc = 0`, else `6700`). Requires verified. Effect: T-ERASE; clear `verified`,
 wipe the session seed and caches. The session stays open (so that `OFFER` can follow in the same
 session). Response: empty. A card whose code is forgotten is not erased but re-sealed (§11.3).
 
@@ -779,7 +782,7 @@ encode = le32(y) with bit 255 set to x mod 2                  (RFC 8032 §5.1.2)
 ```
 
 `c` is the square root of `−486664 mod q` that maps `G_W` to the RFC 8032 base point (the other
-root maps it to `−B`). Worked example (`$A/resolve-1/evidence/worked.out`): for the RFC 8032 §7.1
+root maps it to `−B`). Worked example: for the RFC 8032 §7.1
 TEST 1 key, `W(A)` is `5961a13b…96b48329 ‖ 53373f33…2aca8de5` and maps to the TEST 1 public key
 `d75a9801…f707511a`.
 
@@ -803,7 +806,7 @@ its access code is replaced (re-seal). No card outside `members` can ever receiv
 `members` can never grow, and no transfer can replace one wallet by another on a `LOADED` card.
 Membership is named by the creator and proves no possession: anyone holding a genuine card can
 name any card ID in a `CREATE` of their own and install that foreign wallet into a `BLANK` card
-they hold in the field; hosts detect it by `masterPublicKey` and the short ID (`host.md` §2).
+they hold in the field; hosts detect it by `masterPublicKey` and the short ID.
 
 ### 11.2 Transfer
 
@@ -818,7 +821,7 @@ T: IMPORT P1=0 (cert_S, E, sig_S)   → —
 T: IMPORT P1=1 (ct, tag)            → WalletInfo          (T-INSTALL)
 ```
 
-Properties (proved or argued in `threat-model.md` §5): S releases `payload` only to a certified
+Properties (proved or argued in `docs/threat-model.md` §5): S releases `payload` only to a certified
 member that holds the private key of `LK_T`; T installs only a payload produced by a certified
 card that signed `LK_T` and its own identity into `M`; `payload` is fresh for each export; an
 export relayed to another card, or made for an earlier offer, fails at T because `M` binds `A_T`
@@ -890,8 +893,8 @@ H   = empty SHA-512 context
 `S·G_W = R + k·A`; output `le32(S)`; wipe `sk`, `h`, `a`, `prefix`, `r`, `k`, `S` and the stream.
 
 With the stream `encode(R) ‖ encode(A) ‖ M` the signature `encode(R) ‖ le32(S)` verifies under
-RFC 8032 §5.1.7 for `encode(A)` (worked example in `$A/resolve-1/evidence/worked.out`, accepted by
-OpenSSL and libsodium). It is not deterministic. Whatever stream the host sends, `S = r + k'·a`
+RFC 8032 §5.1.7 for `encode(A)` (a worked example built this way is accepted by OpenSSL and
+libsodium). It is not deterministic. Whatever stream the host sends, `S = r + k'·a`
 with a fresh secret `r`, so the outputs reveal nothing about `a`; a wrong stream only produces a
 signature that is invalid under the card's key. `r` does not repeat even if the random generator
 fails (counter and card ID), and is unpredictable even if the counter is faulted (secret `prefix`
@@ -946,9 +949,9 @@ Checks, in order: `life = FACTORY` (else `6985`); `P1 = P2 = 0x00` (else `6A86`)
 
 ### 14.3 Production procedure
 
-Every production card MUST be prepared as follows (D25):
+Every production card MUST be prepared as follows:
 
-1. Admission: the silicon batch passes the tests of §3 and `architecture.md` §10.
+1. Admission: the silicon batch passes the tests of §3 and `docs/architecture.md` §10.
 2. Load the load file `F0716E747800` over the secure channel protocol recorded for the batch at
    admission (GlobalPlatform SCP03, or SCP02 `i = 55`), authenticated with the transport keys
    after the tool has verified the card cryptogram; the personalisation tool MUST check the load
@@ -1020,7 +1023,7 @@ Commands (`CLA = 0x00`, else `6E00`); the selected file is transient and reset b
    `P1 = 0x01`, which needs an export from a member whose code was verified. Absent tearing, an actor
    without the code therefore causes at most `L` T-FAIL commits before the wallet is erased (or
    the user's next success resets the count), one T-OFFER per offer and one write per peer-key
-   slot (`threat-model.md` P19).
+   slot (`docs/threat-model.md` P19).
 
 Key objects are overwritten with fresh random values inside the transactions (T-CREATE, T-INSTALL,
 T-CHANGE, T-ERASE), never cleared after a commit, so a power loss leaves no residual key that
@@ -1031,7 +1034,7 @@ belongs to a past transfer or ciphertext (§3 item 7).
 1. `life`, `origin`, `offer`, the session flags `verified` and session-open, the pending-state
    flags, and the result of every signature, MAC, certificate and fingerprint verification are
    16-bit values from a code set whose members have pairwise Hamming distance ≥ 8 and differ from
-   `0x0000` and `0xFFFF` (`architecture.md` §6). A transient flag that reads `0x0000` is the state
+   `0x0000` and `0xFFFF` (`docs/architecture.md` §6). A transient flag that reads `0x0000` is the state
    the platform leaves after clearing transient memory and means no session, not verified, no
    pending state. Any other value returns `6F00` and tears the session down.
 2. `fails` is stored with its bitwise complement in every state, from the constructor on
@@ -1054,8 +1057,8 @@ belongs to a past transfer or ciphertext (§3 item 7).
    `Q = P_even + t·G`; Ed25519 by `S·G_W = R + k·A`. Self-verification detects faults in the
    signing computation. For a hardened ECDSA leaf and for Ed25519 the verification key derives
    from the same private value, so a fault that rewrote that value before signing is not detected
-   by the card; the host's verification against its cached public key (`host.md` §2) rejects such
-   a signature.
+   by the card; the host's verification against the public key it cached for that path rejects
+   such a signature.
 6. Secret products are computed on two additive shares re-drawn uniformly for every signature
    (`d = d₁ + d₂ mod n`, `a = a₁ + a₂ mod ℓ`) and recombined in this order:
    `s = ((k + e·d₁) mod n + e·d₂) mod n` and `S = ((r + k·a₁) mod ℓ + k·a₂) mod ℓ`. No intermediate
@@ -1096,9 +1099,7 @@ check points. The identity key is never multiplied by any point. Wallet keys are
 
 All session state is `CLEAR_ON_DESELECT`. On the baseline chip every command MUST complete within
 1500 ms. Hosts MUST set the reader transceive timeout to at least 5000 ms. Card times computed
-from unit costs measured on the development card (`$A/resolve-2/evidence/budget_r2.out`, units
-from `$A/audit-impl/evidence/card/bench-2.out` and, for `WAIT`,
-`$A/audit-final/evidence/card/sha-bench.out`): `OPEN` 160 ms; `VERIFY` 124 ms; `WAIT` 965 ms;
+from unit costs measured on the development card: `OPEN` 160 ms; `VERIFY` 124 ms; `WAIT` 965 ms;
 `CREATE` 106 ms; `SIGN_ECDSA` 411 ms (cold, depth 5); `SIGN_BIP340` 724 ms (cold); `SIGN_ED25519`
 begin 430 ms, update 21 ms, finish 486 ms; `PUBLIC_KEY` ed25519 217 ms; `OFFER` 137 ms (78 ms with
 a valid offer); `EXPORT` `P1 = 0x00` 424 ms; `IMPORT` `P1 = 0x00` 471 ms. The longest command
@@ -1110,9 +1111,10 @@ freeze.
 
 Every random value is drawn from `RandomData.ALG_KEYGENERATION` (§3 item 6). The applet does not
 run its own health tests on the generator: they are part of the certified platform (S4 in
-`threat-model.md`), and the failure that matters for a contactless card, a generator that repeats
+`docs/threat-model.md`), and the failure that matters for a contactless card, a generator that repeats
 its output after every power-up, is tested at admission and detected by hosts through repeated
-`cardEph` values (`host.md` §2). ECDSA nonces are generated by the platform and are never made
+`cardEph` values (a host remembers recent `cardEph` values per card and stops using a card that
+repeats one). ECDSA nonces are generated by the platform and are never made
 deterministic: the same leaf key may also sign BIP-340, and BIP-340 ("Alternative Signing")
 warns that nonces without randomness are unsafe when the same key is used in another context.
 
@@ -1125,8 +1127,7 @@ including fault-injection and tearing evaluation; afterwards a change ships only
 protocol with a new instance AID on new cards, and hosts support every version still in use.
 A card-generated seed can never move to a card of another protocol version or batch (§11.1), so
 a defect found after freeze is handled by the host: it stops creating wallets on the affected
-batch or version and guides the user to migrate the funds to a new card set (`host.md` §4,
-D26).
+batch or version and guides the user to migrate the funds to a new card set.
 
 ## 18. Test vectors
 
