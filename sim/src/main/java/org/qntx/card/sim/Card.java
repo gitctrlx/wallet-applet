@@ -88,6 +88,11 @@ public final class Card {
         runtime.reset();
     }
 
+    /** The simulator's ATR, the answer of a vpcd-style get-ATR control (architecture §8). */
+    public byte[] atr() {
+        return simulator.getATR();
+    }
+
     /** The installed applet object, for tests that inspect transient state by reflection. */
     public Applet applet(byte[] aid) {
         return runtime.applet(new AID(aid, (short) 0, (byte) aid.length));

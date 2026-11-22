@@ -3,6 +3,7 @@ import java.io.OutputStream
 
 plugins {
     `java-library`
+    alias(libs.plugins.shadow)
 }
 
 val apiClassicJar =
@@ -25,6 +26,8 @@ dependencies {
     api(libs.bouncycastle.prov)
     implementation(libs.asm.commons)
     implementation(libs.asm.tree)
+    implementation(project(":applet"))
+    implementation(project(":host"))
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
@@ -88,6 +91,21 @@ val agentJar =
         from(sourceSets["main"].output)
         manifest { attributes("Premain-Class" to "org.qntx.card.sim.Agent") }
     }
+
+// card-sim.jar (architecture.md §8): the whole simulator + applet + host in one fat
+// jar whose launcher agent weaves the persistent-write hooks before the applet classes
+// load. Signed dependency jars keep their signature files out so the loader does not
+// reject the merged classes.
+tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar") {
+    archiveFileName = "card-sim.jar"
+    manifest {
+        attributes(
+            "Main-Class" to "org.qntx.card.sim.Server",
+            "Launcher-Agent-Class" to "org.qntx.card.sim.Agent",
+        )
+    }
+    exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA", "META-INF/*.EC")
+}
 
 configurations.create("agent") {
     isCanBeConsumed = true

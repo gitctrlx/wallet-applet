@@ -31,9 +31,17 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
-    dependsOn(":applet:cap")
+    dependsOn(":applet:cap", ":sim:shadowJar")
     inputs.file(cap).withPropertyName("cap")
     inputs.files(agent).withPropertyName("agent")
+    systemProperty(
+        "qntx.simJar",
+        project(":sim")
+            .layout.buildDirectory
+            .file("libs/card-sim.jar")
+            .get()
+            .asFile.absolutePath,
+    )
     jvmArgumentProviders.add { listOf("-javaagent:${agent.singleFile.absolutePath}") }
     systemProperty("qntx.cap", cap.get().asFile.absolutePath)
     systemProperty("qntx.vectors", rootProject.file("spec/vectors").absolutePath)

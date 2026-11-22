@@ -15,14 +15,13 @@ the invariants every change keeps.
 
 The repository is being rewritten from zero against `spec/protocol.md`. This revision implements
 identity, personalisation, the secure session, the wallet commands, derivation, the three
-signing commands and multi-card transfer (§5–§9.15, §10.1–10.5, §11–§12); NDEF and the tools
-follow.
+signing commands, multi-card transfer and the read-only NDEF applet (§5–§15); the tools follow.
 
 ## Layout
 
 | Path | Content | License |
 | --- | --- | --- |
-| `applet/` | The one CAP: package `org.qntx.card` (Java Card 3.0.5 Classic) | AGPL-3.0-or-later |
+| `applet/` | The one CAP: package `org.qntx.card` (Java Card 3.0.5 Classic), wallet + NDEF applets | AGPL-3.0-or-later |
 | `sim/` | jcardsim fork (`sim/jcardsim`, pinned upstream commit plus patches) with transactions, power-loss injection and memory accounting | Apache-2.0 (fork), AGPL-3.0-or-later |
 | `host/` | Reference host library written from the specification | AGPL-3.0-or-later |
 | `tests/` | Simulator, vector and mutation tests | AGPL-3.0-or-later |
@@ -49,6 +48,57 @@ The CAP is `applet/build/cap/qntx-card.cap`; two builds of the same sources have
 Tests run the applet's JVM classes in the simulator with the `sim` agent (`-javaagent`), which
 journals persistent writes, injects power loss and accounts transient memory with sizes measured on
 the baseline chip (NXP JCOP 4 P71).
+
+## Simulator (`card-sim.jar`)
+
+`./gradlew :sim:shadowJar` builds `sim/build/libs/card-sim.jar`, a fat jar of the simulator,
+applet and host classes. The manifest's `Launcher-Agent-Class` starts the bytecode agent that
+makes persistent writes tearable; run it directly:
+
+```bash
+java -jar card-sim.jar [--cards N] [--port P] [--state factory|blank]
+```
+
+- `--cards N`: simulated cards, 1–16 (default 3). Card `i` listens on `127.0.0.1:P+i`;
+  `--port 0` gives every card an ephemeral port.
+- `--port P`: first TCP port (default 35963, vpcd's port).
+- `--state factory`: install the wallet and NDEF applets and stop (life `FACTORY`).
+- `--state blank` (default): also personalise each card under the `ca1` test CA of
+  `spec/vectors/cert.json` (life `BLANK`).
+
+Every card carries the wallet applet (`F0716E74780101`) and the NDEF applet
+(`D2760000850101`, message "qntx card"). Startup prints, for each card,
+
+```text
+card <i> port <port> id <ID(A), 32 hex> short <XXXX-XXXX>
+anchor <ca1 public key, 130 hex>        (blank only)
+```
+
+then a final line `ready`. Bad arguments print usage on stderr and exit 2; `--help` prints it
+on stdout and exits 0.
+
+### Framing
+
+Each card's TCP connection carries vpcd-style frames `u16(len) ‖ payload` (vsmartcard vpcd):
+
+| `len` | Payload | Meaning | Reply |
+| --- | --- | --- | --- |
+| ≥ 4 | command APDU | transmit to the card | `u16(len) ‖ R-APDU` |
+| 1 | `00` | power off | none |
+| 1 | `01` | power on (a power cycle when unpowered; no-op when powered) | none |
+| 1 | `02` | reset (power cycle) | none |
+| 1 | `04` | get ATR | `u16(len) ‖ ATR` |
+| 3 | `10 ‖ u16(N)` | arm power loss at the N-th persistent write of the next command that makes at least N writes | none |
+
+A new connection powers the card on with a power cycle; closing it powers the card off. Card
+state (persistent memory) lives as long as the server process; one connection per card at a time,
+a second connection waits until the first closes. Anything else — `len` 0 or 2, a 3-byte payload
+not starting with `10`, an unknown control byte, `N = 0` — closes the connection.
+
+An APDU on an unpowered card, or an APDU during which the armed tear fired, is answered with the
+empty frame `00 00` — no response, the field was lost. After a tear the card is unpowered until a
+power-on or reset control. The armed tear is a per-command write count: it stays armed until it
+fires or the card is power-cycled/powered off.
 
 ## License
 
