@@ -20,7 +20,10 @@ public final class Generate {
                     "kdf.json", KdfDoc::document,
                     "cert.json", CertDoc::document,
                     "session.json", SessionDoc::document,
-                    "record.json", RecordDoc::document);
+                    "record.json", RecordDoc::document,
+                    "access.json", AccessDoc::document,
+                    "wrap.json", WrapDoc::document,
+                    "derivation.json", DerivationDoc::document);
 
     private Generate() {}
 

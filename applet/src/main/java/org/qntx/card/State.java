@@ -52,6 +52,64 @@ final class State {
         return f;
     }
 
+    /**
+     * One independent read of {@code fails}: {@code f} when the value/complement pair agrees, else
+     * {@code -1}. Never throws — VERIFY must reach T-ERASE on an inconsistent counter (§9.5 step 2,
+     * §16.2 item 2).
+     */
+    short readFails() {
+        short f = Util.getShort(state, OFF_FAILS);
+        short c = Util.getShort(state, (short) (OFF_FAILS + 2));
+        if ((short) (f ^ c) != -1) {
+            return -1;
+        }
+        return f;
+    }
+
+    /** Writes {@code f} and its complement as two {@code setShort}s (§16.2 item 2). */
+    void writeFails(short f) {
+        Util.setShort(state, OFF_FAILS, f);
+        Util.setShort(state, (short) (OFF_FAILS + 2), (short) ~f);
+    }
+
+    /** Atomic write of a coded word; only inside the transaction that owns the field. */
+    void setCoded(short off, short v) {
+        Util.setShort(state, off, v);
+    }
+
+    /**
+     * Atomic clear of {@code state[off..off+len)} by {@code Util.arrayCopy} from {@link
+     * Const#ZEROS} in chunks of at most 32 bytes — never a non-atomic fill on the persistent array
+     * (§16.1 item 5). Only inside the transaction that owns the field.
+     */
+    void clear(short off, short len) {
+        short at = off;
+        short left = len;
+        while (left != 0) {
+            short n = left;
+            if ((short) (n - 33) >= 0) {
+                n = Const.HASH_LEN;
+            }
+            Util.arrayCopy(Const.ZEROS, (short) 0, state, at, n);
+            at += n;
+            left -= n;
+        }
+    }
+
+    /** A plain read out of the array; no coded interpretation. */
+    void read(short off, byte[] dst, short dstOff, short len) {
+        Util.arrayCopy(state, off, dst, dstOff, len);
+    }
+
+    /** The coded {@code origin}; a non-member read is a detected fault (§16.2 item 1). */
+    short origin() {
+        short o = Util.getShort(state, OFF_ORIGIN);
+        if (o != Const.ORIGIN_GENERATED && o != Const.ORIGIN_IMPORTED) {
+            ISOException.throwIt(Const.SW_FAULT);
+        }
+        return o;
+    }
+
     /** Atomic write of a coded life value; only inside the transaction that owns it. */
     void setLife(short life) {
         Util.setShort(state, OFF_LIFE, life);

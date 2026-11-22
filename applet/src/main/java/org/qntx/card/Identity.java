@@ -6,6 +6,7 @@ import javacard.framework.APDU;
 import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
+import javacard.framework.Util;
 import javacard.security.CryptoException;
 import javacard.security.ECKey;
 import javacard.security.ECPrivateKey;
@@ -64,6 +65,14 @@ final class Identity {
     void identity(byte[] out, short off) {
         idPublic.getW(mem.P, P_PUB);
         secp.compress(mem.P, P_PUB, out, off);
+    }
+
+    /** {@code out = ID(A) = SHA-256(A)[0..16)} (§2), the card's member ID. */
+    void id(byte[] out, short off) {
+        identity(mem.W, Mem.W_DER);
+        mem.sha256.reset();
+        mem.sha256.doFinal(mem.W, Mem.W_DER, Const.COMPRESSED_LEN, mem.W, W_TH);
+        Util.arrayCopy(mem.W, W_TH, out, off, (short) 16);
     }
 
     /** GET_IDENTITY (§14.1): {@code life = FACTORY}, {@code P1 = P2 = 0}, no data; response A. */

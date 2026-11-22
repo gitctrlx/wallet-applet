@@ -6,17 +6,19 @@ import javacard.framework.APDU;
 import javacard.framework.Applet;
 import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
+import javacard.framework.JCSystem;
 
 /**
  * The qntx card wallet applet (protocol.md §2, §6, §9.1). Constructs the object graph once — {@code
- * Mem, State, ModArith, Secp256k1, Identity, Session, Wallet} — and dispatches the outer commands
- * of §9.1 and, inside a session record, the inner commands of §9.2.
+ * Mem, State, ModArith, Secp256k1, Wei25519, Identity, Session, Derivation, Wallet} — and
+ * dispatches the outer commands of §9.1 and, inside a session record, the inner commands of §9.2.
  */
 public final class WalletApplet extends Applet {
     private final Mem mem;
     private final State state;
     private final Identity identity;
     private final Session session;
+    private final Derivation derivation;
     private final Wallet wallet;
 
     private WalletApplet(byte[] bArray, short bOffset) {
@@ -25,9 +27,11 @@ public final class WalletApplet extends Applet {
         state = new State();
         ModArith modArith = new ModArith(mem);
         Secp256k1 secp = new Secp256k1(mem, modArith);
+        Wei25519 wei = new Wei25519(mem);
         identity = new Identity(mem, state, secp);
         session = new Session(mem, state, secp, identity);
-        wallet = new Wallet(state);
+        derivation = new Derivation(mem, session, secp, wei, modArith);
+        wallet = new Wallet(mem, state, session, identity, derivation);
         register(bArray, (short) (bOffset + 1), bArray[bOffset]);
     }
 
@@ -119,6 +123,13 @@ public final class WalletApplet extends Applet {
         } catch (Exception e) {
             sw = Const.SW_FAULT;
         }
+        // §16.1 item 2: a still-open transaction after dispatch is a detected fault (a skipped
+        // commit); no response data is sent while a transaction is open
+        if (JCSystem.getTransactionDepth() != 0) {
+            JCSystem.abortTransaction();
+            sw = Const.SW_FAULT;
+            dataLen = 0;
+        }
         short len = session.wrap(apdu, dataLen, sw);
         session.afterResponse(sw);
         return len;
@@ -156,13 +167,39 @@ public final class WalletApplet extends Applet {
             if (p2 != 0 || (short) (p1 & 0xFF) > Const.INNER_P1_MAX[row]) {
                 ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
             }
-            if ((short) (plain - 3) != 0) {
-                ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
-            }
+            short dataOff = (short) (ISO7816.OFFSET_CDATA + 3);
+            short dataLen = (short) (plain - 3);
+            checkLength(ins, p1, buf, dataOff, dataLen);
             if (Const.INNER_VERIFIED[row] != 0 && session.verified() != Const.VERIFIED_YES) {
                 ISOException.throwIt(ISO7816.SW_SECURITY_STATUS_NOT_SATISFIED);
             }
-            return wallet.status(buf, (short) 0);
+            short out = 0;
+            switch (ins) {
+                case Const.INS_STATUS:
+                    out = wallet.status(buf, (short) 0);
+                    break;
+                case Const.INS_CREATE:
+                    out = wallet.create(buf, p1, dataOff, dataLen);
+                    break;
+                case Const.INS_VERIFY:
+                    out = wallet.verify(buf, dataOff);
+                    break;
+                case Const.INS_CHANGE:
+                    wallet.change(buf, dataOff);
+                    break;
+                case Const.INS_ERASE:
+                    wallet.erase();
+                    break;
+                case Const.INS_WAIT:
+                    wallet.waitUnit();
+                    break;
+                case Const.INS_PUBLIC_KEY:
+                    out = derivation.publicKey(buf, p1, dataOff, dataLen);
+                    break;
+                default:
+                    break;
+            }
+            return out;
         } catch (ISOException e) {
             sw = e.getReason();
             throw e;
@@ -171,6 +208,48 @@ public final class WalletApplet extends Applet {
             throw e;
         } finally {
             session.endDispatch(pending, ins, p1, sw);
+        }
+    }
+
+    /**
+     * The per-INS length check of the §9.2 checking order: STATUS/ERASE/WAIT {@code 0};
+     * VERIFY/CHANGE {@code 32}; CREATE {@code 64/80/96} for {@code P1 = 0} and {@code 96/112/128}
+     * for {@code P1 = 1}; PUBLIC_KEY {@code 1 + 4·depth} (a depth byte of 0 with length 1 passes —
+     * the command's own data check rejects it with {@code 6A80}).
+     */
+    private static void checkLength(byte ins, byte p1, byte[] buf, short dataOff, short dataLen) {
+        switch (ins) {
+            case Const.INS_STATUS:
+            case Const.INS_ERASE:
+            case Const.INS_WAIT:
+                if (dataLen != 0) {
+                    ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+                }
+                return;
+            case Const.INS_VERIFY:
+            case Const.INS_CHANGE:
+                if (dataLen != Const.HASH_LEN) {
+                    ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+                }
+                return;
+            case Const.INS_CREATE:
+                short rest = (short) (dataLen - (p1 == 0 ? 64 : 96));
+                if (rest < 0 || rest > 32 || (short) (rest & 0x0F) != 0) {
+                    ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+                }
+                return;
+            case Const.INS_PUBLIC_KEY:
+                // the depth-prefix check subsumes dataLen < 1: no byte value makes
+                // 0 == 1 + depth*4 hold
+                short depth = (short) (buf[dataOff] & 0xFF);
+                if (dataLen != (short) (1 + depth * 4)) {
+                    ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+                }
+                return;
+            default:
+                // checkLength runs only for §9.2-table INS values; the row lookup and
+                // the dispatch switch are what reject anything else
+                return;
         }
     }
 

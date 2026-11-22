@@ -4,8 +4,11 @@
 """Generates spec/vectors/apdu.json from the protocol tables (spec/protocol.md §18).
 
 Transcribes the checks of §8.1 (OPEN), §8.3 (SESSION, outer only — the record-level cases
-live in record.json), §9.2 (checking order and the unknown-INS case), §9.3 (STATUS) and
-§14.1–14.2 (GET_IDENTITY, PERSONALIZE). APDUs are templates with {symbol} placeholders;
+live in record.json), §9.2 (checking order and the unknown-INS case), §9.3–9.8 and §9.15
+(STATUS, CREATE, VERIFY, CHANGE, ERASE, PUBLIC_KEY, WAIT) and §14.1–14.2 (GET_IDENTITY,
+PERSONALIZE). Preconditions that need a prepared failure count (the WAIT gate of §9.5) are in
+verify-sequence.json; data checks that no fixed input can reach (an invalid BIP-32 master or
+child, probability about 2^-127) are tested by fault injection, not listed here. APDUs are templates with {symbol} placeholders;
 this script computes each Lc byte from the symbol lengths. In every command, case k violates
 check k and every later check that can be violated at the same time, and expects check k's
 status word; the last case is the success case. Stdlib only; output is canonical
@@ -32,6 +35,14 @@ SYMBOL_LEN = {
     "hostEph.offCurve": 65,
     "openResponse": 226,
     "record0": 24,
+    "accessHash": 32,
+    "accessHash.wrong": 32,
+    "accessHash.new": 32,
+    "entropy": 32,
+    "seed": 64,
+    "id.self": 16,
+    "id.other1": 16,
+    "id.other2": 16,
 }
 
 SYMBOLS = {
@@ -49,6 +60,28 @@ SYMBOLS = {
     "hostEph.offCurve": "65 bytes: hostEph with y flipped so the point is off the curve",
     "openResponse": "226 bytes: cardEph ‖ sig ‖ cert plus SW 9000; verified through Open.response (session.json)",
     "record0": "24 bytes: ct ‖ tag of record.json commands[0].apdu — a well-formed record",
+    "accessHash": "32 bytes: the access hash the LOADED card under test was created with (any fixed value; the card never sees the code)",
+    "accessHash.wrong": "32 bytes: an access hash different from {accessHash}",
+    "accessHash.new": "32 bytes: an access hash different from {accessHash} and {accessHash.wrong}, used by CHANGE",
+    "entropy": "32 bytes: host entropy for CREATE P1 = 00 (any value)",
+    "seed": "64 bytes: derivation.json templates.seed (its BIP-32 master key is valid)",
+    "id.self": "16 bytes: ID(A) of the card under test",
+    "id.other1": "16 bytes: a card ID different from {id.self}",
+    "id.other2": "16 bytes: a card ID different from {id.self} and {id.other1}",
+    "seed.masterPublicKey": "response only, 33 bytes: compressed BIP-32 master public key of {seed} (derivation.json templates.masterPublicKey)",
+    "masterPublicKey.any": "response only, 33 bytes: a compressed secp256k1 point (prefix 02 or 03, x on the curve); the value is random",
+    "pk.secp.evm": "response only, 65 bytes: publicKey(33) ‖ chainCode(32) of m/44'/60'/0'/0/0 under {seed} (derivation.json templates)",
+    "pk.ed.solana": "response only, 64 bytes: W(A) of m/44'/501'/0'/0' under {seed} (derivation.json templates)",
+}
+
+# Setup of each life/session combination named by the cases.
+STATES = {
+    "FACTORY": "a freshly installed card",
+    "BLANK": "FACTORY, then PERSONALIZE with {cert} and {caKey}",
+    "LOADED": "BLANK, then OPEN and CREATE P1 = 01 with {accessHash} ‖ {seed} (no other members), then a new OPEN",
+    "session none": "no OPEN after the setup",
+    "session open": "the last OPEN of the setup (OPEN once for BLANK); not verified",
+    "session verified": "session open, then VERIFY {accessHash} returned 9000",
 }
 
 
@@ -86,7 +119,13 @@ def case(name, life, session, apdu_hex, inner, sw, response=None):
     return c
 
 
-# life values: FACTORY, BLANK, LOADED (§4.1) or "any". session: "none" or "open".
+# §9.2 paths: depth(1) ‖ u32(index)…; i' = i + 2^31.
+PATH_EVM = "05" + "8000002c" + "8000003c" + "80000000" + "00000000" + "00000000"  # m/44'/60'/0'/0/0
+PATH_SOLANA = "04" + "8000002c" + "800001f5" + "80000000" + "80000000"  # m/44'/501'/0'/0'
+PATH_SOLANA_SOFT = "04" + "8000002c" + "800001f5" + "80000000" + "00000000"  # m/44'/501'/0'/0
+
+# life values: FACTORY, BLANK, LOADED (§4.1) or "any".
+# session: "none", "open" or "verified" (see STATES).
 COMMANDS = [
     {
         "name": "DISPATCH",
@@ -278,11 +317,93 @@ COMMANDS = [
             case("success-loaded", "LOADED", "open", "200000", True, "9000", "020a"),
         ],
     },
+    {
+        "name": "CREATE",
+        "section": "9.4",
+        "cases": [
+            # life first: P1 and length are also wrong here
+            case("life-loaded", "LOADED", "open", "21020000", True, "6985"),
+            case("p1", "BLANK", "open", "21020000", True, "6a86"),
+            case("p2", "BLANK", "open", "210001{accessHash}{entropy}", True, "6a86"),
+            case("length-generate-65", "BLANK", "open", "210000{accessHash}{entropy}00", True, "6700"),
+            case("length-generate-112", "BLANK", "open", "210000{accessHash}{entropy}{id.other1}{id.other2}{id.other1}", True, "6700"),
+            case("length-import-80", "BLANK", "open", "210100{accessHash}{entropy}{id.other1}", True, "6700"),
+            case("others-duplicate", "BLANK", "open", "210000{accessHash}{entropy}{id.other1}{id.other1}", True, "6a80"),
+            case("others-self", "BLANK", "open", "210000{accessHash}{entropy}{id.other1}{id.self}", True, "6a80"),
+            case("import-others-self", "BLANK", "open", "210100{accessHash}{seed}{id.self}", True, "6a80"),
+            case("success-generate", "BLANK", "open", "210000{accessHash}{entropy}", True, "9000", "{masterPublicKey.any}0101{id.self}"),
+            case("success-generate-three", "BLANK", "open", "210000{accessHash}{entropy}{id.other1}{id.other2}", True, "9000", "{masterPublicKey.any}0103{id.self}{id.other1}{id.other2}"),
+            case("success-import", "BLANK", "open", "210100{accessHash}{seed}{id.other1}", True, "9000", "{seed.masterPublicKey}0202{id.self}{id.other1}"),
+        ],
+    },
+    {
+        "name": "VERIFY",
+        "section": "9.5",
+        "cases": [
+            case("life-blank", "BLANK", "open", "22010000", True, "6985"),
+            case("p1p2", "LOADED", "open", "22010000", True, "6a86"),
+            case("p2", "LOADED", "open", "220001{accessHash}", True, "6a86"),
+            case("length", "LOADED", "open", "220000{accessHash}00", True, "6700"),
+            case("wrong", "LOADED", "open", "220000{accessHash.wrong}", True, "63c9"),
+            case("success", "LOADED", "open", "220000{accessHash}", True, "9000", "{seed.masterPublicKey}0201{id.self}"),
+        ],
+    },
+    {
+        "name": "CHANGE",
+        "section": "9.6",
+        "cases": [
+            case("life-blank", "BLANK", "open", "23010000", True, "6985"),
+            case("p1p2", "LOADED", "verified", "23010000", True, "6a86"),
+            case("length", "LOADED", "verified", "230000{accessHash.new}00", True, "6700"),
+            case("unverified", "LOADED", "open", "230000{accessHash.new}", True, "6982"),
+            case("success", "LOADED", "verified", "230000{accessHash.new}", True, "9000", ""),
+        ],
+    },
+    {
+        "name": "ERASE",
+        "section": "9.7",
+        "cases": [
+            case("life-blank", "BLANK", "open", "24010000", True, "6985"),
+            case("p1p2", "LOADED", "verified", "24010000", True, "6a86"),
+            case("length", "LOADED", "verified", "24000000", True, "6700"),
+            case("unverified", "LOADED", "open", "240000", True, "6982"),
+            case("success", "LOADED", "verified", "240000", True, "9000", ""),
+        ],
+    },
+    {
+        "name": "WAIT",
+        "section": "9.15",
+        "cases": [
+            case("life-blank", "BLANK", "open", "25010000", True, "6985"),
+            case("p1p2", "LOADED", "open", "25010000", True, "6a86"),
+            case("length", "LOADED", "open", "25000000", True, "6700"),
+            case("success", "LOADED", "open", "250000", True, "9000", ""),
+        ],
+    },
+    {
+        "name": "PUBLIC_KEY",
+        "section": "9.8",
+        "cases": [
+            case("life-blank", "BLANK", "open", "30020000", True, "6985"),
+            case("p1", "LOADED", "verified", "30020000", True, "6a86"),
+            case("p2", "LOADED", "verified", "300001" + PATH_EVM, True, "6a86"),
+            case("length-empty", "LOADED", "verified", "300000", True, "6700"),
+            case("length-short", "LOADED", "verified", "300000" + PATH_EVM[:-8], True, "6700"),
+            case("length-long", "LOADED", "verified", "300000" + PATH_EVM + "00", True, "6700"),
+            case("unverified", "LOADED", "open", "300000" + PATH_EVM, True, "6982"),
+            case("depth-zero", "LOADED", "verified", "30000000", True, "6a80"),
+            case("depth-eleven", "LOADED", "verified", "3000000b" + "80000000" * 11, True, "6a80"),
+            case("ed25519-depth-zero", "LOADED", "verified", "30010000", True, "6a80"),
+            case("ed25519-not-hardened", "LOADED", "verified", "300100" + PATH_SOLANA_SOFT, True, "6a80"),
+            case("success-secp256k1", "LOADED", "verified", "300000" + PATH_EVM, True, "9000", "{pk.secp.evm}"),
+            case("success-ed25519", "LOADED", "verified", "300100" + PATH_SOLANA, True, "9000", "{pk.ed.solana}"),
+        ],
+    },
 ]
 
 
 def main():
-    doc = {"symbols": SYMBOLS, "commands": COMMANDS}
+    doc = {"symbols": SYMBOLS, "states": STATES, "commands": COMMANDS}
     out = json.dumps(doc, indent=2, ensure_ascii=True) + "\n"
     if len(sys.argv) > 1:
         with open(sys.argv[1], "w", encoding="ascii", newline="\n") as f:

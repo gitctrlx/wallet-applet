@@ -37,6 +37,47 @@ public final class Internals {
         return (State) get(applet, "state");
     }
 
+    public static Wallet wallet(Applet applet) {
+        return (Wallet) get(applet, "wallet");
+    }
+
+    public static Derivation derivation(Applet applet) {
+        return (Derivation) get(applet, "derivation");
+    }
+
+    public static Wei25519 wei(Applet applet) {
+        return (Wei25519) get(derivation(applet), "wei");
+    }
+
+    /** The persistent {@code wrapKey} of {@link Wallet} (read or overwrite it in tests). */
+    public static AESKey wrapKey(Applet applet) {
+        return (AESKey) get(wallet(applet), "wrapKey");
+    }
+
+    /** A {@code Mem} field by name ({@code kEnc}, {@code kMac}, engines, scratch). */
+    public static Object memField(Applet applet, String name) {
+        return get(mem(applet), name);
+    }
+
+    /** Invokes a private method of an applet object (e.g. {@code Wallet.wrapNew}). */
+    public static Object invoke(Object target, String method, Class<?>[] sig, Object... args) {
+        try {
+            java.lang.reflect.Method m = target.getClass().getDeclaredMethod(method, sig);
+            m.setAccessible(true);
+            return m.invoke(target, args);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            if (e.getCause() instanceof RuntimeException r) {
+                throw r;
+            }
+            if (e.getCause() instanceof Error err) {
+                throw err;
+            }
+            throw new RuntimeException(e.getCause());
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     /** The persistent {@code state[272]} array itself (read or corrupt it in tests). */
     public static byte[] stateArray(Applet applet) {
         return (byte[]) get(state(applet), "state");
@@ -57,9 +98,39 @@ public final class Internals {
         return (byte[]) get(mem(applet), "P");
     }
 
+    /** The transient {@code Mem.seed[64]} session seed, for wipe assertions. */
+    public static byte[] seedBytes(Applet applet) {
+        return (byte[]) get(mem(applet), "seed");
+    }
+
+    /** The transient {@code Mem.secpCache[138]} node cache, for wipe assertions. */
+    public static byte[] secpCacheBytes(Applet applet) {
+        return (byte[]) get(mem(applet), "secpCache");
+    }
+
+    /** The transient {@code Mem.edCache[105]} node cache, for wipe assertions. */
+    public static byte[] edCacheBytes(Applet applet) {
+        return (byte[]) get(mem(applet), "edCache");
+    }
+
+    /** The transient {@code Mem.N[101]} derivation node, for wipe assertions and pokes. */
+    public static byte[] nBytes(Applet applet) {
+        return (byte[]) get(mem(applet), "N");
+    }
+
+    /** The transient {@code Mem.H[192]} derivation/persistence area, for wipe assertions. */
+    public static byte[] hBytes(Applet applet) {
+        return (byte[]) get(mem(applet), "H");
+    }
+
     /** The shared SHA-256 engine; a test can leave it dirty before a command. */
     public static javacard.security.MessageDigest sha256(Applet applet) {
         return (javacard.security.MessageDigest) get(mem(applet), "sha256");
+    }
+
+    /** The shared SHA-512 engine; a test can leave it dirty before a command. */
+    public static javacard.security.MessageDigest sha512(Applet applet) {
+        return (javacard.security.MessageDigest) get(mem(applet), "sha512");
     }
 
     /** A {@code private static final short} offset constant of {@link Session}. */

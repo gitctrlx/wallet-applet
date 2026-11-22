@@ -61,10 +61,14 @@ public final class Nvm {
         array[index] = (short) value;
     }
 
-    /** {@link Util#setShort} on a persistent buffer is one atomic write. */
+    /**
+     * {@link Util#setShort} on a persistent buffer is one atomic write. {@link Fault#armStore}
+     * replaces the stored value on the armed write, counting only persistent-array stores.
+     */
     public static short setShort(byte[] bArray, short bOff, short sValue) {
         CardRuntime rt = CardRuntime.current();
         if (rt != null && rt.isPersistentArray(bArray)) {
+            sValue = Fault.storeValue(sValue);
             rt.arrayWrite(bArray, bOff, 2);
         }
         return Util.setShort(bArray, bOff, sValue);

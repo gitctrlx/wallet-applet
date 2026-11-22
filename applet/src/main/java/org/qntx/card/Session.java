@@ -16,8 +16,9 @@ import javacardx.crypto.Cipher;
 /**
  * The §8 secure session: OPEN (§8.1), the command/response records (§8.3–8.4), teardown (§8.5) and
  * the coded session flags (§16.2 item 1). All state is transient: four AES keys in {@code
- * CLEAR_ON_DESELECT} objects and one {@code byte[8]} holding the four 16-bit words {@code open},
- * {@code verified}, {@code ctr}, {@code pending}.
+ * CLEAR_ON_DESELECT} objects and one {@code byte[10]} holding the five 16-bit words {@code open},
+ * {@code verified}, {@code ctr}, {@code pending} and {@code waited} (the plain WAIT counter of
+ * §9.15, the only uncoded word).
  */
 final class Session {
     /** Offsets of the 16-bit words inside {@link #words}. */
@@ -26,6 +27,7 @@ final class Session {
     private static final short O_VERIFIED = 2;
     private static final short O_CTR = 4;
     private static final short O_PENDING = 6;
+    private static final short O_WAITED = 8;
 
     /** {@link Mem#W} layout used by {@link #unwrap} and {@link #wrap} (below {@link Mem#W_DER}). */
     private static final short W_CTR = 0;
@@ -68,7 +70,7 @@ final class Session {
         kcm = aesKey();
         kre = aesKey();
         krm = aesKey();
-        words = JCSystem.makeTransientByteArray((short) 8, JCSystem.CLEAR_ON_DESELECT);
+        words = JCSystem.makeTransientByteArray((short) 10, JCSystem.CLEAR_ON_DESELECT);
     }
 
     private static AESKey aesKey() {
@@ -227,13 +229,18 @@ final class Session {
     }
 
     /**
-     * §8.5: wipes, in spec order, the {@code verified} flag, the pending state, the four session
-     * keys (overwritten, never {@code clearKey}; architecture §4), {@code ctr} and the open flag.
-     * Idempotent; also runs in {@code select()} and OPEN without relying on deselection.
+     * §8.5: wipes, in spec order, the {@code verified} flag, the session seed, the derivation
+     * caches, the pending state, {@code waited}, the four session keys (overwritten, never {@code
+     * clearKey}; architecture §4), {@code ctr} and the open flag. Idempotent; also runs in {@code
+     * select()} and OPEN without relying on deselection.
      */
     void teardown() {
         setWord(O_VERIFIED, (short) 0);
+        Bytes.wipe(mem.seed, (short) 0, (short) mem.seed.length);
+        Bytes.wipe(mem.secpCache, (short) 0, (short) mem.secpCache.length);
+        Bytes.wipe(mem.edCache, (short) 0, (short) mem.edCache.length);
         setWord(O_PENDING, (short) 0);
+        setWord(O_WAITED, (short) 0);
         kce.setKey(Const.ZEROS, (short) 0);
         kcm.setKey(Const.ZEROS, (short) 0);
         kre.setKey(Const.ZEROS, (short) 0);
@@ -249,6 +256,35 @@ final class Session {
             ISOException.throwIt(Const.SW_FAULT);
         }
         return v == Const.VERIFIED_YES ? Const.VERIFIED_YES : Const.VERIFIED_NO;
+    }
+
+    /** VERIFY (§9.5 step 1) and ERASE clear {@code verified} to the coded NO member. */
+    void clearVerified() {
+        setWord(O_VERIFIED, Const.VERIFIED_NO);
+    }
+
+    /** VERIFY and CREATE set {@code verified} on success (§9.2). */
+    void setVerified() {
+        setWord(O_VERIFIED, Const.VERIFIED_YES);
+    }
+
+    /**
+     * The plain WAIT count, 0..{@code W} (§9.15): uncoded session state, read by VERIFY step 3 — a
+     * faulted read buys at most one unwaited attempt (§16.2 item 4 note).
+     */
+    short waited() {
+        return getWord(O_WAITED);
+    }
+
+    /** {@code waited ← min(waited + 1, W)} (§9.15). */
+    void addWait() {
+        short w = getWord(O_WAITED);
+        setWord(O_WAITED, w == Const.WAIT_UNITS ? w : (short) (w + 1));
+    }
+
+    /** VERIFY step 4 consumes the completed wait units. */
+    void clearWaited() {
+        setWord(O_WAITED, (short) 0);
     }
 
     /**

@@ -7,9 +7,11 @@ import java.util.Arrays;
 import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.crypto.BlockCipher;
 import org.bouncycastle.crypto.digests.SHA256Digest;
+import org.bouncycastle.crypto.digests.SHA512Digest;
 import org.bouncycastle.crypto.ec.CustomNamedCurves;
 import org.bouncycastle.crypto.engines.AESEngine;
 import org.bouncycastle.crypto.macs.CMac;
+import org.bouncycastle.crypto.macs.HMac;
 import org.bouncycastle.crypto.modes.CBCBlockCipher;
 import org.bouncycastle.crypto.modes.CBCModeCipher;
 import org.bouncycastle.crypto.params.ECDomainParameters;
@@ -49,6 +51,29 @@ public final class Crypto {
         }
         byte[] out = new byte[d.getDigestSize()];
         d.doFinal(out, 0);
+        return out;
+    }
+
+    /** {@code SHA-512} of the concatenated parts (§10.2–10.4). */
+    public static byte[] sha512(byte[]... parts) {
+        SHA512Digest d = new SHA512Digest();
+        for (byte[] p : parts) {
+            d.update(p, 0, p.length);
+        }
+        byte[] out = new byte[d.getDigestSize()];
+        d.doFinal(out, 0);
+        return out;
+    }
+
+    /** RFC 2104 HMAC-SHA512 of the concatenated parts under {@code key} (§10.2–10.4). */
+    public static byte[] hmacSha512(byte[] key, byte[]... parts) {
+        HMac mac = new HMac(new SHA512Digest());
+        mac.init(new KeyParameter(key));
+        for (byte[] p : parts) {
+            mac.update(p, 0, p.length);
+        }
+        byte[] out = new byte[mac.getMacSize()];
+        mac.doFinal(out, 0);
         return out;
     }
 

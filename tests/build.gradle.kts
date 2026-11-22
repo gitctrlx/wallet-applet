@@ -82,6 +82,9 @@ pitest {
             "org.qntx.card.WalletApplet",
             "org.qntx.card.Session",
             "org.qntx.card.Identity",
+            "org.qntx.card.Wallet",
+            "org.qntx.card.Derivation",
+            "org.qntx.card.State",
         )
     targetTests = listOf("org.qntx.card.*")
     additionalMutableCodePaths =

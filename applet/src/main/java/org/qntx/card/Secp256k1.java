@@ -6,15 +6,14 @@ import javacard.framework.ISOException;
 import javacard.framework.Util;
 import javacard.security.ECKey;
 import javacard.security.ECPrivateKey;
-import javacard.security.KeyAgreement;
 import javacard.security.KeyBuilder;
 import javacard.security.Signature;
 
 /**
- * secp256k1 domain (SEC 2 v2 §2.4.1), scalar multiplication through {@code
- * ALG_EC_SVDP_DH_PLAIN_XY}, compression, the explicit on-curve check of §16.5 and the DER ⇄ {@code
- * r ‖ s} codec of §1. Owns the shared {@code ALG_ECDSA_SHA_256} engine and the transient private
- * key every scalar multiplication is loaded into.
+ * secp256k1 domain (SEC 2 v2 §2.4.1), scalar multiplication through the shared {@link Mem#plainXy}
+ * {@code ALG_EC_SVDP_DH_PLAIN_XY} engine, compression, the explicit on-curve check of §16.5 and the
+ * DER ⇄ {@code r ‖ s} codec of §1. Owns the shared {@code ALG_ECDSA_SHA_256} engine and the
+ * transient private key every scalar multiplication is loaded into.
  */
 final class Secp256k1 {
     /** Field prime {@code p}. */
@@ -81,8 +80,6 @@ final class Secp256k1 {
     /** Single-use scalar slot of {@link #mul}; wiped by {@link #wipeScalar}. */
     private final ECPrivateKey ephKey;
 
-    private final KeyAgreement agreement;
-
     Secp256k1(Mem mem, ModArith modArith) {
         this.mem = mem;
         this.modArith = modArith;
@@ -94,7 +91,6 @@ final class Secp256k1 {
                                 KeyBuilder.LENGTH_EC_FP_256,
                                 false);
         setDomain(ephKey);
-        agreement = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY, false);
     }
 
     /** Loads the SEC 2 §2.4.1 parameters onto a key object. */
@@ -122,14 +118,14 @@ final class Secp256k1 {
     }
 
     /**
-     * {@code out = scalar·point} (65-byte uncompressed) via PLAIN_XY. Loads the scalar into the
-     * transient key; a {@code CryptoException} (invalid point, §3 item 3) propagates to the caller,
-     * which maps it.
+     * {@code out = scalar·point} (65-byte uncompressed) via PLAIN_XY; returns the written length.
+     * Loads the scalar into the transient key; a {@code CryptoException} (invalid point, §3 item 3)
+     * propagates to the caller, which maps it.
      */
-    void mul(byte[] scalar, short sOff, byte[] point, short pOff, byte[] out, short oOff) {
+    short mul(byte[] scalar, short sOff, byte[] point, short pOff, byte[] out, short oOff) {
         ephKey.setS(scalar, sOff, (short) 32);
-        agreement.init(ephKey);
-        agreement.generateSecret(point, pOff, Const.POINT_LEN, out, oOff);
+        mem.plainXy.init(ephKey);
+        return mem.plainXy.generateSecret(point, pOff, Const.POINT_LEN, out, oOff);
     }
 
     /** Overwrites the transient scalar slot; no {@code clearKey} anywhere (architecture.md §4). */
@@ -156,10 +152,10 @@ final class Secp256k1 {
             return Const.CHECK_FAIL;
         }
         byte[] p = mem.P;
-        modArith.square(point, (short) (off + 33), p, P_Y2);
-        modArith.mul(point, (short) (off + 1), point, (short) (off + 1), p, P_X2);
-        modArith.mul(p, P_X2, point, (short) (off + 1), p, P_RHS);
-        modArith.addMod(p, P_RHS, B32, (short) 0, p, P_X2);
+        modArith.square(ModArith.MOD_P, point, (short) (off + 33), p, P_Y2);
+        modArith.mul(ModArith.MOD_P, point, (short) (off + 1), point, (short) (off + 1), p, P_X2);
+        modArith.mul(ModArith.MOD_P, p, P_X2, point, (short) (off + 1), p, P_RHS);
+        modArith.addMod(ModArith.MOD_P, p, P_RHS, B32, (short) 0, p, P_X2);
         return Bytes.equal(p, P_Y2, p, P_X2, (short) 32);
     }
 
