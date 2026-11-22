@@ -14,10 +14,10 @@ must produce identical bytes: `gen/java` (BouncyCastle) and `gen/ts` (noble). Th
 
 | File | `protocol.md` sections | Independent oracle | Generated from stage | Present |
 | --- | --- | --- | --- | --- |
-| `kdf.json` | 1, 8.1, 10.1 | NIST SP 800-38B CMAC examples; Python `cryptography` | `core` | not yet |
-| `cert.json` | 5 | noble `secp256k1`; BouncyCastle | `core` | not yet |
-| `session.json` | 8.1–8.2 | noble; Python `cryptography` | `core` | not yet |
-| `record.json` | 1, 8.3–8.4 | Python `cryptography` | `core` | not yet |
+| `kdf.json` | 1, 8.1, 10.1 | NIST SP 800-38B CMAC examples; Python `cryptography` | `core` | yes |
+| `cert.json` | 5 | noble `secp256k1`; BouncyCastle | `core` | yes |
+| `session.json` | 8.1–8.2 | noble; Python `cryptography` | `core` | yes |
+| `record.json` | 1, 8.3–8.4 | Python `cryptography` | `core` | yes |
 | `access.json` | 7.1 | `argon2-cffi` (reference C); noble `argon2id` | `wallet` | not yet |
 | `wrap.json` | 7.2, 10.1 | Python `cryptography`, `hashlib` | `wallet` | not yet |
 | `transfer.json` | 9.12–9.14, 10.5, 11 | noble; Python `cryptography`; libsecp256k1 (`coincurve`) | `sets` | not yet |
@@ -25,7 +25,7 @@ must produce identical bytes: `gen/java` (BouncyCastle) and `gen/ts` (noble). Th
 | `ecdsa.json` | 12.1 | noble `secp256k1`; BouncyCastle | `sign` | not yet |
 | `bip340.json` | 12.2 | BIP-340 reference CSV; BIP-86 vectors; noble `schnorr` | `sign` | not yet |
 | `ed25519.json` | 10.4, 12.3 | RFC 8032; noble `ed25519`; libsodium | `sign` | not yet |
-| `apdu.json` | 9, 13, 14 | Generated from the protocol tables by `gen/apdu.py` | `core`, extended by every later stage for its commands | not yet |
+| `apdu.json` | 9, 13, 14 | Generated from the protocol tables by `gen/apdu.py` | `core`, extended by every later stage for its commands | yes |
 | `verify-sequence.json` | 7.3, 9.3, 9.5, 9.12, 9.14, 9.15 | Generated from §9 by `gen/sequence.py` | `wallet` | not yet |
 | `ndef.json` | 15 | NFC Forum T4T 2.0 §5 by hand | `release` | not yet |
 
