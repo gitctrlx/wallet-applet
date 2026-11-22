@@ -12,7 +12,9 @@ plugins {
 description = "qntx card applet (one CAP, package org.qntx.card)"
 
 val jcKitDir = rootProject.layout.projectDirectory.dir("sdks/${libs.versions.javacard.sdk.get()}")
-val targetSdk = libs.versions.javacard.target.get()
+val targetSdk =
+    libs.versions.javacard.target
+        .get()
 
 val antJavaCard: Configuration by configurations.creating
 
@@ -106,3 +108,15 @@ val cap by tasks.registering {
 }
 
 tasks.assemble { dependsOn(cap) }
+
+tasks.cyclonedxDirectBom {
+    projectType = org.cyclonedx.model.Component.Type.FIRMWARE
+    componentName = "qntx-card"
+    includeConfigs = listOf("antJavaCard", "compileClasspath")
+    jsonOutput =
+        layout.buildDirectory
+            .file("reports/qntx-card.cdx.json")
+            .get()
+            .asFile
+    xmlOutput.unsetConvention()
+}

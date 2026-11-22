@@ -1,12 +1,9 @@
-# SPDX-FileCopyrightText: 2026 meowl.social contributors
-# SPDX-License-Identifier: AGPL-3.0-or-later
 name: CI
 
 on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -17,68 +14,93 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  build:
+  lint:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
     steps:
-      - name: Checkout (with SDK submodule)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: recursive
-
-      - name: Set up JDK 25
-        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+          persist-credentials: false
+      - name: REUSE lint
+        uses: fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5 # v6.0.0
+      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
         with:
           distribution: temurin
           java-version: "25"
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
           validate-wrappers: true
           cache-read-only: ${{ github.event_name == 'pull_request' }}
-
-      - name: Spotless check
+      - name: Spotless
         run: ./gradlew spotlessCheck
 
-      - name: Build CAPs (wallet + NDEF + backup)
-        run: ./gradlew :wallet:buildCap :ndef:buildCap :backup:buildCap
-
-      - name: Run tests
-        run: ./gradlew :tests:test :tools:test
-
-      - name: Upload wallet CAP
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          name: meowl-wallet-cap
-          path: wallet/build/cap/meowl-wallet.cap
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload NDEF CAP
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
         with:
-          name: meowl-ndef-cap
-          path: ndef/build/cap/meowl-ndef.cap
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload backup CAP
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+          distribution: temurin
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
-          name: meowl-backup-cap
-          path: backup/build/cap/meowl-backup.cap
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload test reports on failure
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+          validate-wrappers: true
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+      - name: Build and test
+        run: ./gradlew build --no-build-cache
+      - name: Reproducible CAP
+        run: |
+          first=$(sha256sum applet/build/cap/qntx-card.cap | cut -d' ' -f1)
+          ./gradlew :applet:cap --rerun-tasks --no-build-cache
+          second=$(sha256sum applet/build/cap/qntx-card.cap | cut -d' ' -f1)
+          echo "first  $first"; echo "second $second"
+          test "$first" = "$second"
+          {
+            echo "## CAP"
+            echo "- qntx-card.cap: $(stat -c %s applet/build/cap/qntx-card.cap) B, sha256 \`$first\`"
+            echo "- components: $(unzip -l applet/build/cap/qntx-card.cap 'org/qntx/card/javacard/*.cap' | tail -1 | awk '{print $1}') B"
+            echo "## Transient memory"
+            echo '```'
+            cat tests/build/reports/memory.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Mutation tests
+        run: ./gradlew :tests:pitest
+      - name: SBOM
+        run: ./gradlew :applet:cyclonedxDirectBom
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
         with:
-          name: test-reports
+          name: build
           path: |
-            tests/build/reports/tests/**
-            tests/build/test-results/**
-          if-no-files-found: ignore
+            applet/build/cap/qntx-card.cap
+            applet/build/reports/qntx-card.cdx.json
+            tests/build/reports/
+            sim/build/reports/
+          if-no-files-found: warn
           retention-days: 14
+
+  vectors:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          validate-wrappers: true
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.5"
+      - name: Both generators agree
+        run: spec/vectors/gen/check.sh
