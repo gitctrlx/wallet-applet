@@ -33,6 +33,9 @@ class TransactionTest {
     private static final byte INS_TX_WIDE = 0x38;
     private static final byte INS_TX_OPEN = 0x2F;
     private static final byte INS_TX_OPEN_SEND = 0x39;
+    private static final byte INS_TX_THROW = 0x3A;
+    private static final byte INS_TX_SETA = 0x3B;
+    private static final byte INS_READ_A = 0x3C;
     private static final byte INS_READ_BUF = 0x30;
     private static final byte INS_READ_AES = 0x32;
     private static final byte INS_READ_S = 0x33;
@@ -191,18 +194,37 @@ class TransactionTest {
     }
 
     @Test
-    void clearKeyRollsBackAndCostsNothing() {
+    void clearKeyRollsBack() {
         byte[] key = new byte[16];
         Arrays.fill(key, (byte) 0x0C);
         card.transmit(cmd(INS_SET_AES, (byte) 0, (byte) 0, key));
 
         assertSw(card.transmit(cmd(INS_TX_CLEARKEY, ABORT, (byte) 0)), 0x9000);
         assertArrayEquals(key, read(INS_READ_AES, 0));
-        assertEquals(0, card.commitBytes());
+        assertEquals(512, card.commitBytes());
 
         assertSw(card.transmit(cmd(INS_TX_CLEARKEY, COMMIT, (byte) 0)), 0x9000);
         // cleared: getKey throws UNINITIALIZED_KEY, surfaced as 6F00
         assertSw(card.transmit(cmd(INS_READ_AES, (byte) 0, (byte) 0)), 0x6F00);
+        assertEquals(512, card.commitBytes());
+    }
+
+    @Test
+    void setARollsBack() {
+        // jcardsim keys default to secp256r1 domain parameters, so the
+        // initial 'a' is the curve coefficient
+        byte[] initial = read(INS_READ_A, 0);
+        assertEquals(32, initial.length);
+        byte[] updated = new byte[32];
+        updated[31] = 0x07;
+
+        assertSw(card.transmit(cmd(INS_TX_SETA, ABORT, (byte) 0, updated)), 0x9000);
+        assertArrayEquals(initial, read(INS_READ_A, 0));
+        assertEquals(512, card.commitBytes());
+
+        assertSw(card.transmit(cmd(INS_TX_SETA, COMMIT, (byte) 0, updated)), 0x9000);
+        assertArrayEquals(updated, read(INS_READ_A, 0));
+        assertEquals(512, card.commitBytes());
     }
 
     @Test
@@ -273,6 +295,19 @@ class TransactionTest {
         assertSw(response, 0x6F00);
         assertArrayEquals(new byte[] {0x41, 0x42}, data(response));
         assertEquals((byte) 0x41, read(INS_READ_BUF, 4)[0]);
+    }
+
+    @Test
+    void exceptionExitAutoAborts() {
+        card.transmit(cmd(INS_TX_STORE, COMMIT, (byte) 0x41));
+        // process() throws with the transaction open: the card aborts
+        // it and reports 6F00, not the exception's own status word
+        byte[] response = card.transmit(cmd(INS_TX_THROW, (byte) 0, (byte) 0x7F));
+        assertSw(response, 0x6F00);
+        assertEquals((byte) 0x41, read(INS_READ_BUF, 4)[0]);
+        // depth is 0 again: the next transaction starts cleanly
+        assertSw(card.transmit(cmd(INS_TX_STORE, COMMIT, (byte) 0x42)), 0x9000);
+        assertEquals((byte) 0x42, read(INS_READ_BUF, 4)[0]);
     }
 
     @Test

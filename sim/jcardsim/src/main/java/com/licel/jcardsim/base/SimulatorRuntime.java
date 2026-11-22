@@ -408,9 +408,18 @@ public class SimulatorRuntime {
             if (e instanceof org.qntx.card.sim.PowerLoss) {
                 throw (org.qntx.card.sim.PowerLoss) e;
             }
-            Util.setShort(theSW, (short) 0, ISO7816.SW_UNKNOWN);
-            if (e instanceof ISOException) {
-                Util.setShort(theSW, (short) 0, ((ISOException) e).getReason());
+            if (transactionDepth != 0) {
+                // an exception leaving process() with a transaction
+                // open is aborted like the normal-return path: the
+                // card answers SW_UNKNOWN, not the exception's own
+                // status word (patch 3)
+                abortTransaction();
+                Util.setShort(theSW, (short) 0, ISO7816.SW_UNKNOWN);
+            } else {
+                Util.setShort(theSW, (short) 0, ISO7816.SW_UNKNOWN);
+                if (e instanceof ISOException) {
+                    Util.setShort(theSW, (short) 0, ((ISOException) e).getReason());
+                }
             }
         }
         finally {

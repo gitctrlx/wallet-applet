@@ -261,7 +261,9 @@ public final class CardRuntime extends SimulatorRuntime {
                         saved.add(new Object[] {field, field.get(key), Boolean.FALSE});
                     }
                 } catch (ReflectiveOperationException | RuntimeException e) {
-                    // field not readable or save() not possible; skip
+                    // a field we cannot snapshot would restore
+                    // incompletely on rollback with no other signal
+                    throw new IllegalStateException("cannot journal key field " + field, e);
                 }
             }
         }

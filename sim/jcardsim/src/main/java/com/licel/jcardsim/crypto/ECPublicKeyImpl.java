@@ -62,13 +62,14 @@ public class ECPublicKeyImpl extends ECKeyImpl implements ECPublicKey {
     
 
     public void setW(byte[] buffer, short offset, short length) throws CryptoException {
-        // persistent key-object write: charge, count, journal (patches 2 and 5)
-        Nvm.keyWrite(this, CardRuntime.SET_W_CHARGE);
+        checkKeyData(buffer, offset, length);
         // card A rejects any non-0x04 encoding but does no on-curve
         // check here: off-curve points are accepted (audit-impl F-6)
         if (length > 0 && buffer[offset] != 0x04) {
             CryptoException.throwIt(CryptoException.ILLEGAL_VALUE);
         }
+        // persistent key-object write: charge, count, journal (patches 2 and 5)
+        Nvm.keyWrite(this, CardRuntime.SET_W_CHARGE);
         w.setBytes(buffer, offset, length);
     }
 

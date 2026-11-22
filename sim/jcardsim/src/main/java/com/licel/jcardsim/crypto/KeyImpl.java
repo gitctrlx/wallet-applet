@@ -33,4 +33,19 @@ public abstract class KeyImpl implements Key, KeyWithParameters {
     public byte getType() {
         return type;
     }
+
+    /**
+     * Argument check run before the persistent-write hook in the key
+     * setters: a call that would throw writing counts as no key-object
+     * write, so it must not be counted, charged or journaled (patches
+     * 2 and 5). Mirrors the bounds failures of Util.arrayCopy.
+     */
+    static void checkKeyData(byte[] buffer, short offset, short length) {
+        if (buffer == null) {
+            throw new NullPointerException();
+        }
+        if (offset < 0 || length < 0 || offset + length > buffer.length) {
+            throw new ArrayIndexOutOfBoundsException();
+        }
+    }
 }

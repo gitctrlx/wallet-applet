@@ -50,6 +50,9 @@ public final class TxProbe extends Applet {
     private static final byte INS_READ_EXP = 0x35;
     private static final byte INS_READ_PUB_MOD = 0x36;
     private static final byte INS_SET_AES = 0x37;
+    private static final byte INS_TX_THROW = 0x3A;
+    private static final byte INS_TX_SETA = 0x3B;
+    private static final byte INS_READ_A = 0x3C;
 
     private static final short BUF_LEN = 272;
     private static final short SPAN_LEN = 600;
@@ -219,6 +222,21 @@ public final class TxProbe extends Applet {
                 JCSystem.beginTransaction();
                 buf[0] = p2;
                 return;
+            case INS_TX_THROW:
+                JCSystem.beginTransaction();
+                buf[0] = p2;
+                // leaving process() by exception with the transaction
+                // open aborts it like the normal-return path
+                ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+                return;
+            case INS_TX_SETA:
+                {
+                    short lc = apdu.setIncomingAndReceive();
+                    JCSystem.beginTransaction();
+                    ecPub.setA(buffer, ISO7816.OFFSET_CDATA, lc);
+                    finish(p1);
+                    return;
+                }
             case INS_TX_OPEN_SEND:
                 // send a response prefix, then leave the transaction
                 // open: the card auto-aborts and reports 6F00
@@ -269,6 +287,15 @@ public final class TxProbe extends Applet {
             case INS_READ_EXP:
                 try {
                     short len = rsaPriv.getExponent(buffer, ISO7816.OFFSET_CDATA);
+                    apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, len);
+                } catch (CryptoException e) {
+                    buffer[ISO7816.OFFSET_CDATA] = (byte) 0xEE;
+                    apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short) 1);
+                }
+                return;
+            case INS_READ_A:
+                try {
+                    short len = ecPub.getA(buffer, ISO7816.OFFSET_CDATA);
                     apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, len);
                 } catch (CryptoException e) {
                     buffer[ISO7816.OFFSET_CDATA] = (byte) 0xEE;

@@ -75,8 +75,8 @@ public class SymmetricKeyImpl extends KeyImpl implements DESKey, AESKey, HMACKey
      * Clears the key and sets its initialized state to false.
      */
     public void clearKey() {
-        // persistent key-object write: free charge, counted, journaled (patches 2 and 5)
-        Nvm.keyWrite(this, 0);
+        // persistent key-object write: charge, count, journal (patches 2 and 5)
+        Nvm.keyWrite(this, CardRuntime.SET_KEY_CHARGE);
         key.clear();
     }
 
@@ -84,6 +84,7 @@ public class SymmetricKeyImpl extends KeyImpl implements DESKey, AESKey, HMACKey
      * Sets the <code>Key</code> data.
      */
     public void setKey(byte[] keyData, short kOff) throws CryptoException, NullPointerException, ArrayIndexOutOfBoundsException {
+        checkKeyData(keyData, kOff, (short) (size / 8));
         // persistent key-object write: charge, count, journal (patches 2 and 5)
         Nvm.keyWrite(this, CardRuntime.SET_KEY_CHARGE);
         key.setBytes(keyData, kOff, (short) (size / 8));
@@ -93,6 +94,7 @@ public class SymmetricKeyImpl extends KeyImpl implements DESKey, AESKey, HMACKey
      * Sets the <code>Key</code> data.
      */
     public void setKey(byte[] keyData, short kOff, short kLen) throws CryptoException, NullPointerException, ArrayIndexOutOfBoundsException {
+        checkKeyData(keyData, kOff, kLen);
         // persistent key-object write: charge, count, journal (patches 2 and 5)
         Nvm.keyWrite(this, CardRuntime.SET_KEY_CHARGE);
         key.setBytes(keyData, kOff, kLen);

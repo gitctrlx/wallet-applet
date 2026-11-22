@@ -82,8 +82,8 @@ public abstract class ECKeyImpl extends KeyImpl implements ECKey {
     }
 
     public void clearKey() {
-        // persistent key-object write: free charge, counted, journaled (patches 2 and 5)
-        Nvm.keyWrite(this, 0);
+        // persistent key-object write: charge, count, journal (patches 2 and 5)
+        Nvm.keyWrite(this, CardRuntime.SET_KEY_CHARGE);
         a.clear();
         b.clear();
         g.clear();
@@ -101,6 +101,9 @@ public abstract class ECKeyImpl extends KeyImpl implements ECKey {
     }    
 
     public void setFieldFP(byte[] buffer, short offset, short length) throws CryptoException {
+        checkKeyData(buffer, offset, length);
+        // persistent key-object write: charge, count, journal (patches 2 and 5)
+        Nvm.keyWrite(this, CardRuntime.SET_KEY_CHARGE);
         fp.setBytes(buffer, offset, length);
     }
 
@@ -109,28 +112,44 @@ public abstract class ECKeyImpl extends KeyImpl implements ECKey {
     }
 
     public void setFieldF2M(short e1, short e2, short e3) throws CryptoException {
+        // persistent key-object write: charge, count, journal (patches 2 and 5)
+        Nvm.keyWrite(this, CardRuntime.SET_KEY_CHARGE);
         this.e1 = e1;
         this.e2 = e2;
         this.e3 = e3;
     }
 
     public void setA(byte[] buffer, short offset, short length) throws CryptoException {
+        checkKeyData(buffer, offset, length);
+        // persistent key-object write: charge, count, journal (patches 2 and 5)
+        Nvm.keyWrite(this, CardRuntime.SET_KEY_CHARGE);
         a.setBytes(buffer, offset, length);
     }
 
     public void setB(byte[] buffer, short offset, short length) throws CryptoException {
+        checkKeyData(buffer, offset, length);
+        // persistent key-object write: charge, count, journal (patches 2 and 5)
+        Nvm.keyWrite(this, CardRuntime.SET_KEY_CHARGE);
         b.setBytes(buffer, offset, length);
     }
 
     public void setG(byte[] buffer, short offset, short length) throws CryptoException {
+        checkKeyData(buffer, offset, length);
+        // persistent key-object write: charge, count, journal (patches 2 and 5)
+        Nvm.keyWrite(this, CardRuntime.SET_KEY_CHARGE);
         g.setBytes(buffer, offset, length);
     }
 
     public void setR(byte[] buffer, short offset, short length) throws CryptoException {
+        checkKeyData(buffer, offset, length);
+        // persistent key-object write: charge, count, journal (patches 2 and 5)
+        Nvm.keyWrite(this, CardRuntime.SET_KEY_CHARGE);
         r.setBytes(buffer, offset, length);
     }
 
     public void setK(short K) {
+        // persistent key-object write: charge, count, journal (patches 2 and 5)
+        Nvm.keyWrite(this, CardRuntime.SET_KEY_CHARGE);
         this.k = K;
         isKInitialized = true;
     }
@@ -198,14 +217,18 @@ public abstract class ECKeyImpl extends KeyImpl implements ECKey {
         g.setBytes(parameters.getG().getEncoded(false));
         // order
         r.setBigInteger(parameters.getN());
-        // cofactor
-        setK(parameters.getH().shortValue());
+        // cofactor: internal initialization is not an applet-visible
+        // key-object write, so it bypasses the hooked setK (patch 2)
+        this.k = parameters.getH().shortValue();
+        isKInitialized = true;
         if (parameters.getCurve() instanceof ECCurve.Fp) {
             ECCurve.Fp ecfp = (ECCurve.Fp) parameters.getCurve();
             fp.setBigInteger(ecfp.getQ());
         } else {
             ECCurve.F2m ecf2m = (ECCurve.F2m) parameters.getCurve();
-            setFieldF2M((short) ecf2m.getK1(), (short) ecf2m.getK2(), (short) ecf2m.getK3());
+            this.e1 = (short) ecf2m.getK1();
+            this.e2 = (short) ecf2m.getK2();
+            this.e3 = (short) ecf2m.getK3();
         }
     }
 

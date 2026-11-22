@@ -198,8 +198,9 @@ public final class ByteContainer {
 
     /**
      * Restore a snapshot produced by {@link #save()}: restores the data
-     * array and length, and clears {@code theKey} when the snapshot was
-     * uninitialized (e.g. rolling back {@code setKey} on a fresh key).
+     * array and length; a snapshot taken while the container was
+     * uninitialized leaves it uninitialized again (rolling back
+     * {@code setKey} on a fresh key).
      */
     public void restore(Object snapshot) {
         Object[] state = (Object[]) snapshot;

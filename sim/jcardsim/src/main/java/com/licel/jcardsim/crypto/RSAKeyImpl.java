@@ -82,18 +82,22 @@ public class RSAKeyImpl extends KeyImpl implements RSAPrivateKey, RSAPublicKey {
     }
 
     public void setExponent(byte[] buffer, short offset, short length) throws CryptoException {
+        checkKeyData(buffer, offset, length);
         // persistent key-object write: charge, count, journal (patches 2 and 5)
         Nvm.keyWrite(this, CardRuntime.SET_KEY_CHARGE);
         exponent.setBytes(buffer, offset, length);
     }
 
     public void setModulus(byte[] buffer, short offset, short length) throws CryptoException {
+        checkKeyData(buffer, offset, length);
+        // persistent key-object write: charge, count, journal (patches 2 and 5)
+        Nvm.keyWrite(this, CardRuntime.SET_KEY_CHARGE);
         modulus.setBytes(buffer, offset, length);
     }
 
     public void clearKey() {
-        // persistent key-object write: free charge, counted, journaled (patches 2 and 5)
-        Nvm.keyWrite(this, 0);
+        // persistent key-object write: charge, count, journal (patches 2 and 5)
+        Nvm.keyWrite(this, CardRuntime.SET_KEY_CHARGE);
         exponent.clear();
         modulus.clear();
     }
