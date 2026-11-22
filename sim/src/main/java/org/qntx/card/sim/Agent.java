@@ -14,6 +14,9 @@ import java.lang.classfile.instruction.ArrayStoreInstruction;
 import java.lang.classfile.instruction.ExceptionCatch;
 import java.lang.classfile.instruction.FieldInstruction;
 import java.lang.classfile.instruction.InvokeInstruction;
+import java.lang.classfile.instruction.NewMultiArrayInstruction;
+import java.lang.classfile.instruction.NewPrimitiveArrayInstruction;
+import java.lang.classfile.instruction.NewReferenceArrayInstruction;
 import java.lang.constant.ClassDesc;
 import java.lang.constant.MethodTypeDesc;
 import java.lang.instrument.ClassFileTransformer;
@@ -31,11 +34,12 @@ import java.util.Set;
  * patch 5). It runs on {@code -javaagent} with a comma-separated list of instrumented package
  * names, e.g. {@code -javaagent:sim-agent.jar=org/qntx/card/sim/probe}.
  *
- * <p>Per instrumented class it replaces {@code bastore}/{@code sastore}, rewrites {@code
- * Util.arrayCopy*}/{@code setShort}, {@code JCSystem.makeTransient*}, factory {@code getInstance}
- * calls and {@code KeyBuilder.buildKey*} through {@link Nvm}/{@link Memory}, and prepends a {@link
- * Nvm#rethrowPowerLoss} stub to every exception handler so a {@link PowerLoss} skips handler bodies
- * entirely.
+ * <p>Per instrumented class it registers fresh arrays with {@link Nvm#trackArray} so only
+ * applet-allocated arrays count as persistent targets, replaces {@code bastore}/{@code sastore},
+ * rewrites {@code Util.arrayCopy*}/{@code setShort}, {@code JCSystem.makeGlobalArray}, {@code
+ * JCSystem.makeTransient*}, factory {@code getInstance} calls and {@code KeyBuilder.buildKey*}
+ * through {@link Nvm}/{@link Memory}, and prepends a {@link Nvm#rethrowPowerLoss} stub to every
+ * exception handler so a {@link PowerLoss} skips handler bodies entirely.
  */
 public final class Agent {
 
@@ -120,6 +124,9 @@ public final class Agent {
                 case ArrayStoreInstruction store -> rewriteArrayStore(builder, store);
                 case FieldInstruction field -> rewriteFieldStore(builder, field);
                 case InvokeInstruction invoke -> rewriteInvoke(builder, invoke);
+                case NewPrimitiveArrayInstruction create -> trackNewArray(builder, create);
+                case NewReferenceArrayInstruction create -> trackNewArray(builder, create);
+                case NewMultiArrayInstruction create -> trackNewArray(builder, create);
                 case ExceptionCatch handler -> redirectHandler(builder, handler);
                 default -> builder.with(element);
             }
@@ -148,6 +155,13 @@ public final class Agent {
             } else {
                 builder.with(store);
             }
+        }
+
+        private void trackNewArray(CodeBuilder builder, CodeElement create) {
+            builder.with(create);
+            builder.dup();
+            builder.invokestatic(
+                    NVM, "trackArray", MethodTypeDesc.ofDescriptor("(Ljava/lang/Object;)V"));
         }
 
         private void rewriteFieldStore(CodeBuilder builder, FieldInstruction field) {
@@ -184,6 +198,7 @@ public final class Agent {
                                 };
                         case "javacard/framework/JCSystem" ->
                                 switch (name) {
+                                    case "makeGlobalArray" -> NVM;
                                     case "makeTransientByteArray",
                                             "makeTransientShortArray",
                                             "makeTransientBooleanArray",

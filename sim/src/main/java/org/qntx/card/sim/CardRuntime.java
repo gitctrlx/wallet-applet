@@ -7,9 +7,10 @@ import com.licel.jcardsim.crypto.ByteContainer;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
-import javacard.framework.JCSystem;
+import java.util.Set;
 import javacard.framework.SystemException;
 import javacard.framework.TransactionException;
 import javacard.security.Key;
@@ -63,13 +64,9 @@ public final class CardRuntime extends SimulatorRuntime {
     private final List<Runnable> journal = new ArrayList<>();
     private final IdentityHashMap<Object, int[]> spans = new IdentityHashMap<>();
     private final IdentityHashMap<Object, Object> keySnapshots = new IdentityHashMap<>();
-    private final Object[] apduBuffers;
+    private final Set<Object> appletArrays = Collections.newSetFromMap(new IdentityHashMap<>());
     private int transientUsed;
     private final List<String> transientAllocations = new ArrayList<>();
-
-    public CardRuntime() {
-        apduBuffers = new Object[] {shortAPDU.getBuffer(), extendedAPDU.getBuffer()};
-    }
 
     void bind(Phase newPhase) {
         CURRENT.set(this);
@@ -94,19 +91,20 @@ public final class CardRuntime extends SimulatorRuntime {
     }
 
     /**
-     * Persistent arrays are every array the applet can reach that is neither registered transient
-     * memory nor an APDU buffer.
+     * Registers an array allocated by instrumented applet bytecode (or {@code makeGlobalArray}) as
+     * applet-owned card memory.
+     */
+    void registerArray(Object array) {
+        appletArrays.add(array);
+    }
+
+    /**
+     * Persistent arrays are exactly the arrays the applet allocated itself. APDU buffers,
+     * transient-memory allocations, jcardsim temporaries and arrays other agents plant inside the
+     * applet (coverage probes) never qualify.
      */
     boolean isPersistentArray(Object array) {
-        if (array == null) {
-            return false;
-        }
-        for (Object buffer : apduBuffers) {
-            if (array == buffer) {
-                return false;
-            }
-        }
-        return transientMemory.isTransient(array) == JCSystem.NOT_A_TRANSIENT_OBJECT;
+        return appletArrays.contains(array);
     }
 
     /**

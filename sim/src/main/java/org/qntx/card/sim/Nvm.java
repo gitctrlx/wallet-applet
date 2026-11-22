@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package org.qntx.card.sim;
 
+import javacard.framework.JCSystem;
 import javacard.framework.Util;
 import javacard.security.Key;
 import javacard.security.KeyBuilder;
@@ -10,12 +11,34 @@ import javacard.security.KeyBuilder;
  * Persistent-write hooks the {@link Agent} weaves into applet bytecode (architecture spec section
  * 8, patch 5). Every hook charges the commit buffer, counts the write for {@link Card#writes()} and
  * the armed tear point, and journals the pre-image while a transaction is open; the actual store
- * happens only if the hook returns normally. Writes while no {@link CardRuntime} is bound, and
- * writes to transient memory or the APDU buffer, pass through uncounted.
+ * happens only if the hook returns normally. Only arrays the applet allocated itself — creation
+ * instructions or {@code JCSystem.makeGlobalArray} results observed by the agent — count as
+ * persistent targets, so writes while no {@link CardRuntime} is bound, and writes to APDU buffers,
+ * transient memory or foreign arrays, pass through uncounted.
  */
 public final class Nvm {
 
     private Nvm() {}
+
+    /**
+     * Runs after every array-creation instruction in instrumented bytecode and registers the new
+     * array as applet-owned persistent memory. Arrays the applet did not allocate itself — APDU
+     * buffers, transient-memory allocations, harness or coverage-agent probe arrays — stay
+     * invisible to {@link CardRuntime#isPersistentArray}.
+     */
+    public static void trackArray(Object array) {
+        CardRuntime rt = CardRuntime.current();
+        if (rt != null) {
+            rt.registerArray(array);
+        }
+    }
+
+    /** Global arrays are persistent card memory; track the fresh one like an applet allocation. */
+    public static Object makeGlobalArray(byte type, short capacity) {
+        Object array = JCSystem.makeGlobalArray(type, capacity);
+        trackArray(array);
+        return array;
+    }
 
     /**
      * Replacement for {@code bastore}. The incoming value is widened to {@code int} so the same
