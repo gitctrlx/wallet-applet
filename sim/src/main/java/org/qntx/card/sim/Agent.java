@@ -47,6 +47,10 @@ public final class Agent {
     private Agent() {}
 
     public static void premain(String args, Instrumentation inst) {
+        // no -javaagent argument: instrument the applet package
+        if (args == null || args.isEmpty()) {
+            args = "org/qntx/card";
+        }
         Set<String> packages = new HashSet<>(Arrays.asList(args.split(",")));
         inst.addTransformer(new AppletTransformer(packages));
         installed = true;
