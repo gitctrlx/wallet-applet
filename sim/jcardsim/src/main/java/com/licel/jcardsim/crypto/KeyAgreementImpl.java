@@ -108,6 +108,14 @@ public class KeyAgreementImpl extends KeyAgreement {
             BigInteger retAgreement = engine.calculateAgreement(new DHPublicKeyParameters(pubKey, baseParam));
             return (new ByteContainer(retAgreement)).getBytes(secret, secretOffset);
         } else {
+            // card A rejects compressed encodings on the raw-point
+            // agreements (patch 2); upstream's decodePoint silently
+            // accepted them
+            if ((algorithm == ALG_EC_SVDP_DH_PLAIN_XY || algorithm == ALG_EC_PACE_GM)
+                    && publicLength > 0
+                    && (publicData[publicOffset] == 0x02 || publicData[publicOffset] == 0x03)) {
+                CryptoException.throwIt(CryptoException.ILLEGAL_VALUE);
+            }
             byte[] publicKey = new byte[publicLength];
             Util.arrayCopyNonAtomic(publicData, publicOffset, publicKey, (short) 0, publicLength);
             ECPublicKeyParameters ecp = new ECPublicKeyParameters(
@@ -205,6 +213,11 @@ public class KeyAgreementImpl extends KeyAgreement {
         public BigInteger calculateAgreement(CipherParameters publicKey) {
             ECPublicKeyParameters pub = (ECPublicKeyParameters) publicKey;
             ECPoint result = this.key.getParameters().getG().multiply(this.key.getD()).add(pub.getQ());
+            if (result.isInfinity()) {
+                // card A aborts the agreement when H = -s·G makes the
+                // sum the point at infinity (patch 3)
+                CryptoException.throwIt(CryptoException.ILLEGAL_VALUE);
+            }
             return new BigInteger(1, result.getEncoded(false));
         }
     }
