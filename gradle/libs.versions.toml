@@ -1,60 +1,26 @@
 [versions]
-# Build / runtime toolchain
 jdk = "25"
-gradle = "9.5.1"
-
-# JavaCard SDK kit (folder under sdks/, comes from oracle_javacard_sdks submodule).
 javacard-sdk = "jc320v26.0_kit"
-# CAP file targetsdk — keep 3.0.5 for maximum card compatibility (Keycard etc.).
 javacard-target = "3.0.5"
-
-# Martin Paljak ecosystem (published to mvn.javacard.pro). Date-versioned.
-ant-javacard      = "26.05.15"
-apdu4j            = "26.04.20.1"
-globalplatformpro = "26.04.20.1"
-
-# Card simulator (com.klinec fork on Maven Central).
-jcardsim = "3.0.6.0"
-
-# Host-side libs.
+ant-javacard = "26.05.15"
 bouncycastle = "1.84"
-slf4j        = "2.0.18"
-
-# Host CLI stack (tools/ module).
-picocli      = "4.7.7"
-jline        = "3.30.4"
-jackson-jr   = "2.19.1"
-
-# Testing.
+asm = "9.11.1"
 junit = "6.0.3"
-
-# Static analysis / formatting / supply-chain.
-spotless           = "8.5.1"
+pitest = "1.30.2"
+pitest-junit5 = "1.2.3"
 google-java-format = "1.35.0"
-ktlint             = "1.8.0"
-foojay-resolver    = "1.0.0"
-cyclonedx          = "3.2.4"
+ktlint = "1.8.0"
 
 [libraries]
-ant-javacard      = { module = "com.github.martinpaljak:ant-javacard",     version.ref = "ant-javacard" }
-jcardsim          = { module = "com.klinec:jcardsim",                      version.ref = "jcardsim" }
-apdu4j-pcsc       = { module = "com.github.martinpaljak:apdu4j-pcsc",      version.ref = "apdu4j" }
-apdu4j-core       = { module = "com.github.martinpaljak:apdu4j-core",      version.ref = "apdu4j" }
-gppro             = { module = "com.github.martinpaljak:globalplatformpro", version.ref = "globalplatformpro" }
-bouncycastle-prov = { module = "org.bouncycastle:bcprov-jdk18on",          version.ref = "bouncycastle" }
-slf4j-api         = { module = "org.slf4j:slf4j-api",                      version.ref = "slf4j" }
-slf4j-simple      = { module = "org.slf4j:slf4j-simple",                   version.ref = "slf4j" }
-
-picocli         = { module = "info.picocli:picocli",                       version.ref = "picocli" }
-picocli-codegen = { module = "info.picocli:picocli-codegen",               version.ref = "picocli" }
-jline           = { module = "org.jline:jline",                            version.ref = "jline" }
-jackson-jr      = { module = "com.fasterxml.jackson.jr:jackson-jr-objects", version.ref = "jackson-jr" }
-
-junit-bom               = { module = "org.junit:junit-bom",                version.ref = "junit" }
-junit-jupiter           = { module = "org.junit.jupiter:junit-jupiter" }
+ant-javacard = { module = "com.github.martinpaljak:ant-javacard", version.ref = "ant-javacard" }
+bouncycastle-prov = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bouncycastle" }
+asm-commons = { module = "org.ow2.asm:asm-commons", version.ref = "asm" }
+asm-tree = { module = "org.ow2.asm:asm-tree", version.ref = "asm" }
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 
 [plugins]
-spotless          = { id = "com.diffplug.spotless",                           version.ref = "spotless" }
-foojay-resolver   = { id = "org.gradle.toolchains.foojay-resolver-convention", version.ref = "foojay-resolver" }
-cyclonedx         = { id = "org.cyclonedx.bom",                               version.ref = "cyclonedx" }
+spotless = { id = "com.diffplug.spotless", version = "8.5.1" }
+cyclonedx = { id = "org.cyclonedx.bom", version = "3.2.4" }
+pitest = { id = "info.solidsoft.pitest", version = "1.19.0" }
