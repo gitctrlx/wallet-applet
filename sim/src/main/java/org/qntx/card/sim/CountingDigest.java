@@ -48,5 +48,9 @@ final class CountingDigest extends MessageDigest {
 
     public void reset() {
         inner.reset();
+        CardRuntime rt = CardRuntime.current();
+        if (rt != null) {
+            rt.digestReset(algorithm);
+        }
     }
 }

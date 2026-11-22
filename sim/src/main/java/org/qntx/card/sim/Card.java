@@ -123,6 +123,11 @@ public final class Card {
         return runtime.digestBytes(algorithm);
     }
 
+    /** {@code reset} calls on {@code algorithm} engines during the last command. */
+    public int resets(byte algorithm) {
+        return runtime.resets(algorithm);
+    }
+
     /** One line per charged transient allocation plus a usage total. */
     public String memoryReport() {
         return runtime.memoryReport();

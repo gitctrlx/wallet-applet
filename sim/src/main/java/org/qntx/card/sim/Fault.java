@@ -3,7 +3,9 @@
 package org.qntx.card.sim;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import javacard.security.CryptoException;
 
 /**
@@ -23,7 +25,7 @@ public final class Fault {
 
     private static final class Slot {
         int calls;
-        int nth;
+        final Set<Integer> nth = new HashSet<>();
         short value;
         boolean throwing;
         boolean skipping;
@@ -40,12 +42,13 @@ public final class Fault {
 
     /**
      * Makes the {@code nth} call (1-based, counted since arming or the last {@link #reset}) of
-     * {@code method} return {@code value} instead of its real result.
+     * {@code method} return {@code value} instead of its real result. Repeated calls accumulate
+     * positions, so several evaluations of one method can be forced in a single command.
      */
     public static void arm(String method, int nth, short value) {
         Slot s = armed.computeIfAbsent(method, k -> new Slot());
         s.calls = 0;
-        s.nth = nth;
+        s.nth.add(nth);
         s.value = value;
         s.throwing = false;
         s.skipping = false;
@@ -59,7 +62,7 @@ public final class Fault {
     public static void armThrow(String method, int nth) {
         Slot s = armed.computeIfAbsent(method, k -> new Slot());
         s.calls = 0;
-        s.nth = nth;
+        s.nth.add(nth);
         s.throwing = true;
         s.skipping = false;
         active = true;
@@ -74,7 +77,7 @@ public final class Fault {
     public static void armSkip(String method, int nth) {
         Slot s = armed.computeIfAbsent(method, k -> new Slot());
         s.calls = 0;
-        s.nth = nth;
+        s.nth.add(nth);
         s.throwing = false;
         s.skipping = true;
         active = true;
@@ -123,7 +126,7 @@ public final class Fault {
         }
         counts.merge(method, 1, Integer::sum);
         Slot s = armed.get(method);
-        return s != null && s.skipping && ++s.calls == s.nth;
+        return s != null && s.skipping && s.nth.contains(++s.calls);
     }
 
     /**
@@ -144,7 +147,7 @@ public final class Fault {
         }
         counts.merge(method, 1, Integer::sum);
         Slot s = armed.get(method);
-        if (s == null || ++s.calls != s.nth) {
+        if (s == null || !s.nth.contains(++s.calls)) {
             return value;
         }
         if (s.throwing) {
