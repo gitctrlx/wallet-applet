@@ -182,6 +182,40 @@ public final class ByteContainer {
         return length > 0;
     }
 
+    /**
+     * Snapshot this container for the transaction journal: the data
+     * bytes plus the initialized length, so a rollback restores both
+     * (architecture spec section 8, patch 4).
+     */
+    public Object save() {
+        byte[] dataCopy = null;
+        if (data != null) {
+            dataCopy = new byte[data.length];
+            System.arraycopy(data, 0, dataCopy, 0, data.length);
+        }
+        return new Object[] {dataCopy, Short.valueOf(length)};
+    }
+
+    /**
+     * Restore a snapshot produced by {@link #save()}: restores the data
+     * array and length, and clears {@code theKey} when the snapshot was
+     * uninitialized (e.g. rolling back {@code setKey} on a fresh key).
+     */
+    public void restore(Object snapshot) {
+        Object[] state = (Object[]) snapshot;
+        byte[] savedData = (byte[]) state[0];
+        short savedLength = ((Short) state[1]).shortValue();
+        if (savedData == null) {
+            data = null;
+        } else {
+            if (data == null || data.length != savedData.length) {
+                data = new byte[savedData.length];
+            }
+            System.arraycopy(savedData, 0, data, 0, savedData.length);
+        }
+        length = savedLength;
+    }
+
 
     private void allocateData(short length) {
         // transient key storage registers directly with the runtime's

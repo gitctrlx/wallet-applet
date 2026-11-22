@@ -305,6 +305,11 @@ public class SimulatorRuntime {
                     Util.setShort(theSW, (short)0, ISO7816.SW_NO_ERROR );
                 }
                 catch (Throwable e) {
+                    // power loss must not be converted into a status word;
+                    // it has to reach Card.transmit (patch 5)
+                    if (e instanceof org.qntx.card.sim.PowerLoss) {
+                        throw (org.qntx.card.sim.PowerLoss) e;
+                    }
                     Util.setShort(theSW, (short)0, ISO7816.SW_UNKNOWN);
                     if (e instanceof CardException) {
                         Util.setShort(theSW, (short)0, ((CardException)e).getReason());
@@ -390,6 +395,11 @@ public class SimulatorRuntime {
             applet.process(apdu);
             Util.setShort(theSW, (short) 0, (short) 0x9000);
         } catch (Throwable e) {
+            // power loss must not be converted into a status word;
+            // it has to reach Card.transmit (patch 5)
+            if (e instanceof org.qntx.card.sim.PowerLoss) {
+                throw (org.qntx.card.sim.PowerLoss) e;
+            }
             Util.setShort(theSW, (short) 0, ISO7816.SW_UNKNOWN);
             if (e instanceof ISOException) {
                 Util.setShort(theSW, (short) 0, ((ISOException) e).getReason());
@@ -738,12 +748,17 @@ public class SimulatorRuntime {
             initMethod.invoke(null, bArray, bOffset, bLength);
         }
         catch (InvocationTargetException e) {
-            try {
-                ISOException isoException = (ISOException) e.getCause();
-                throw isoException;
-            } catch (ClassCastException cce){
-                throw new SystemException(SystemException.ILLEGAL_AID);
+            // rethrow the real install failure so tests see it:
+            // NO_TRANSIENT_SPACE, CryptoException, unmeasured-engine
+            // IllegalStateException, PowerLoss (patch 6)
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException) {
+                throw (RuntimeException) cause;
             }
+            if (cause instanceof Error) {
+                throw (Error) cause;
+            }
+            throw new SystemException(SystemException.ILLEGAL_AID);
         }
         catch (Exception e) {
             throw new SystemException(SystemException.ILLEGAL_AID);

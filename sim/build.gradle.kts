@@ -6,7 +6,7 @@ plugins {
 
 val apiClassicJar =
     rootProject.layout.projectDirectory.file(
-        "sdks/${libs.versions.javacard.sdk.get()}/lib/api_classic-${libs.versions.javacard.target.get()}.jar"
+        "sdks/${libs.versions.javacard.sdk.get()}/lib/api_classic-${libs.versions.javacard.target.get()}.jar",
     )
 
 java {
@@ -105,6 +105,6 @@ tasks.test {
     jvmArgumentProviders.add(
         CommandLineArgumentProvider {
             listOf("-javaagent:${agentJar.get().archiveFile.get().asFile.absolutePath}=org/qntx/card/sim/probe")
-        }
+        },
     )
 }
