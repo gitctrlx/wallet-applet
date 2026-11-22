@@ -90,10 +90,7 @@ public final class CardRuntime extends SimulatorRuntime {
         return phase == Phase.COMMAND;
     }
 
-    /**
-     * Registers an array allocated by instrumented applet bytecode (or {@code makeGlobalArray}) as
-     * applet-owned card memory.
-     */
+    /** Registers an array allocated by instrumented applet bytecode as applet-owned card memory. */
     void registerArray(Object array) {
         appletArrays.add(array);
     }

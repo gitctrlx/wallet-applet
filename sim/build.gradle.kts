@@ -1,4 +1,5 @@
 import org.gradle.process.CommandLineArgumentProvider
+import java.io.OutputStream
 
 plugins {
     `java-library`
@@ -59,6 +60,8 @@ val processJavacardApi =
         // on a consumer classpath.
         classpath = files(compiledClasses, apiClassicJar, configurations.runtimeClasspath)
         mainClass.set("com.licel.jcardsim.utils.JavaCardApiProcessor")
+        // the processor logs every merged method; keep build output readable
+        standardOutput = OutputStream.nullOutputStream()
         args(javacardApiStaging.get().asFile.absolutePath)
         inputs.dir(javacardApiStaging)
         outputs.dir(javacardApiStaging)

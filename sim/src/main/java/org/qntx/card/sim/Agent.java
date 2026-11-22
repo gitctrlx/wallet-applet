@@ -36,10 +36,10 @@ import java.util.Set;
  *
  * <p>Per instrumented class it registers fresh arrays with {@link Nvm#trackArray} so only
  * applet-allocated arrays count as persistent targets, replaces {@code bastore}/{@code sastore},
- * rewrites {@code Util.arrayCopy*}/{@code setShort}, {@code JCSystem.makeGlobalArray}, {@code
- * JCSystem.makeTransient*}, factory {@code getInstance} calls and {@code KeyBuilder.buildKey*}
- * through {@link Nvm}/{@link Memory}, and prepends a {@link Nvm#rethrowPowerLoss} stub to every
- * exception handler so a {@link PowerLoss} skips handler bodies entirely.
+ * rewrites {@code Util.arrayCopy*}/{@code setShort}, {@code JCSystem.makeTransient*}, factory
+ * {@code getInstance} calls and {@code KeyBuilder.buildKey*} through {@link Nvm}/{@link Memory},
+ * and prepends a {@link Nvm#rethrowPowerLoss} stub to every exception handler so a {@link
+ * PowerLoss} skips handler bodies entirely.
  */
 public final class Agent {
 
@@ -198,7 +198,6 @@ public final class Agent {
                                 };
                         case "javacard/framework/JCSystem" ->
                                 switch (name) {
-                                    case "makeGlobalArray" -> NVM;
                                     case "makeTransientByteArray",
                                             "makeTransientShortArray",
                                             "makeTransientBooleanArray",

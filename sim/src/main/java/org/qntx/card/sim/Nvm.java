@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package org.qntx.card.sim;
 
-import javacard.framework.JCSystem;
 import javacard.framework.Util;
 import javacard.security.Key;
 import javacard.security.KeyBuilder;
@@ -12,9 +11,9 @@ import javacard.security.KeyBuilder;
  * 8, patch 5). Every hook charges the commit buffer, counts the write for {@link Card#writes()} and
  * the armed tear point, and journals the pre-image while a transaction is open; the actual store
  * happens only if the hook returns normally. Only arrays the applet allocated itself — creation
- * instructions or {@code JCSystem.makeGlobalArray} results observed by the agent — count as
- * persistent targets, so writes while no {@link CardRuntime} is bound, and writes to APDU buffers,
- * transient memory or foreign arrays, pass through uncounted.
+ * instructions observed by the agent — count as persistent targets, so writes while no {@link
+ * CardRuntime} is bound, and writes to APDU buffers, transient memory or foreign arrays, pass
+ * through uncounted.
  */
 public final class Nvm {
 
@@ -31,13 +30,6 @@ public final class Nvm {
         if (rt != null) {
             rt.registerArray(array);
         }
-    }
-
-    /** Global arrays are persistent card memory; track the fresh one like an applet allocation. */
-    public static Object makeGlobalArray(byte type, short capacity) {
-        Object array = JCSystem.makeGlobalArray(type, capacity);
-        trackArray(array);
-        return array;
     }
 
     /**
