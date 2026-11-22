@@ -23,7 +23,7 @@ final class TeardownTest {
 
     private static void assertDead(Card card) {
         Applet applet = card.applet(Spec.WALLET_AID);
-        assertArrayEquals(new byte[8], Internals.words(applet), "session words not cleared");
+        assertArrayEquals(new byte[10], Internals.words(applet), "session words not cleared");
         byte[] key = new byte[16];
         for (String name : KEYS) {
             AESKey k = Internals.sessionKey(applet, name);
@@ -32,6 +32,9 @@ final class TeardownTest {
         }
         assertArrayEquals(new byte[130], Internals.pBytes(applet), "Mem.P not wiped");
         assertArrayEquals(new byte[256], Internals.wBytes(applet), "Mem.W not wiped");
+        assertArrayEquals(new byte[64], Internals.seedBytes(applet), "seed not wiped");
+        assertArrayEquals(new byte[138], Internals.secpCacheBytes(applet), "secpCache not wiped");
+        assertArrayEquals(new byte[105], Internals.edCacheBytes(applet), "edCache not wiped");
         byte[] s = new byte[32];
         Internals.ephKey(applet).getS(s, (short) 0);
         assertArrayEquals(new byte[32], s, "ephemeral scalar not wiped");
@@ -124,6 +127,49 @@ final class TeardownTest {
         byte[] rapdu = card.transmit(session.wrap(0x20, 0, 0, new byte[0]));
         assertEquals(0x9000, session.unwrap(rapdu).sw());
         assertDead(card);
+    }
+
+    @Test
+    void walletSecretsDieWithTheSession() throws Exception {
+        // load a wallet, verify, derive both curve paths and run one WAIT so the seed, both
+        // derivation caches and the waited word hold nonzero data before the tear
+        Card card = Vecs.blankSelf();
+        Session session = Vecs.loadWallet(card);
+        assertEquals(0x9000, Vecs.roundtrip(card, session, 0x22, 0, 0, Vecs.accessHash()).sw());
+        assertEquals(0x9000, Vecs.roundtrip(card, session, 0x30, 0, 0, Vecs.pathSecpEvm()).sw());
+        assertEquals(0x9000, Vecs.roundtrip(card, session, 0x30, 1, 0, Vecs.pathEdSolana()).sw());
+        assertEquals(0x9000, Vecs.roundtrip(card, session, 0x25, 0, 0, new byte[0]).sw());
+        Applet applet = card.applet(Spec.WALLET_AID);
+        assertNotZero(Internals.seedBytes(applet));
+        assertNotZero(Internals.secpCacheBytes(applet));
+        assertNotZero(Internals.edCacheBytes(applet));
+        card.transmit(Spec.SELECT);
+        assertDead(card);
+    }
+
+    @Test
+    void innerFaultWipesWalletSecrets() throws Exception {
+        // a 6F00 inside the record kills the session and all its secrets (§8.5)
+        Card card = Vecs.blankSelf();
+        Session session = Vecs.loadWallet(card);
+        assertEquals(0x9000, Vecs.roundtrip(card, session, 0x22, 0, 0, Vecs.accessHash()).sw());
+        assertEquals(0x9000, Vecs.roundtrip(card, session, 0x30, 0, 0, Vecs.pathSecpEvm()).sw());
+        byte[] state = Internals.stateArray(card.applet(Spec.WALLET_AID));
+        state[2] = 0x12;
+        state[3] = 0x34;
+        state[4] = 0x12;
+        state[5] = 0x34;
+        assertEquals(0x6F00, Vecs.roundtrip(card, session, 0x20, 0, 0, new byte[0]).sw());
+        assertDead(card);
+    }
+
+    private static void assertNotZero(byte[] data) {
+        for (byte b : data) {
+            if (b != 0) {
+                return;
+            }
+        }
+        throw new AssertionError("expected nonzero data");
     }
 
     @Test

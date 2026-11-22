@@ -164,10 +164,98 @@ public final class Vecs {
         return session.unwrap(rapdu);
     }
 
+    /** The fixed access hash the LOADED test card was created with (access.json valid[0]). */
+    public static byte[] accessHash() {
+        return hex(list(load("access.json"), "valid").get(0), "accessHash");
+    }
+
+    /** An access hash different from {@link #accessHash} (access.json valid[1]). */
+    public static byte[] accessHashWrong() {
+        return hex(list(load("access.json"), "valid").get(1), "accessHash");
+    }
+
+    /** A third access hash, for CHANGE (access.json valid[2]). */
+    public static byte[] accessHashNew() {
+        return hex(list(load("access.json"), "valid").get(2), "accessHash");
+    }
+
+    /** The fixed CREATE {@code hostEntropy}: any value, constant across runs. */
+    public static byte[] entropy() {
+        return unhex("b1b2b3b4b5b6b7b8b9babbbcbdbebfb0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0");
+    }
+
+    /** {@code derivation.json templates.seed} — its BIP-32 master is valid. */
+    public static byte[] seed() {
+        return hex(obj(load("derivation.json"), "templates"), "seed");
+    }
+
+    /** {@code derivation.json templates.masterPublicKey}. */
+    public static byte[] seedMasterPublicKey() {
+        return hex(obj(load("derivation.json"), "templates"), "masterPublicKey");
+    }
+
+    /** {@code publicKey \u2016 chainCode} of the derivation.json evm template. */
+    public static byte[] pkSecpEvm() {
+        for (Map<String, Object> t : list(obj(load("derivation.json"), "templates"), "secp256k1")) {
+            if (t.get("name").equals("evm")) {
+                byte[] out = new byte[65];
+                byte[] pub = hex(t, "publicKey");
+                System.arraycopy(pub, 0, out, 0, 33);
+                System.arraycopy(hex(t, "chainCode"), 0, out, 33, 32);
+                return out;
+            }
+        }
+        throw new IllegalStateException("derivation.json lacks secp256k1 evm template");
+    }
+
+    /** {@code W(A)} of the derivation.json solana template. */
+    public static byte[] pkEdSolana() {
+        for (Map<String, Object> t : list(obj(load("derivation.json"), "templates"), "ed25519")) {
+            if (t.get("name").equals("solana")) {
+                return hex(t, "wei");
+            }
+        }
+        throw new IllegalStateException("derivation.json lacks ed25519 solana template");
+    }
+
+    /** Wire path {@code m/44'/60'/0'/0/0} (the secp256k1 evm template). */
+    public static byte[] pathSecpEvm() {
+        return unhex("058000002c8000003c800000000000000000000000");
+    }
+
+    /** Wire path {@code m/44'/501'/0'/0'} (the ed25519 solana template). */
+    public static byte[] pathEdSolana() {
+        return unhex("048000002c800001f58000000080000000");
+    }
+
+    /** A card ID different from {@code ID(a)} ({@code marker} must differ per caller). */
+    private static byte[] otherId(byte[] a, int marker) {
+        byte[] id = Ids.cardId(a);
+        id[0] ^= (byte) marker;
+        return id;
+    }
+
+    /**
+     * The {@code LOADED} setup of apdu.json: on a BLANK card, OPEN, {@code CREATE P1 = 01} with
+     * {@code accessHash \u2016 seed} and no other members, then a new OPEN — whose session is
+     * returned, open but not verified.
+     */
+    public static Session loadWallet(Card card) throws Exception {
+        Session session = open(card);
+        byte[] data = new byte[96];
+        System.arraycopy(accessHash(), 0, data, 0, 32);
+        System.arraycopy(seed(), 0, data, 32, 64);
+        Response r = roundtrip(card, session, 0x21, 1, 0, data);
+        if (r.sw() != 0x9000) {
+            throw new IllegalStateException("CREATE failed: " + Integer.toHexString(r.sw()));
+        }
+        return open(card);
+    }
+
     /**
      * Resolves an apdu.json {@code {symbol}} placeholder for the card under test. Symbols not
      * listed need no resolution in the cases that use them ({@code openResponse} is matched
-     * structurally, {@code record0} comes from record.json).
+     * structurally, {@code masterPublicKey.any} is a response-only wildcard).
      */
     public static byte[] symbol(String name, Card card, byte[] a) {
         return switch (name) {
@@ -190,6 +278,17 @@ public final class Vecs {
             case "record0" ->
                     Arrays.copyOfRange(
                             hex(list(load("record.json"), "commands").get(0), "apdu"), 5, 29);
+            case "accessHash" -> accessHash();
+            case "accessHash.wrong" -> accessHashWrong();
+            case "accessHash.new" -> accessHashNew();
+            case "entropy" -> entropy();
+            case "seed" -> seed();
+            case "seed.masterPublicKey" -> seedMasterPublicKey();
+            case "pk.secp.evm" -> pkSecpEvm();
+            case "pk.ed.solana" -> pkEdSolana();
+            case "id.self" -> Ids.cardId(a);
+            case "id.other1" -> otherId(a, 0x01);
+            case "id.other2" -> otherId(a, 0x02);
             default -> throw new IllegalArgumentException("unknown symbol " + name);
         };
     }

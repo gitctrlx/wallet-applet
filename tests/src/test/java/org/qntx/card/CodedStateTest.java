@@ -117,6 +117,28 @@ final class CodedStateTest {
     }
 
     @Test
+    void outOfRangeFailsReportZeroTries() throws Exception {
+        // §9.3: tries = max(L − f, 0) — consistent complements of out-of-range f give 0
+        for (short f : new short[] {(short) 0x8000, 11, 10, 9, 0, (short) -1}) {
+            Card card = Vecs.blankSelf();
+            var session = Vecs.loadWallet(card);
+            byte[] state = Internals.stateArray(card.applet(Spec.WALLET_AID));
+            state[State.OFF_FAILS] = (byte) (f >> 8);
+            state[State.OFF_FAILS + 1] = (byte) f;
+            state[State.OFF_FAILS + 2] = (byte) (~f >> 8);
+            state[State.OFF_FAILS + 3] = (byte) ~f;
+            var r = Vecs.roundtrip(card, session, 0x20, 0, 0, new byte[0]);
+            assertEquals(0x9000, r.sw());
+            short expected = (short) (f < 0 || f >= Const.FAIL_LIMIT ? 0 : Const.FAIL_LIMIT - f);
+            assertEquals(
+                    expected,
+                    r.data()[1],
+                    "f=" + Integer.toHexString(f & 0xFFFF) + " must report " + expected);
+            assertEquals(0x02, r.data()[0]);
+        }
+    }
+
+    @Test
     void corruptOfferAndOriginAreReadAsFaultsOnlyWhenUsed() {
         // origin/offer are not read by any core command; only verify the coded values differ
         // from every neighbor by >= 8 bits, which the pairwise test already covers.
