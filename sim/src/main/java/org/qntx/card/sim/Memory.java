@@ -14,53 +14,82 @@ import javacardx.crypto.Cipher;
 /**
  * Transient-memory hooks the {@link Agent} weaves into applet bytecode (architecture spec section
  * 8, patch 6): only calls from instrumented applet packages pass through here, so these entry
- * points can charge card A's measured transient pool. The charge table lives on {@link
- * CardRuntime}.
+ * points charge card A's measured transient pool (audit-impl memory.out). While a card command or
+ * install is bound they charge {@link CardRuntime}; with no card bound they are a plain pass
+ * through so applet classes also run in plain unit tests.
  */
 public final class Memory {
 
     private Memory() {}
 
     public static byte[] makeTransientByteArray(short length, byte event) {
+        charge(length, "transient byte[" + (length & 0xFFFF) + "]");
         return JCSystem.makeTransientByteArray(length, event);
     }
 
     public static short[] makeTransientShortArray(short length, byte event) {
+        charge(2 * (length & 0xFFFF), "transient short[" + (length & 0xFFFF) + "]");
         return JCSystem.makeTransientShortArray(length, event);
     }
 
     public static boolean[] makeTransientBooleanArray(short length, byte event) {
+        charge(length, "transient boolean[" + (length & 0xFFFF) + "]");
         return JCSystem.makeTransientBooleanArray(length, event);
     }
 
     public static Object[] makeTransientObjectArray(short length, byte event) {
+        charge(2 * (length & 0xFFFF), "transient Object[" + (length & 0xFFFF) + "]");
         return JCSystem.makeTransientObjectArray(length, event);
     }
 
     public static Key buildKey(byte keyType, short keyLength, boolean keyEncryption) {
+        CardRuntime rt = CardRuntime.current();
+        if (rt != null) {
+            rt.chargeTransientKey(keyType, keyLength);
+        }
         return KeyBuilder.buildKey(keyType, keyLength, keyEncryption);
     }
 
     public static Key buildKey(
             byte keyType, byte keyAlgorithmType, short keyLength, boolean keyEncryption) {
+        CardRuntime rt = CardRuntime.current();
+        if (rt != null) {
+            rt.chargeTransientKey(keyType, keyLength);
+        }
         return KeyBuilder.buildKey(keyType, keyAlgorithmType, keyLength, keyEncryption);
     }
 
     public static Key buildKeyWithSharedDomain(
             byte keyType, byte keyAlgorithmType, Key domainKey, boolean keyEncryption) {
+        CardRuntime rt = CardRuntime.current();
+        if (rt != null && Nvm.isTransientKeyType(keyType)) {
+            rt.rejectUnmeasured("shared-domain transient key type " + keyType);
+        }
         return KeyBuilder.buildKeyWithSharedDomain(
                 keyType, keyAlgorithmType, domainKey, keyEncryption);
     }
 
     public static Cipher cipher(byte algorithm, boolean externalAccess) {
+        CardRuntime rt = CardRuntime.current();
+        if (rt != null) {
+            rt.chargeEngine("cipher", algorithm);
+        }
         return Cipher.getInstance(algorithm, externalAccess);
     }
 
     public static Cipher cipher(byte algorithm, byte paddingAlgorithm, boolean externalAccess) {
+        CardRuntime rt = CardRuntime.current();
+        if (rt != null) {
+            rt.rejectUnmeasured("Cipher overload with padding " + paddingAlgorithm);
+        }
         return Cipher.getInstance(algorithm, paddingAlgorithm, externalAccess);
     }
 
     public static Signature signature(byte algorithm, boolean externalAccess) {
+        CardRuntime rt = CardRuntime.current();
+        if (rt != null) {
+            rt.chargeEngine("signature", algorithm);
+        }
         return Signature.getInstance(algorithm, externalAccess);
     }
 
@@ -69,19 +98,42 @@ public final class Memory {
             byte cipherAlgorithm,
             byte messageDigestAlgorithm,
             boolean externalAccess) {
+        CardRuntime rt = CardRuntime.current();
+        if (rt != null) {
+            rt.rejectUnmeasured("Signature overload with parts " + signatureAlgorithm);
+        }
         return Signature.getInstance(
                 signatureAlgorithm, cipherAlgorithm, messageDigestAlgorithm, externalAccess);
     }
 
     public static MessageDigest messageDigest(byte algorithm, boolean externalAccess) {
+        CardRuntime rt = CardRuntime.current();
+        if (rt != null) {
+            rt.chargeEngine("digest", algorithm);
+        }
         return MessageDigest.getInstance(algorithm, externalAccess);
     }
 
     public static KeyAgreement keyAgreement(byte algorithm, boolean externalAccess) {
+        CardRuntime rt = CardRuntime.current();
+        if (rt != null) {
+            rt.chargeEngine("agreement", algorithm);
+        }
         return KeyAgreement.getInstance(algorithm, externalAccess);
     }
 
     public static RandomData randomData(byte algorithm) {
+        CardRuntime rt = CardRuntime.current();
+        if (rt != null) {
+            rt.chargeEngine("random", algorithm);
+        }
         return RandomData.getInstance(algorithm);
+    }
+
+    private static void charge(int bytes, String description) {
+        CardRuntime rt = CardRuntime.current();
+        if (rt != null) {
+            rt.chargeTransient(bytes, description);
+        }
     }
 }

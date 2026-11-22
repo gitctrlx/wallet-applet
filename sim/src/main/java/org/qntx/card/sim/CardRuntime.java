@@ -13,6 +13,12 @@ import javacard.framework.JCSystem;
 import javacard.framework.SystemException;
 import javacard.framework.TransactionException;
 import javacard.security.Key;
+import javacard.security.KeyAgreement;
+import javacard.security.KeyBuilder;
+import javacard.security.MessageDigest;
+import javacard.security.RandomData;
+import javacard.security.Signature;
+import javacardx.crypto.Cipher;
 
 /**
  * Card A runtime model (architecture spec section 8): command-local persistent-write counting, an
@@ -40,7 +46,7 @@ public final class CardRuntime extends SimulatorRuntime {
     public static final int SET_W_CHARGE = 1024;
     public static final int KEY_GEN_CHARGE = 1024;
     public static final int TRANSIENT_POOL = 3990;
-    public static final int TRANSIENT_BUDGET = 3990;
+    public static final int TRANSIENT_BUDGET = 3390;
 
     private static final ThreadLocal<CardRuntime> CURRENT = new ThreadLocal<>();
 
@@ -392,10 +398,81 @@ public final class CardRuntime extends SimulatorRuntime {
     }
 
     /**
-     * Reject engine instances card A does not support or measure; creating one must fail loudly
-     * rather than simulate unmeasured memory (patch 6).
+     * Measured transient-key cost of a {@code KeyBuilder} type/length pair (patch 6, audit-impl
+     * memory.out). Persistent keys are free; a transient pair card A does not carry must fail
+     * instead of simulating unmeasured memory.
      */
-    void rejectUnmeasured(String what) {
+    void chargeTransientKey(byte keyType, short keyLength) {
+        switch (keyType) {
+            case KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT:
+            case KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_RESET:
+                if (keyLength == KeyBuilder.LENGTH_EC_FP_256) {
+                    chargeTransient(272, "EC FP private transient 256");
+                    return;
+                }
+                break;
+            case KeyBuilder.TYPE_AES_TRANSIENT_DESELECT:
+            case KeyBuilder.TYPE_AES_TRANSIENT_RESET:
+                if (keyLength == KeyBuilder.LENGTH_AES_128) {
+                    chargeTransient(32, "AES transient 128");
+                    return;
+                }
+                break;
+            default:
+        }
+        if (Nvm.isTransientKeyType(keyType)) {
+            throw new IllegalStateException(
+                    "unmeasured transient key on card A: type " + keyType + " length " + keyLength);
+        }
+    }
+
+    /**
+     * Measured engine transient sizes (patch 6, audit-impl memory.out); any other algorithm fails
+     * the allocation loudly.
+     */
+    void chargeEngine(String kind, byte algorithm) {
+        int size =
+                switch (kind) {
+                    case "cipher" ->
+                            switch (algorithm) {
+                                case Cipher.ALG_AES_BLOCK_128_CBC_NOPAD -> 48;
+                                case Cipher.ALG_RSA_NOPAD -> 0;
+                                default -> rejectUnmeasured("Cipher algorithm " + algorithm);
+                            };
+                    case "signature" ->
+                            switch (algorithm) {
+                                case Signature.ALG_AES_CMAC_128 -> 32;
+                                case Signature.ALG_ECDSA_SHA_256 -> 112;
+                                default -> rejectUnmeasured("Signature algorithm " + algorithm);
+                            };
+                    case "digest" ->
+                            switch (algorithm) {
+                                case MessageDigest.ALG_SHA_256 -> 128;
+                                case MessageDigest.ALG_SHA_512 -> 208;
+                                default -> rejectUnmeasured("MessageDigest algorithm " + algorithm);
+                            };
+                    case "agreement" ->
+                            switch (algorithm) {
+                                case KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY,
+                                        KeyAgreement.ALG_EC_PACE_GM ->
+                                        0;
+                                default -> rejectUnmeasured("KeyAgreement algorithm " + algorithm);
+                            };
+                    case "random" ->
+                            switch (algorithm) {
+                                case RandomData.ALG_KEYGENERATION -> 0;
+                                default -> rejectUnmeasured("RandomData algorithm " + algorithm);
+                            };
+                    default -> throw new IllegalArgumentException(kind);
+                };
+        chargeTransient(size, kind + " algorithm " + algorithm);
+    }
+
+    /**
+     * Reject engine instances card A does not support or measure; creating one must fail loudly
+     * rather than simulate unmeasured memory (patch 6). Typed so it can arm a switch branch.
+     */
+    <T> T rejectUnmeasured(String what) {
         throw new IllegalStateException("unmeasured engine on card A: " + what);
     }
 

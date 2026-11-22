@@ -95,9 +95,7 @@ class TearTest {
             byte[] read = data(card.transmit(cmd(INS_READ, (byte) 0, (byte) 0)));
             for (int i = 0; i < k; i++) {
                 assertEquals(
-                        (byte) (i < n - 1 ? 0x77 : 0x00),
-                        read[i],
-                        "tear at " + n + ": byte " + i);
+                        (byte) (i < n - 1 ? 0x77 : 0x00), read[i], "tear at " + n + ": byte " + i);
             }
         }
     }
