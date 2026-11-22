@@ -108,18 +108,36 @@ public class KeyAgreementImpl extends KeyAgreement {
             BigInteger retAgreement = engine.calculateAgreement(new DHPublicKeyParameters(pubKey, baseParam));
             return (new ByteContainer(retAgreement)).getBytes(secret, secretOffset);
         } else {
-            // card A rejects compressed encodings on the raw-point
-            // agreements (patch 2); upstream's decodePoint silently
-            // accepted them
-            if ((algorithm == ALG_EC_SVDP_DH_PLAIN_XY || algorithm == ALG_EC_PACE_GM)
-                    && publicLength > 0
-                    && (publicData[publicOffset] == 0x02 || publicData[publicOffset] == 0x03)) {
-                CryptoException.throwIt(CryptoException.ILLEGAL_VALUE);
-            }
             byte[] publicKey = new byte[publicLength];
             Util.arrayCopyNonAtomic(publicData, publicOffset, publicKey, (short) 0, publicLength);
-            ECPublicKeyParameters ecp = new ECPublicKeyParameters(
-                    ((ECPrivateKeyParameters) ((ECPrivateKeyImpl) privateKey).getParameters()).getParameters().getCurve().decodePoint(publicKey), ((ECPrivateKeyParameters) ((ECPrivateKeyImpl) privateKey).getParameters()).getParameters());
+            ECPublicKeyParameters ecp;
+            if (algorithm == ALG_EC_SVDP_DH_PLAIN_XY || algorithm == ALG_EC_PACE_GM) {
+                // card A validates the raw point on these agreements:
+                // anything but a 0x04 uncompressed encoding, a
+                // coordinate outside the field, or an off-curve point
+                // is ILLEGAL_VALUE (audit-impl F-6; upstream's
+                // decodePoint silently accepted all of them)
+                if (publicLength > 0 && publicData[publicOffset] != 0x04) {
+                    CryptoException.throwIt(CryptoException.ILLEGAL_VALUE);
+                }
+                ECPoint point;
+                try {
+                    point = ((ECPrivateKeyParameters) ((ECPrivateKeyImpl) privateKey)
+                            .getParameters()).getParameters().getCurve().decodePoint(publicKey);
+                } catch (IllegalArgumentException e) {
+                    CryptoException.throwIt(CryptoException.ILLEGAL_VALUE);
+                    return -1; // unreachable
+                }
+                if (point.isInfinity() || !point.isValid()) {
+                    CryptoException.throwIt(CryptoException.ILLEGAL_VALUE);
+                }
+                ecp = new ECPublicKeyParameters(point,
+                        ((ECPrivateKeyParameters) ((ECPrivateKeyImpl) privateKey)
+                                .getParameters()).getParameters());
+            } else {
+                ecp = new ECPublicKeyParameters(
+                        ((ECPrivateKeyParameters) ((ECPrivateKeyImpl) privateKey).getParameters()).getParameters().getCurve().decodePoint(publicKey), ((ECPrivateKeyParameters) ((ECPrivateKeyImpl) privateKey).getParameters()).getParameters());
+            }
             byte[] num = engine.calculateAgreement(ecp).toByteArray();
 
             byte[] result;
@@ -187,6 +205,11 @@ public class KeyAgreementImpl extends KeyAgreement {
         public BigInteger calculateAgreement(CipherParameters publicKey) {
             ECPublicKeyParameters pub = (ECPublicKeyParameters)publicKey;
             ECPoint result = pub.getQ().multiply(this.key.getD());
+            if (result.isInfinity()) {
+                // card A reports ILLEGAL_VALUE instead of the one-byte
+                // 00 encoding upstream produced (patch 4)
+                CryptoException.throwIt(CryptoException.ILLEGAL_VALUE);
+            }
             return new BigInteger(1, result.getEncoded(false));
         }
     }
@@ -215,7 +238,7 @@ public class KeyAgreementImpl extends KeyAgreement {
             ECPoint result = this.key.getParameters().getG().multiply(this.key.getD()).add(pub.getQ());
             if (result.isInfinity()) {
                 // card A aborts the agreement when H = -s·G makes the
-                // sum the point at infinity (patch 3)
+                // sum the point at infinity (patch 4)
                 CryptoException.throwIt(CryptoException.ILLEGAL_VALUE);
             }
             return new BigInteger(1, result.getEncoded(false));

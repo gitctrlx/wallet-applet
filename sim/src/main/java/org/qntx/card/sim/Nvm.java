@@ -125,7 +125,7 @@ public final class Nvm {
 
     /**
      * Persistent key-object write injected before key setter bodies and {@code KeyBuilder.buildKey}
-     * calls in instrumented code (patches 4 and 5): {@code charge} is the commit-buffer cost, 0 for
+     * calls in instrumented code (patches 2 and 5): {@code charge} is the commit-buffer cost, 0 for
      * free.
      */
     public static void keyWrite(Object key, int charge) {

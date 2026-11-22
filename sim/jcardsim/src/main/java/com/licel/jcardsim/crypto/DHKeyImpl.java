@@ -104,7 +104,7 @@ public abstract class DHKeyImpl extends KeyImpl implements DHKey {
     }
 
     public void clearKey() {
-        // persistent key-object write: free charge, counted, journaled (patch 4)
+        // persistent key-object write: free charge, counted, journaled (patches 2 and 5)
         Nvm.keyWrite(this, 0);
         p.clear();
         q.clear();

@@ -396,7 +396,7 @@ public class SimulatorRuntime {
             if (transactionDepth != 0) {
                 // an open transaction at process() return is aborted by
                 // the card; the response reports SW_UNKNOWN and keeps
-                // already-sent data (patch 4)
+                // already-sent data (patch 3)
                 abortTransaction();
                 Util.setShort(theSW, (short) 0, ISO7816.SW_UNKNOWN);
             } else {

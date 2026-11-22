@@ -60,7 +60,7 @@ public class ECPrivateKeyImpl extends ECKeyImpl implements ECPrivateKey {
     }
 
     public void setS(byte[] buffer, short offset, short length) throws CryptoException {
-        // persistent key-object write: charge, count, journal (patch 4)
+        // persistent key-object write: charge, count, journal (patches 2 and 5)
         Nvm.keyWrite(this, CardRuntime.SET_KEY_CHARGE);
         s.setBytes(buffer, offset, length);
     }

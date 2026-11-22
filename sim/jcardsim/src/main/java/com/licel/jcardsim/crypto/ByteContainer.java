@@ -185,7 +185,7 @@ public final class ByteContainer {
     /**
      * Snapshot this container for the transaction journal: the data
      * bytes plus the initialized length, so a rollback restores both
-     * (architecture spec section 8, patch 4).
+     * (architecture spec section 8, patch 2).
      */
     public Object save() {
         byte[] dataCopy = null;

@@ -9,7 +9,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.util.Arrays;
 import javacard.framework.ISO7816;
 import javacard.framework.TransactionException;
-import org.bouncycastle.asn1.sec.SECNamedCurves;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.qntx.card.sim.probe.TxProbe;
@@ -44,10 +43,6 @@ class TransactionTest {
 
     private static final byte COMMIT = 1;
     private static final byte ABORT = 0;
-
-    // jcardsim always initializes EC key domain parameters to
-    // secp256r1, so setW needs a real point on that curve
-    private static final byte[] W = SECNamedCurves.getByName("secp256r1").getG().getEncoded(false);
 
     private Card card;
 
@@ -174,7 +169,8 @@ class TransactionTest {
 
     @Test
     void setWRollsBack() {
-        byte[] w = W;
+        byte[] w = new byte[65];
+        w[0] = 0x04;
         assertSw(card.transmit(cmd(INS_TX_SETW, ABORT, (byte) 0, w)), 0x9000);
         assertEquals((byte) 0xEE, read(INS_READ_W, 0)[0]);
 
@@ -244,7 +240,8 @@ class TransactionTest {
 
     @Test
     void bufferPlusSetWCharges2048() {
-        byte[] w = W;
+        byte[] w = new byte[65];
+        w[0] = 0x04;
         assertSw(card.transmit(cmd(INS_TX_BUF_SETW, COMMIT, (byte) 0, w)), 0x9000);
         assertEquals(2048, card.commitBytes());
     }
@@ -281,7 +278,8 @@ class TransactionTest {
     @Test
     void tearRollsBackWholeTransaction() {
         card.transmit(cmd(INS_TX_STORE, COMMIT, (byte) 0x41));
-        byte[] w = W;
+        byte[] w = new byte[65];
+        w[0] = 0x04;
         card.tearAt(2);
         assertThrows(
                 TornException.class,

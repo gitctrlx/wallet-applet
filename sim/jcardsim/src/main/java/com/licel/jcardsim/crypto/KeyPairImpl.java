@@ -88,7 +88,7 @@ public final class KeyPairImpl {
      */
     public final void genKeyPair()
             throws CryptoException {
-        // persistent key-pair write: 1024 B charge covering both keys (patch 4)
+        // persistent key-pair write: 1024 B charge covering both keys (patches 2 and 5)
         Nvm.keyPairWrite(publicKey, privateKey);
         initEngine();        
         createKeys();

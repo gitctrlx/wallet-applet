@@ -102,29 +102,25 @@ class EcPointTest {
         return blob;
     }
 
+    // card A checks only the 0x04 uncompressed tag on setW (F-6)
     @Test
-    void setWRejectsCompressedPoint() {
+    void setWRejectsNonUncompressedEncodings() {
         byte[] compressed = SECP256K1.getG().getEncoded(true);
         assertEquals(0x02, compressed[0] & 0xFF);
         assertSw(card.transmit(cmd(INS_SET_W, compressed)), 0x6F11);
         compressed[0] = 0x03;
         assertSw(card.transmit(cmd(INS_SET_W, compressed)), 0x6F11);
+        compressed[0] = 0x00;
+        assertSw(card.transmit(cmd(INS_SET_W, compressed)), 0x6F11);
+        compressed[0] = 0x06;
+        assertSw(card.transmit(cmd(INS_SET_W, compressed)), 0x6F11);
     }
 
     @Test
-    void setWRejectsOffCurvePoint() {
+    void setWAcceptsOffCurvePoint() {
         byte[] w = SECP256K1.getG().getEncoded(false);
         w[w.length - 1] ^= 0x01;
-        assertSw(card.transmit(cmd(INS_SET_W, w)), 0x6F11);
-    }
-
-    @Test
-    void setWRejectsXAtFieldSize() {
-        // x = p is out of the field: decode fails as invalid element
-        byte[] w = SECP256K1.getG().getEncoded(false);
-        byte[] pBytes = toFixed(P, 32);
-        System.arraycopy(pBytes, 0, w, 1, 32);
-        assertSw(card.transmit(cmd(INS_SET_W, w)), 0x6F11);
+        assertSw(card.transmit(cmd(INS_SET_W, w)), 0x9000);
     }
 
     @Test
@@ -145,11 +141,31 @@ class EcPointTest {
         assertArrayEquals(expected, data(response));
     }
 
+    // on the raw-point agreements card A validates the point: any
+    // non-0x04 tag, off-curve point or coordinate >= p is ILLEGAL_VALUE
     @Test
     void agreementsRejectCompressedPoints() {
         byte[] compressed = SECP256K1.getG().getEncoded(true);
         assertSw(card.transmit(cmd(INS_AGREE_XY, compressed)), 0x6F11);
         assertSw(card.transmit(cmd(INS_AGREE_GM, compressed)), 0x6F11);
+    }
+
+    @Test
+    void agreementsRejectOffCurvePoints() {
+        byte[] off = SECP256K1.getG().getEncoded(false);
+        off[off.length - 1] ^= 0x01;
+        assertSw(card.transmit(cmd(INS_AGREE_XY, off)), 0x6F11);
+        assertSw(card.transmit(cmd(INS_AGREE_GM, off)), 0x6F11);
+    }
+
+    @Test
+    void agreementsRejectCoordinateAtFieldSize() {
+        // x = p is outside the field
+        byte[] w = SECP256K1.getG().getEncoded(false);
+        byte[] pBytes = toFixed(P, 32);
+        System.arraycopy(pBytes, 0, w, 1, 32);
+        assertSw(card.transmit(cmd(INS_AGREE_XY, w)), 0x6F11);
+        assertSw(card.transmit(cmd(INS_AGREE_GM, w)), 0x6F11);
     }
 
     @Test

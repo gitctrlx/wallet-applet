@@ -21,7 +21,6 @@ import javacard.security.ECPublicKey;
 import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.params.ECDomainParameters;
 import org.bouncycastle.crypto.params.ECPublicKeyParameters;
-import org.bouncycastle.math.ec.ECPoint;
 import org.qntx.card.sim.Nvm;
 import org.qntx.card.sim.CardRuntime;
 
@@ -63,25 +62,12 @@ public class ECPublicKeyImpl extends ECKeyImpl implements ECPublicKey {
     
 
     public void setW(byte[] buffer, short offset, short length) throws CryptoException {
-        // persistent key-object write: charge, count, journal (patch 4)
+        // persistent key-object write: charge, count, journal (patches 2 and 5)
         Nvm.keyWrite(this, CardRuntime.SET_W_CHARGE);
-        // card A rejects compressed encodings outright and, once the
-        // domain parameters are set, any point that is not on the
-        // curve (upstream accepted everything) (patch 2)
-        if (length > 0 && (buffer[offset] == 0x02 || buffer[offset] == 0x03)) {
+        // card A rejects any non-0x04 encoding but does no on-curve
+        // check here: off-curve points are accepted (audit-impl F-6)
+        if (length > 0 && buffer[offset] != 0x04) {
             CryptoException.throwIt(CryptoException.ILLEGAL_VALUE);
-        }
-        if (isDomainParametersInitialized() && length > 0 && buffer[offset] == 0x04) {
-            byte[] encoded = new byte[length];
-            System.arraycopy(buffer, offset, encoded, 0, length);
-            try {
-                ECPoint point = getDomainParameters().getCurve().decodePoint(encoded);
-                if (point.isInfinity() || !point.isValid()) {
-                    CryptoException.throwIt(CryptoException.ILLEGAL_VALUE);
-                }
-            } catch (IllegalArgumentException e) {
-                CryptoException.throwIt(CryptoException.ILLEGAL_VALUE);
-            }
         }
         w.setBytes(buffer, offset, length);
     }
