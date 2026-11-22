@@ -68,6 +68,7 @@ fun normalizeCap(cap: File) {
 
 val packageAid = "F0716E747800"
 val walletAid = "F0716E74780101"
+val ndefAid = "F0716E74780201"
 val capFile = layout.buildDirectory.file("cap/qntx-card.cap")
 
 val cap by tasks.registering {
@@ -100,6 +101,7 @@ val cap by tasks.registering {
                     "ints" to "false",
                 ) {
                     "applet"("class" to "org.qntx.card.WalletApplet", "aid" to walletAid)
+                    "applet"("class" to "org.qntx.card.NdefApplet", "aid" to ndefAid)
                 }
             }
         }
