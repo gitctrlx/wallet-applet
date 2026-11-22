@@ -19,6 +19,9 @@ public final class WalletApplet extends Applet {
     private final Identity identity;
     private final Session session;
     private final Derivation derivation;
+    private final Ecdsa ecdsa;
+    private final Bip340 bip340;
+    private final Ed25519 ed25519;
     private final Wallet wallet;
 
     private WalletApplet(byte[] bArray, short bOffset) {
@@ -31,6 +34,9 @@ public final class WalletApplet extends Applet {
         identity = new Identity(mem, state, secp);
         session = new Session(mem, state, secp, identity);
         derivation = new Derivation(mem, session, secp, wei, modArith);
+        ecdsa = new Ecdsa(mem, session, derivation, secp);
+        bip340 = new Bip340(mem, session, derivation, secp, modArith);
+        ed25519 = new Ed25519(mem, state, session, derivation, wei, modArith, identity);
         wallet = new Wallet(mem, state, session, identity, derivation);
         register(bArray, (short) (bOffset + 1), bArray[bOffset]);
     }
@@ -196,6 +202,22 @@ public final class WalletApplet extends Applet {
                 case Const.INS_PUBLIC_KEY:
                     out = derivation.publicKey(buf, p1, dataOff, dataLen);
                     break;
+                case Const.INS_SIGN_ECDSA:
+                    out = ecdsa.sign(buf, dataOff);
+                    break;
+                case Const.INS_SIGN_BIP340:
+                    out = bip340.sign(buf, dataOff);
+                    break;
+                case Const.INS_SIGN_ED25519:
+                    // §9.11 streams the message; checkLength already bounded dataLen per P1
+                    if (p1 == 0) {
+                        out = ed25519.begin(buf, dataOff);
+                    } else if (p1 == 1) {
+                        out = ed25519.update(buf, dataOff, dataLen);
+                    } else {
+                        out = ed25519.finish(buf, dataOff, dataLen);
+                    }
+                    break;
                 default:
                     break;
             }
@@ -245,6 +267,35 @@ public final class WalletApplet extends Applet {
                 if (dataLen != (short) (1 + depth * 4)) {
                     ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
                 }
+                return;
+            case Const.INS_SIGN_ECDSA:
+                // §9.9: digest(32) ‖ path — a shorter body can't equal 33 + 4·depth ≥ 33;
+                // the depth-byte read lands in the APDU buffer (≥ 133 bytes, always)
+                if (dataLen != (short) (33 + (buf[(short) (dataOff + 32)] & 0xFF) * 4)) {
+                    ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+                }
+                return;
+            case Const.INS_SIGN_BIP340:
+                // §9.10: message(32) ‖ tweak(32) ‖ path — a shorter body can't
+                // equal 65 + 4·depth ≥ 65 (the depth-byte read stays in the buffer)
+                if (dataLen != (short) (65 + (buf[(short) (dataOff + 64)] & 0xFF) * 4)) {
+                    ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+                }
+                return;
+            case Const.INS_SIGN_ED25519:
+                // §9.11: begin carries a path (1 + 4·depth), update a 1..236-byte
+                // chunk, finish a 0..236-byte tail; depth is checked by the
+                // command, length here only bounds it
+                if (p1 == 0) {
+                    // a body under one byte can't equal 1 + 4·depth ≥ 1
+                    if (dataLen != (short) (1 + (buf[dataOff] & 0xFF) * 4)) {
+                        ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+                    }
+                } else if (p1 == 1 && dataLen < 1) {
+                    ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+                }
+                // no upper bound to check: the record layer never delivers more
+                // than the 236-byte maximum a chunk or tail may carry
                 return;
             default:
                 // checkLength runs only for §9.2-table INS values; the row lookup and

@@ -33,8 +33,8 @@ final class Derivation {
 
     /**
      * Cache layout inside {@link Mem#secpCache} and {@link Mem#edCache}: {@code depth(1) ‖
-     * indices(40) ‖ key(32) ‖ chain(32) ‖ pub(33, secp256k1 only)}. {@code pub[0] = 0} marks a
-     * parent whose compressed public key was never computed.
+     * indices(40) ‖ key(32) ‖ chain(32) ‖ pub(65, secp256k1 only)}. {@code pub[0] = 0} marks a
+     * parent whose uncompressed public key was never computed; {@code 0x04} marks a present one.
      */
     private static final short C_DEPTH = 0;
 
@@ -45,6 +45,13 @@ final class Derivation {
 
     /** {@link Mem#P} slot: uncompressed point / CKD {@code I} (64 B), below the identity slot. */
     private static final short P_TMP = 0;
+
+    /**
+     * {@link Mem#P} slot of a child's parent public point {@code K_par} (65 B): the point the
+     * non-hardened CKD input compresses from and, after {@link #derive} of a non-hardened leaf, the
+     * key {@link Ecdsa} needs for the §16.2 item 5 public-derivation check.
+     */
+    static final short P_PAR = 65;
 
     private final Mem mem;
     private final Session session;
@@ -119,11 +126,12 @@ final class Derivation {
     /**
      * One {@code CKDpriv} step of §10.3 / the hardened-only SLIP-10 step of §10.4: reads the node
      * in {@link Mem#N}, applies index {@code data[iOff..iOff+4)} (big-endian), leaves the child
-     * node in {@link Mem#N}. {@code pub[pOff]} is THIS parent's cached compressed key: {@code pOff
-     * < 0} means none (the point is computed), a marker {@code 0x02}/{@code 0x03} reuses the slot,
-     * any other marker computes the point and fills the slot. A {@code CryptoException} from the
-     * point multiplication is an invalid child (§16.2 item 8), not an error. Coded result: {@code
-     * IL < n} and {@code k ≠ 0} for secp256k1; always {@code CHECK_OK} for ed25519.
+     * node in {@link Mem#N} and, for a non-hardened step, this parent's uncompressed public point
+     * at {@code Mem#P[65..130)}. {@code pub[pOff]} is THIS parent's cached point: {@code pOff < 0}
+     * means none (the point is computed), a marker {@code 0x04} reuses the slot, any other marker
+     * computes the point and fills the slot. A {@code CryptoException} from the point
+     * multiplication is an invalid child (§16.2 item 8), not an error. Coded result: {@code IL < n}
+     * and {@code k ≠ 0} for secp256k1; always {@code CHECK_OK} for ed25519.
      */
     short child(byte[] data, short iOff, byte curve, byte[] pub, short pOff) {
         byte[] n = mem.N;
@@ -133,17 +141,20 @@ final class Derivation {
         if (hardened) {
             n[N_CKD] = 0;
             Util.arrayCopy(n, N_KEY, n, (short) (N_CKD + 1), (short) 32);
-        } else if (pOff > -1 && (pub[pOff] == 0x02 || pub[pOff] == 0x03)) {
-            // the slot belongs to this parent: reuse its compressed key
-            Util.arrayCopy(pub, pOff, n, N_CKD, Const.COMPRESSED_LEN);
+        } else if (pOff > -1 && pub[pOff] == 0x04) {
+            // the slot belongs to this parent: reuse its uncompressed point for the CKD input
+            // and for the leaf's K_par at Mem.P[65..130)
+            secp.compress(pub, pOff, n, N_CKD);
+            Util.arrayCopy(pub, pOff, p, P_PAR, Const.POINT_LEN);
         } else {
             try {
-                secp.mul(n, N_KEY, Secp256k1.G, (short) 0, p, P_TMP);
+                // the point is computed into P[65..130): the HMAC output overwrites P[0..65)
+                secp.mul(n, N_KEY, Secp256k1.G, (short) 0, p, P_PAR);
                 secp.wipeScalar();
-                secp.compress(p, P_TMP, n, N_CKD);
+                secp.compress(p, P_PAR, n, N_CKD);
                 if (pOff > -1) {
                     // the slot belongs to this parent: fill it for later warm derivations
-                    Util.arrayCopy(n, N_CKD, pub, pOff, Const.COMPRESSED_LEN);
+                    Util.arrayCopy(p, P_PAR, pub, pOff, Const.POINT_LEN);
                 }
             } catch (CryptoException e) {
                 secp.wipeScalar();
@@ -197,20 +208,57 @@ final class Derivation {
     }
 
     /**
-     * PUBLIC_KEY (§9.8): data checks in order — {@code depth ∈ [1, 10]}, every ed25519 index
-     * hardened, every BIP-32 child valid (each {@code 6A80}) — then, immediately before the output,
-     * {@code verified} evaluated twice (a failure is a detected fault, §16.2 item 4). Response:
-     * secp256k1 {@code compressed(k·G) ‖ c} (65 B), ed25519 {@code W(A) = X ‖ Y} (64 B). Writes at
-     * {@code buf[0]}.
+     * PUBLIC_KEY (§9.8): {@link #derive} runs the data checks and leaves the leaf node in {@link
+     * Mem#N}; then, immediately before the output, {@code verified} evaluated twice (a failure is a
+     * detected fault, §16.2 item 4). Response: secp256k1 {@code compressed(k·G) ‖ c} (65 B),
+     * ed25519 {@code W(A) = X ‖ Y} (64 B). Writes at {@code buf[0]}.
      */
     short publicKey(byte[] buf, byte p1, short dataOff, short dataLen) {
+        derive(buf, p1, dataOff);
         byte[] n = mem.N;
-        byte[] cache = p1 == CURVE_SECP ? mem.secpCache : mem.edCache;
+        byte[] p = mem.P;
+        // the guarded check, evaluated twice, immediately before the output (§16.2 item 4)
+        if (session.verified() != Const.VERIFIED_YES) {
+            ISOException.throwIt(Const.SW_FAULT);
+        }
+        if (session.verified() != Const.VERIFIED_YES) {
+            ISOException.throwIt(Const.SW_FAULT);
+        }
+        if (p1 == CURVE_SECP) {
+            secp.mul(n, N_KEY, Secp256k1.G, (short) 0, p, P_TMP);
+            secp.wipeScalar();
+            secp.compress(p, P_TMP, buf, (short) 0);
+            Util.arrayCopy(n, N_CHAIN, buf, Const.COMPRESSED_LEN, Const.HASH_LEN);
+            Bytes.wipe(p, (short) 0, (short) p.length);
+            return (short) (Const.COMPRESSED_LEN + Const.HASH_LEN);
+        }
+        // §10.4: a = clamped scalar of the leaf, reduced mod ℓ; A = a·G_W → W(A) = X ‖ Y
+        byte[] h = mem.H;
+        edKey(h, (short) 64, (short) 96);
+        wei.mulBase(h, (short) 64, p, P_TMP);
+        Util.arrayCopy(p, (short) (P_TMP + 1), buf, (short) 0, (short) 64);
+        Bytes.wipe(h, (short) 0, (short) 128);
+        Bytes.wipe(p, (short) 0, (short) p.length);
+        return (short) 64;
+    }
+
+    /**
+     * Derives the leaf node of {@code buf[dataOff..]} ({@code path = depth(1) ‖ indices}): data
+     * checks in order — {@code depth ∈ [1, 10]}, every ed25519 index hardened, every BIP-32 child
+     * valid (each {@code 6A80}) — the node caches and the wipe-and-{@code 6A80} on an invalid
+     * child. Post-condition: {@code N[0..64)} = leaf {@code key ‖ chain}; for secp256k1
+     * additionally {@code P[0..32)} = {@code IL} of the leaf step and, when the leaf index is
+     * non-hardened, {@code P[65..130)} = the uncompressed parent public key {@code K_par} (also for
+     * {@code depth = 1}, whose parent is the master).
+     */
+    void derive(byte[] buf, byte curve, short dataOff) {
+        byte[] n = mem.N;
+        byte[] cache = curve == CURVE_SECP ? mem.secpCache : mem.edCache;
         short depth = (short) (buf[dataOff] & 0xFF);
         if (depth < 1 || depth > 10) {
             ISOException.throwIt(ISO7816.SW_WRONG_DATA);
         }
-        if (p1 == CURVE_ED) {
+        if (curve == CURVE_ED) {
             // §10.4: every ed25519 index is hardened (§9.8)
             for (short i = 0; i != depth; i++) {
                 if ((buf[(short) (dataOff + 1 + i * 4)] & 0x80) == 0) {
@@ -233,7 +281,7 @@ final class Derivation {
             // §5.3: the cached parent at depth d−1; the leaf costs one HMAC-SHA512
             Util.arrayCopy(cache, C_KEY, n, N_KEY, (short) 64);
             start = (short) (depth - 1);
-        } else if (p1 == CURVE_SECP) {
+        } else if (curve == CURVE_SECP) {
             if (master(mem.seed, (short) 0, (short) mem.seed.length, n, N_KEY) != Const.CHECK_OK) {
                 // the stored seed's master was valid when written: a fault
                 ISOException.throwIt(Const.SW_FAULT);
@@ -256,9 +304,9 @@ final class Derivation {
                     child(
                             buf,
                             (short) (dataOff + 1 + i * 4),
-                            p1,
+                            curve,
                             cache,
-                            (cached ? C_PUB : (short) -1));
+                            cached ? C_PUB : (short) -1);
             if (c != Const.CHECK_OK) {
                 Bytes.wipe(n, (short) 0, (short) 64);
                 ISOException.throwIt(ISO7816.SW_WRONG_DATA);
@@ -271,43 +319,33 @@ final class Derivation {
                 Util.arrayCopy(
                         buf, (short) (dataOff + 1), cache, C_PATH, (short) ((depth - 1) * 4));
                 Util.arrayCopy(n, N_KEY, cache, C_KEY, (short) 64);
-                if (p1 == CURVE_SECP) {
+                if (curve == CURVE_SECP) {
                     cache[C_PUB] = 0;
                 }
                 cached = true;
             }
         }
-        // the guarded check, evaluated twice, immediately before the output (§16.2 item 4)
-        if (session.verified() != Const.VERIFIED_YES) {
-            ISOException.throwIt(Const.SW_FAULT);
-        }
-        if (session.verified() != Const.VERIFIED_YES) {
-            ISOException.throwIt(Const.SW_FAULT);
-        }
-        if (p1 == CURVE_SECP) {
-            secp.mul(n, N_KEY, Secp256k1.G, (short) 0, mem.P, P_TMP);
-            secp.wipeScalar();
-            secp.compress(mem.P, P_TMP, buf, (short) 0);
-            Util.arrayCopy(n, N_CHAIN, buf, Const.COMPRESSED_LEN, Const.HASH_LEN);
-            Bytes.wipe(mem.P, (short) 0, (short) mem.P.length);
-            return (short) (Const.COMPRESSED_LEN + Const.HASH_LEN);
-        }
-        // §10.4: sk = leaf k; h = SHA-512(sk); a = clamp(h[0..32)) read little-endian, so the
-        // scalar for mulBase is the reversed clamped half, reduced mod ℓ in constant time
+    }
+
+    /**
+     * §10.4: reads the leaf {@code sk} at {@code N[0..32)} and writes {@code a} — the clamped first
+     * half of {@code SHA-512(sk)} read little-endian, big-endian and reduced mod {@code ℓ}
+     * (architecture §5.5) — at {@code out[aOff..aOff+32)} and {@code prefix = h[32..64)} at {@code
+     * out[prefixOff..prefixOff+32)}; wipes {@code h}. Used by PUBLIC_KEY P1 = 1 and {@link Ed25519}
+     * begin.
+     */
+    void edKey(byte[] out, short aOff, short prefixOff) {
         byte[] h = mem.H;
         mem.sha512.reset();
-        mem.sha512.doFinal(n, N_KEY, Const.HASH_LEN, h, (short) 0);
+        mem.sha512.doFinal(mem.N, N_KEY, Const.HASH_LEN, h, (short) 0);
         h[0] &= (byte) 0xF8;
         h[31] &= (byte) 0x7F;
         h[31] |= (byte) 0x40;
-        for (short i = 0; i < 32; i++) {
-            h[(short) (64 + i)] = h[(short) (31 - i)];
+        Bytes.reverse(h, (short) 0, out, aOff, (short) 32);
+        if (modArith.reduce(ModArith.MOD_L, out, aOff) != Const.CHECK_OK) {
+            ISOException.throwIt(Const.SW_FAULT);
         }
-        modArith.reduce(ModArith.MOD_L, h, (short) 64);
-        wei.mulBase(h, (short) 64, mem.P, P_TMP);
-        Util.arrayCopy(mem.P, (short) (P_TMP + 1), buf, (short) 0, (short) 64);
-        Bytes.wipe(h, (short) 0, (short) 96);
-        Bytes.wipe(mem.P, (short) 0, (short) mem.P.length);
-        return (short) 64;
+        Util.arrayCopy(h, (short) 32, out, prefixOff, (short) 32);
+        Bytes.wipe(h, (short) 0, (short) 64);
     }
 }

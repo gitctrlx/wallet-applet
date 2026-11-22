@@ -15,15 +15,18 @@ import java.util.Map;
  */
 public final class Generate {
     private static final Map<String, Document> FILES =
-            Map.of(
-                    "selftest.json", Selftest::document,
-                    "kdf.json", KdfDoc::document,
-                    "cert.json", CertDoc::document,
-                    "session.json", SessionDoc::document,
-                    "record.json", RecordDoc::document,
-                    "access.json", AccessDoc::document,
-                    "wrap.json", WrapDoc::document,
-                    "derivation.json", DerivationDoc::document);
+            Map.ofEntries(
+                    Map.entry("selftest.json", (Document) Selftest::document),
+                    Map.entry("kdf.json", (Document) KdfDoc::document),
+                    Map.entry("cert.json", (Document) CertDoc::document),
+                    Map.entry("session.json", (Document) SessionDoc::document),
+                    Map.entry("record.json", (Document) RecordDoc::document),
+                    Map.entry("access.json", (Document) AccessDoc::document),
+                    Map.entry("wrap.json", (Document) WrapDoc::document),
+                    Map.entry("derivation.json", (Document) DerivationDoc::document),
+                    Map.entry("ecdsa.json", (Document) EcdsaDoc::document),
+                    Map.entry("bip340.json", (Document) Bip340Doc::document),
+                    Map.entry("ed25519.json", (Document) Ed25519Doc::document));
 
     private Generate() {}
 

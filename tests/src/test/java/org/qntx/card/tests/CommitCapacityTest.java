@@ -78,6 +78,23 @@ final class CommitCapacityTest {
     }
 
     @Test
+    void edCounterCommitFits() throws Exception {
+        loaded();
+        assertEquals(0x9000, Vecs.roundtrip(card, session, 0x22, 0, 0, Vecs.accessHash()).sw());
+        // T-EDCTR (§4.3): the edCounter write of SIGN_ED25519 begin is a single commit
+        assertEquals(0x9000, Vecs.roundtrip(card, session, 0x33, 0, 0, Vecs.pathEdSolana()).sw());
+        List<Integer> commits = card.commits();
+        assertEquals(1, commits.size(), "T-EDCTR is a single commit");
+        assertTrue(commits.get(0) <= BUFFER, "T-EDCTR " + commits.get(0) + " bytes vs the buffer");
+        System.out.println("T-EDCTR commit bytes: " + commits.get(0));
+        // the stream's update and finish commit nothing
+        assertEquals(0x9000, Vecs.roundtrip(card, session, 0x33, 1, 0, new byte[] {1}).sw());
+        assertEquals(0, card.commits().size(), "update commits nothing");
+        assertEquals(0x9000, Vecs.roundtrip(card, session, 0x33, 2, 0, new byte[0]).sw());
+        assertEquals(0, card.commits().size(), "finish commits nothing");
+    }
+
+    @Test
     void changeAndEraseTransactionsFit() throws Exception {
         loaded();
         assertEquals(0x9000, Vecs.roundtrip(card, session, 0x22, 0, 0, Vecs.accessHash()).sw());

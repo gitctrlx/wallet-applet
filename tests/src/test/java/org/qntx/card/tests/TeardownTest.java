@@ -33,7 +33,8 @@ final class TeardownTest {
         assertArrayEquals(new byte[130], Internals.pBytes(applet), "Mem.P not wiped");
         assertArrayEquals(new byte[256], Internals.wBytes(applet), "Mem.W not wiped");
         assertArrayEquals(new byte[64], Internals.seedBytes(applet), "seed not wiped");
-        assertArrayEquals(new byte[138], Internals.secpCacheBytes(applet), "secpCache not wiped");
+        assertArrayEquals(new byte[170], Internals.secpCacheBytes(applet), "secpCache not wiped");
+        assertArrayEquals(new byte[194], Internals.edStreamBytes(applet), "edStream not wiped");
         assertArrayEquals(new byte[105], Internals.edCacheBytes(applet), "edCache not wiped");
         byte[] s = new byte[32];
         Internals.ephKey(applet).getS(s, (short) 0);
@@ -127,6 +128,52 @@ final class TeardownTest {
         byte[] rapdu = card.transmit(session.wrap(0x20, 0, 0, new byte[0]));
         assertEquals(0x9000, session.unwrap(rapdu).sw());
         assertDead(card);
+    }
+
+    @Test
+    void liveStreamIsWipedAcrossTeardowns() throws Exception {
+        // a stream mid-flight carries a and r: every §8.5 teardown path zeroes it
+        Card card = Vecs.blankSelf();
+        Session session = Vecs.loadWallet(card);
+        assertEquals(0x9000, Vecs.roundtrip(card, session, 0x22, 0, 0, Vecs.accessHash()).sw());
+        assertEquals(0x9000, Vecs.roundtrip(card, session, 0x33, 0, 0, Vecs.pathEdSolana()).sw());
+        assertNotZero(Internals.edStreamBytes(card.applet(Spec.WALLET_AID)));
+        org.qntx.card.host.Open.request(Vecs.RND);
+        byte[] openApdu = org.qntx.card.host.Open.request(Vecs.RND).apdu();
+        assertEquals(0x9000, Vecs.sw(card.transmit(openApdu)));
+        // a successful OPEN replaces the session: words live again, but the old session's
+        // seed, caches and stream are gone (§8.5 runs on the OPEN transition)
+        assertArrayEquals(
+                new byte[194],
+                Internals.edStreamBytes(card.applet(Spec.WALLET_AID)),
+                "edStream not wiped by OPEN");
+        assertArrayEquals(new byte[64], Internals.seedBytes(card.applet(Spec.WALLET_AID)), "seed");
+
+        session = Vecs.open(card);
+        assertEquals(0x9000, Vecs.roundtrip(card, session, 0x22, 0, 0, Vecs.accessHash()).sw());
+        assertEquals(0x9000, Vecs.roundtrip(card, session, 0x33, 0, 0, Vecs.pathEdSolana()).sw());
+        card.transmit(Spec.SELECT);
+        assertDead(card);
+    }
+
+    @Test
+    void streamEndsOnAnyNonContinuationCommand() throws Exception {
+        // §9.2: the pending state ends when any command that does not continue it is
+        // dispatched — edStream is wiped by endPending on the same path
+        Card card = Vecs.blankSelf();
+        Session session = Vecs.loadWallet(card);
+        assertEquals(0x9000, Vecs.roundtrip(card, session, 0x22, 0, 0, Vecs.accessHash()).sw());
+        assertEquals(0x9000, Vecs.roundtrip(card, session, 0x33, 0, 0, Vecs.pathEdSolana()).sw());
+        assertNotZero(Internals.edStreamBytes(card.applet(Spec.WALLET_AID)));
+        assertEquals(0x9000, Vecs.roundtrip(card, session, 0x20, 0, 0, new byte[0]).sw());
+        assertArrayEquals(
+                new byte[194],
+                Internals.edStreamBytes(card.applet(Spec.WALLET_AID)),
+                "STATUS ended the stream");
+        assertEquals(
+                0x6985,
+                Vecs.roundtrip(card, session, 0x33, 1, 0, new byte[] {1}).sw(),
+                "update after the stream ended");
     }
 
     @Test

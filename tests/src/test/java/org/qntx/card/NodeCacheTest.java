@@ -103,6 +103,23 @@ final class NodeCacheTest {
     }
 
     @Test
+    void warmEcdsaLeafCostsOneHmacAndNoParentMul() throws Exception {
+        verified();
+        // a first sign warms the depth-4 parent m/44'/60'/0'/0 incl. its public point
+        byte[] data = new byte[32 + Vecs.pathSecpEvm().length];
+        System.arraycopy(Vecs.digest(), 0, data, 0, 32);
+        System.arraycopy(Vecs.pathSecpEvm(), 0, data, 32, Vecs.pathSecpEvm().length);
+        assertEquals(0x9000, Vecs.roundtrip(card, session, 0x31, 0, 0, data).sw());
+        Fault.countCalls();
+        // the warm non-hardened leaf costs one HMAC-SHA512 (2 doFinal); K_par comes from
+        // the cache and the independent Q is a PACE_GM, not Secp256k1.mul
+        assertEquals(0x9000, Vecs.roundtrip(card, session, 0x31, 0, 0, data).sw());
+        assertEquals(2, card.digests(MessageDigest.ALG_SHA_512), "one HMAC-SHA512");
+        assertEquals(0, Fault.calls("Secp256k1.mul"), "no parent point multiplication");
+        Fault.reset();
+    }
+
+    @Test
     void verifyEraseAndTeardownWipeTheCaches() throws Exception {
         verified();
         assertEquals(0x9000, pk(0, "m/44'/60'/0'/0/0").sw());
@@ -111,13 +128,13 @@ final class NodeCacheTest {
         assertNotZero(Internals.edCacheBytes(applet()));
         // a fresh VERIFY wipes both caches (step 1)
         assertEquals(0x9000, Vecs.roundtrip(card, session, 0x22, 0, 0, Vecs.accessHash()).sw());
-        assertArrayEquals(new byte[138], Internals.secpCacheBytes(applet()));
+        assertArrayEquals(new byte[170], Internals.secpCacheBytes(applet()));
         assertArrayEquals(new byte[105], Internals.edCacheBytes(applet()));
 
         assertEquals(0x9000, pk(0, "m/44'/60'/0'/0/0").sw());
         assertNotZero(Internals.secpCacheBytes(applet()));
         assertEquals(0x9000, Vecs.roundtrip(card, session, 0x24, 0, 0, new byte[0]).sw());
-        assertArrayEquals(new byte[138], Internals.secpCacheBytes(applet()));
+        assertArrayEquals(new byte[170], Internals.secpCacheBytes(applet()));
 
         // teardown: verified again on a fresh wallet, derive, then deselect
         session = Vecs.open(card);
@@ -125,7 +142,7 @@ final class NodeCacheTest {
         assertEquals(0x9000, pk(0, "m/44'/60'/0'/0/0").sw());
         assertNotZero(Internals.secpCacheBytes(applet()));
         card.transmit(Spec.SELECT);
-        assertArrayEquals(new byte[138], Internals.secpCacheBytes(applet()));
+        assertArrayEquals(new byte[170], Internals.secpCacheBytes(applet()));
         assertArrayEquals(new byte[105], Internals.edCacheBytes(applet()));
     }
 

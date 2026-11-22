@@ -4,8 +4,10 @@ package org.qntx.card;
 
 import javacard.framework.ISOException;
 import javacard.framework.Util;
+import javacard.security.CryptoException;
 import javacard.security.ECKey;
 import javacard.security.ECPrivateKey;
+import javacard.security.ECPublicKey;
 import javacard.security.KeyBuilder;
 import javacard.security.Signature;
 
@@ -131,6 +133,59 @@ final class Secp256k1 {
     /** Overwrites the transient scalar slot; no {@code clearKey} anywhere (architecture.md §4). */
     void wipeScalar() {
         ephKey.setS(Const.ZEROS, (short) 0, (short) 32);
+    }
+
+    /**
+     * {@code out = s·G + H} (65-byte uncompressed) via the shared {@link Mem#paceGm} engine: {@code
+     * h} is the 65-byte uncompressed point and {@code s} the 32-byte scalar loaded into {@link
+     * #ephKey} (overwritten in a {@code finally}). The output must not overlap {@code h} ({@code
+     * generateSecret} reads its input point). A {@code CryptoException} propagates — §16.2 item 8
+     * maps it to {@code 6F00} inside a signing command.
+     */
+    short mulAdd(byte[] s, short sOff, byte[] h, short hOff, byte[] out, short oOff) {
+        try {
+            ephKey.setS(s, sOff, (short) 32);
+            mem.paceGm.init(ephKey);
+            return mem.paceGm.generateSecret(h, hOff, Const.POINT_LEN, out, oOff);
+        } finally {
+            ephKey.setS(Const.ZEROS, (short) 0, (short) 32);
+        }
+    }
+
+    /**
+     * Signs the 32-byte precomputed {@code hash} under {@code scalar} (§12.1): {@code
+     * signPreComputedHash} on the shared ECDSA engine, DER into {@link Mem#W_DER}, decoded to
+     * {@code r(32) ‖ s(32)} at {@code rs}. The scalar slot is overwritten in a {@code finally}.
+     */
+    void sign(byte[] scalar, short sOff, byte[] hash, short hOff, byte[] rs, short rsOff) {
+        try {
+            ephKey.setS(scalar, sOff, (short) 32);
+            ecdsa.init(ephKey, Signature.MODE_SIGN);
+            short derLen = ecdsa.signPreComputedHash(hash, hOff, Const.HASH_LEN, mem.W, Mem.W_DER);
+            derToRs(mem.W, Mem.W_DER, derLen, rs, rsOff);
+        } finally {
+            ephKey.setS(Const.ZEROS, (short) 0, (short) 32);
+        }
+    }
+
+    /**
+     * Verifies {@code r ‖ s} over a 32-byte precomputed hash; {@code CHECK_MALFORMED} on an
+     * out-of-range scalar (it cannot have come from a signature), {@code CHECK_FAIL} on a bad
+     * signature or a {@link CryptoException} from the engine.
+     */
+    short verifyHash(ECPublicKey key, byte[] hash, short hOff, byte[] rs, short rsOff) {
+        short derLen = rsToDer(rs, rsOff, mem.W, Mem.W_DER);
+        if (derLen == 0) {
+            return Const.CHECK_MALFORMED;
+        }
+        try {
+            ecdsa.init(key, Signature.MODE_VERIFY);
+            return ecdsa.verifyPreComputedHash(hash, hOff, Const.HASH_LEN, mem.W, Mem.W_DER, derLen)
+                    ? Const.CHECK_OK
+                    : Const.CHECK_FAIL;
+        } catch (CryptoException e) {
+            return Const.CHECK_FAIL;
+        }
     }
 
     /** SEC 1 §2.3.3 compression of an uncompressed point. */

@@ -86,6 +86,9 @@ export const publicKey = (d: bigint): Uint8Array => secp256k1.getPublicKey(scala
 /** SEC 1 §2.3.3 compression of a point (33 bytes). */
 export const compress = (point65: Uint8Array): Uint8Array =>
   secp256k1.Point.fromBytes(point65).toBytes(true);
+/** x-coordinate of a point given as a 65-byte uncompressed encoding (32 bytes). */
+export const x = (point65: Uint8Array): Uint8Array => point65.subarray(1, 33);
+
 /** scalar · point as a 65-byte uncompressed encoding. */
 export const multiply = (scalar: bigint, point65: Uint8Array): Uint8Array =>
   secp256k1.Point.fromBytes(point65).multiply(scalar).toBytes(false);

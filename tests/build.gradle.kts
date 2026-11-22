@@ -37,6 +37,11 @@ tasks.test {
     jvmArgumentProviders.add { listOf("-javaagent:${agent.singleFile.absolutePath}") }
     systemProperty("qntx.cap", cap.get().asFile.absolutePath)
     systemProperty("qntx.vectors", rootProject.file("spec/vectors").absolutePath)
+    // heavy acceptance counts are settable from the daemon command line
+    // (-Dqntx.differential=N …) so a quick local run needs no file edit
+    for (name in listOf("qntx.differential", "qntx.modarith.rounds", "qntx.nonce.count")) {
+        providers.systemProperty(name).orNull?.let { systemProperty(name, it) }
+    }
     systemProperty(
         "qntx.reports",
         layout.buildDirectory
@@ -85,6 +90,10 @@ pitest {
             "org.qntx.card.Wallet",
             "org.qntx.card.Derivation",
             "org.qntx.card.State",
+            "org.qntx.card.Ecdsa",
+            "org.qntx.card.Bip340",
+            "org.qntx.card.Ed25519",
+            "org.qntx.card.ModArith",
         )
     targetTests = listOf("org.qntx.card.*")
     additionalMutableCodePaths =
@@ -102,14 +111,32 @@ pitest {
                 "-Dqntx.cap=${cap.get().asFile.absolutePath}",
                 "-Dqntx.vectors=${rootProject.file("spec/vectors").absolutePath}",
                 "-Dqntx.reports=${layout.buildDirectory.dir("reports").get().asFile.absolutePath}",
+                // small counts inside PIT JVMs: the covered paths are killed by the
+                // vector and command suites; acceptance counts stay on the test task
+                "-Dqntx.differential=25",
+                "-Dqntx.modarith.rounds=200",
+                "-Dqntx.nonce.count=25",
             )
         }
+    excludedTestClasses =
+        listOf(
+            // covered paths are killed by the vector and command suites; it would
+            // multiply the run
+            "SignDifferentialTest",
+        )
     mutators = listOf("STRONGER")
     excludedMethods =
         listOf(
             // the multi-block loop is unreachable in the simulator (receiveBytes
             // returns the whole Lc in one shot); it exists for real-card chaining
             "*receiveAll",
+            // pending() is a redundant member check behind beginDispatch, which runs the
+            // same membership dispatch itself: a corrupt word gets the identical 6F00
+            // from either layer, so its conditional mutants are equivalent there
+            "*pending",
+            // txDepth wraps getTransactionDepth solely so the depth gate can be armed;
+            // its return mutants coincide with the read-back gate that follows
+            "*txDepth",
         )
     avoidCallsTo =
         listOf(

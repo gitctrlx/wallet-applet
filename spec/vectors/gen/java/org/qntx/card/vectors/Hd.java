@@ -70,6 +70,27 @@ final class Hd {
         return new Node(Arrays.copyOf(i, 32), Arrays.copyOfRange(i, 32, 64));
     }
 
+    /** The BIP-32 node at {@code path} derived from {@code seed}; throws on an invalid child. */
+    static Node bip32Derive(byte[] seed, String path) {
+        Node node = bip32Master(seed);
+        for (long index : indices(path)) {
+            node = bip32Child(node, index);
+            if (node == null) {
+                throw new IllegalStateException("invalid child on path " + path);
+            }
+        }
+        return node;
+    }
+
+    /** The SLIP-10 ed25519 node at {@code path} derived from {@code seed}. */
+    static Node slip10Derive(byte[] seed, String path) {
+        Node node = slip10Master(seed);
+        for (long index : indices(path)) {
+            node = slip10Child(node, index);
+        }
+        return node;
+    }
+
     /** SLIP-10 ed25519 child (§10.4): only hardened indices exist; every index is {@code i'}. */
     static Node slip10Child(Node parent, long index) {
         if (index < HARDENED || index > 0xFFFFFFFFL) {

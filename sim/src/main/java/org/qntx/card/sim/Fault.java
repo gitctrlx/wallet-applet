@@ -37,6 +37,8 @@ public final class Fault {
     private static int storeArmed;
     private static int storeSeen;
     private static short storeValue;
+    private static int ecdsaFlipArmed;
+    private static int ecdsaCalls;
 
     private Fault() {}
 
@@ -95,6 +97,21 @@ public final class Fault {
     }
 
     /**
+     * Makes the {@code nth} {@code sign}/{@code signPreComputedHash} call — counted since arming
+     * across every {@code ALG_ECDSA_SHA_256} engine instrumented code holds — write a corrupted
+     * signature: the last byte of the DER output ({@code s}'s trailing byte) XOR {@code 0x01},
+     * which the applet's self-verify before output must reject (spec/protocol.md §9.9). The {@link
+     * Memory#signature} delegate wraps every ECDSA engine unconditionally, so arming acts on
+     * engines created at install (e.g. the shared engine OPEN already used); while nothing is armed
+     * it is a pure pass-through. {@link #reset} disarms.
+     */
+    public static void armEcdsaFlip(int nth) {
+        ecdsaFlipArmed = nth;
+        ecdsaCalls = 0;
+        active = true;
+    }
+
+    /**
      * Turns call counting on ({@link #calls}) without arming a fault; {@link #reset} turns it off.
      */
     public static void countCalls() {
@@ -114,6 +131,19 @@ public final class Fault {
         counts.clear();
         active = false;
         storeArmed = 0;
+        ecdsaFlipArmed = 0;
+    }
+
+    /**
+     * The {@link FlippingSignature} hook: {@code true} when this {@code sign}/{@code
+     * signPreComputedHash} call is the armed {@code nth} one since {@link #armEcdsaFlip}; {@code
+     * false} fast when nothing is armed.
+     */
+    static boolean ecdsaFlip() {
+        if (ecdsaFlipArmed == 0) {
+            return false;
+        }
+        return ++ecdsaCalls == ecdsaFlipArmed;
     }
 
     /**

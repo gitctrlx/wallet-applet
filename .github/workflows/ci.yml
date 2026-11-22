@@ -52,6 +52,14 @@ jobs:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
       - name: Build and test
         run: ./gradlew build --no-build-cache
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.5"
+      - name: Differential (noble)
+        run: |
+          cd spec/vectors/gen/ts
+          bun install --frozen-lockfile
+          bun verify.ts ../../../../tests/build/differential/signatures.json
       - name: Reproducible CAP
         run: |
           first=$(sha256sum applet/build/cap/qntx-card.cap | cut -d' ' -f1)
@@ -79,6 +87,7 @@ jobs:
           path: |
             applet/build/cap/qntx-card.cap
             applet/build/reports/qntx-card.cdx.json
+            tests/build/differential/signatures.json
             tests/build/reports/
             sim/build/reports/
           if-no-files-found: warn

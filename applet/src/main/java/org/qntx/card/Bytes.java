@@ -26,6 +26,16 @@ final class Bytes {
     }
 
     /**
+     * Byte reversal between different arrays (the {@code int_le} conversions of §10.4, §12.3);
+     * {@code dst} must not overlap {@code src}.
+     */
+    static void reverse(byte[] src, short sOff, byte[] dst, short dOff, short len) {
+        for (short i = 0; i < len; i++) {
+            dst[(short) (dOff + i)] = src[(short) (sOff + len - 1 - i)];
+        }
+    }
+
+    /**
      * ISO/IEC 9797-1 padding method 2 in place (§1): {@code X ‖ 0x80 ‖ 0ᵏ} to the next multiple of
      * 16, always appending the 0x80 byte so a full block gets a whole padding block.
      */

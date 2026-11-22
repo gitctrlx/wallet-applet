@@ -10,10 +10,13 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.qntx.card.host.Bip340;
 import org.qntx.card.host.Crypto;
+import org.qntx.card.host.Ecdsa;
 import org.qntx.card.host.Open;
 import org.qntx.card.host.Response;
 import org.qntx.card.host.Session;
+import org.qntx.card.host.Wei25519Map;
 import org.qntx.card.sim.Card;
 
 /**
@@ -58,9 +61,14 @@ final class ApduTableTest {
         if (session == null) {
             session = Vecs.open(card);
         }
-        if (c.get("session").equals("verified")) {
+        if (c.get("session").equals("verified") || c.get("session").equals("streaming")) {
             Response v = Vecs.roundtrip(card, session, 0x22, 0, 0, Vecs.accessHash());
             assertEquals(0x9000, v.sw(), name + ": setup VERIFY");
+        }
+        if (c.get("session").equals("streaming")) {
+            // §9.2 state "streaming": a verified session with an armed Ed25519 stream
+            Response b = Vecs.roundtrip(card, session, 0x33, 0, 0, Vecs.pathEdSolana());
+            assertEquals(0x9000, b.sw(), name + ": setup SIGN_ED25519 begin");
         }
         byte[] plain = Vecs.resolveApdu((String) c.get("apdu"), card, a);
         byte[] data = Arrays.copyOfRange(plain, 3, plain.length);
@@ -115,6 +123,56 @@ final class ApduTableTest {
                     assertTrue(pk[0] == 2 || pk[0] == 3, name + ": masterPublicKey.any prefix");
                     Crypto.decompress(pk); // throws unless x is on the curve
                     pos += 33;
+                } else if (sym.startsWith("sig.ecdsa.")) {
+                    // 64 bytes r ‖ s, verified with the host helper under the template key
+                    assertTrue(actual.length - pos >= 64, name + ": response too short");
+                    byte[] sig = Arrays.copyOfRange(actual, pos, pos + 64);
+                    String keyName =
+                            switch (sym.substring("sig.ecdsa.".length())) {
+                                case "bip84Account" -> "btc-bip84-account";
+                                default -> sym.substring("sig.ecdsa.".length());
+                            };
+                    byte[] pk =
+                            Crypto.decompress(Vecs.hex(Vecs.secpTemplate(keyName), "publicKey"));
+                    assertTrue(
+                            Ecdsa.verify(pk, Vecs.digest(), sig),
+                            name + ": invalid ECDSA signature under " + keyName);
+                    pos += 64;
+                } else if (sym.startsWith("sig.bip340.")) {
+                    // 64 bytes R_x ‖ s under the BIP-340 output key of the template
+                    assertTrue(actual.length - pos >= 64, name + ": response too short");
+                    byte[] sig = Arrays.copyOfRange(actual, pos, pos + 64);
+                    byte[] pk = Vecs.hex(Vecs.secpTemplate("btc-bip86"), "publicKey");
+                    byte[] internal = Arrays.copyOfRange(pk, 1, 33);
+                    byte[] out =
+                            sym.equals("sig.bip340.bip86")
+                                    ? Bip340.outputKey(Crypto.decompress(pk), Vecs.tweakBip86())
+                                    : internal;
+                    assertTrue(
+                            Bip340.verify(out, Vecs.message(), sig),
+                            name + ": invalid BIP-340 signature under " + sym);
+                    pos += 64;
+                } else if (sym.equals("wei.any")) {
+                    // 64 bytes X ‖ Y of a Wei25519 point other than the base point
+                    assertTrue(actual.length - pos >= 64, name + ": response too short");
+                    byte[] wei = Arrays.copyOfRange(actual, pos, pos + 64);
+                    Wei25519Map.encode(wei); // throws unless X ‖ Y is on Wei25519
+                    assertTrue(
+                            !Arrays.equals(wei, Vecs.weiBase()),
+                            name + ": wei.any must not be the base point");
+                    pos += 64;
+                } else if (sym.equals("ed25519.S.any")) {
+                    // 32 bytes le32(S) with int_le(S) < l
+                    assertTrue(actual.length - pos >= 32, name + ": response too short");
+                    byte[] s = Arrays.copyOfRange(actual, pos, pos + 32);
+                    byte[] be = new byte[32];
+                    for (int j = 0; j < 32; j++) {
+                        be[j] = s[31 - j];
+                    }
+                    assertTrue(
+                            new java.math.BigInteger(1, be).compareTo(Vecs.ED25519_L) < 0,
+                            name + ": S out of range");
+                    pos += 32;
                 } else {
                     byte[] want = Vecs.symbol(sym, card, a);
                     assertSlice(want, actual, pos, name + ": {" + sym + "}");

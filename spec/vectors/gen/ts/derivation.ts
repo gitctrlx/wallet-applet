@@ -84,7 +84,7 @@ const slip10Child = (parent: Node, index: bigint): Node => {
 };
 
 /** The "m/…" string form to the wire indices: '44'' is 44 + 2³¹. */
-const indices = (path: string): bigint[] => {
+export const indices = (path: string): bigint[] => {
   if (path === 'm') return [];
   if (!path.startsWith('m/')) throw new Error(`path must start with m/: ${path}`);
   const parts = path.slice(2).split('/');
@@ -105,7 +105,7 @@ const indices = (path: string): bigint[] => {
 };
 
 /** The §9.2 wire form of a non-master path: depth(1) ‖ u32(index)…. */
-const wire = (path: string): Uint8Array => {
+export const wire = (path: string): Uint8Array => {
   const idx = indices(path);
   if (idx.length === 0) throw new Error('the master path has no wire form');
   return concatBytes(new Uint8Array([idx.length]), ...idx.map(u32));
@@ -115,7 +115,7 @@ const wire = (path: string): Uint8Array => {
 const Q = 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffedn;
 const A_W = 0x2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa984914a144n;
 const B_W = 0x7b425ed097b425ed097b425ed097b425ed097b425ed097b4260b5e9c7710c864n;
-const ORDER = 0x1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3edn;
+export const ORDER = 0x1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3edn;
 const A3 = 0x2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad2451n;
 const C = 0x70d9120b9f5ff9442d84f723fc03b0813a5e2c2eb482e57d3391fb5500ba81e7n;
 const GX = 0x2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad245an;
@@ -128,7 +128,7 @@ if (!WeiPoint.BASE.multiply(ORDER - 1n).add(WeiPoint.BASE).equals(WeiPoint.ZERO)
 }
 
 /** a mod ℓ for the RFC 8032 private key sk: a = clamp(SHA-512(sk)[0..32)) read little-endian. */
-const weiScalar = (sk: Uint8Array): bigint => {
+export const weiScalar = (sk: Uint8Array): bigint => {
   const a = sha512(sk).subarray(0, 32);
   a[0] &= 0xf8;
   a[31] &= 0x7f;
@@ -137,7 +137,7 @@ const weiScalar = (sk: Uint8Array): bigint => {
 };
 
 /** W(P) = X(32) ‖ Y(32), affine Wei25519 coordinates big-endian (§10.4). */
-const weiPoint = (scalar: bigint): Uint8Array => {
+export const weiPoint = (scalar: bigint): Uint8Array => {
   const p = WeiPoint.BASE.multiply(scalar).toAffine();
   return concatBytes(numberToBytesBE(p.x, 32), numberToBytesBE(p.y, 32));
 };
@@ -146,7 +146,7 @@ const weiPoint = (scalar: bigint): Uint8Array => {
  * The §10.4 host map: u = X − A₃, y = (u−1)/(u+1), x = c·u/Y, le32(y) with bit 255 = x mod 2.
  * Rejects a point not on Wei25519.
  */
-const weiEncode = (wei64: Uint8Array): Uint8Array => {
+export const weiEncode = (wei64: Uint8Array): Uint8Array => {
   if (wei64.length !== 64) throw new Error('W(P) must be 64 bytes');
   const x = bytesToNumberBE(wei64.subarray(0, 32));
   const y = bytesToNumberBE(wei64.subarray(32, 64));
@@ -164,7 +164,7 @@ const weiEncode = (wei64: Uint8Array): Uint8Array => {
 const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 
 /** Base58Check decode: the 78-byte payload, verified against the 4-byte double-SHA-256 checksum. */
-const decodeCheck = (s: string): Uint8Array => {
+export const decodeCheck = (s: string): Uint8Array => {
   let v = 0n;
   for (const ch of s) {
     const d = BASE58.indexOf(ch);
@@ -187,7 +187,7 @@ const decodeCheck = (s: string): Uint8Array => {
   return raw.subarray(0, 78);
 };
 
-const assertHex = (actual: Uint8Array, expected: string, what: string) => {
+export const assertHex = (actual: Uint8Array, expected: string, what: string) => {
   if (bytesToHex(actual) !== expected) {
     throw new Error(`${what}: ${bytesToHex(actual)} != ${expected}`);
   }
@@ -379,7 +379,7 @@ const masterCase = (name: string, il: Uint8Array, valid: boolean): object => {
   return { name, il: bytesToHex(il), valid };
 };
 
-const bip32Derive = (seed: Uint8Array, path: string): Node => {
+export const bip32Derive = (seed: Uint8Array, path: string): Node => {
   let node = bip32Master(seed);
   for (const index of indices(path)) {
     const child = bip32Child(node, index);
@@ -389,7 +389,7 @@ const bip32Derive = (seed: Uint8Array, path: string): Node => {
   return node;
 };
 
-const slipDerive = (seed: Uint8Array, path: string): Node => {
+export const slipDerive = (seed: Uint8Array, path: string): Node => {
   let node = slip10Master(seed);
   for (const index of indices(path)) {
     node = slip10Child(node, index);

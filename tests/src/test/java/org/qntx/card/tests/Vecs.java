@@ -13,12 +13,14 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import org.qntx.card.WalletApplet;
+import org.qntx.card.host.Bip340;
 import org.qntx.card.host.Certificates;
 import org.qntx.card.host.Crypto;
 import org.qntx.card.host.Ids;
 import org.qntx.card.host.Open;
 import org.qntx.card.host.Response;
 import org.qntx.card.host.Session;
+import org.qntx.card.host.Slip10;
 import org.qntx.card.sim.Card;
 
 /**
@@ -184,6 +186,49 @@ public final class Vecs {
         return unhex("b1b2b3b4b5b6b7b8b9babbbcbdbebfb0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0");
     }
 
+    /** apdu.json {@code {digest}}: the fixed SIGN_ECDSA digest (any value). */
+    public static byte[] digest() {
+        return unhex("827134c09e1f154d7d0239e5b8f74ebb638b420eabea552628efc21198f6ca64");
+    }
+
+    /** apdu.json {@code {message}}: the fixed SIGN_BIP340 message (any value). */
+    public static byte[] message() {
+        return unhex("f95466d086770e689964664219266fe5ed215c92ae20bab5c9d79addddedf8c0");
+    }
+
+    /** derivation.json's secp256k1 template {@code name}, or null. */
+    public static Map<String, Object> secpTemplate(String name) {
+        for (Map<String, Object> t : list(obj(load("derivation.json"), "templates"), "secp256k1")) {
+            if (t.get("name").equals(name)) {
+                return t;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * apdu.json {@code {tweak.bip86}}: {@code TaggedHash("TapTweak", x(P))} of the btc-bip86
+     * template key (BIP-341); cross-checked against bip340.json case {@code template-bip86}.
+     */
+    public static byte[] tweakBip86() {
+        byte[] pk = hex(secpTemplate("btc-bip86"), "publicKey");
+        return Bip340.taggedHash("TapTweak", Arrays.copyOfRange(pk, 1, 33));
+    }
+
+    /**
+     * apdu.json {@code {tweak.zeroKey}}: {@code n − d₀'} where {@code d₀'} is the parity-normalized
+     * btc-bip86 template private key, so {@code d₀' + t ≡ 0 (mod n)} (bip340.json {@code
+     * invalidTweak[2]}).
+     */
+    public static byte[] tweakZeroKey() {
+        BigInteger d = new BigInteger(1, hex(secpTemplate("btc-bip86"), "privateKey"));
+        byte[] pub = Crypto.decompress(hex(secpTemplate("btc-bip86"), "publicKey"));
+        if ((pub[64] & 1) == 1) {
+            d = Crypto.N.subtract(d); // y(P) odd: BIP-340 signs with n − d
+        }
+        return Crypto.N.subtract(d).mod(Crypto.N).toByteArray();
+    }
+
     /** {@code derivation.json templates.seed} — its BIP-32 master is valid. */
     public static byte[] seed() {
         return hex(obj(load("derivation.json"), "templates"), "seed");
@@ -206,6 +251,18 @@ public final class Vecs {
             }
         }
         throw new IllegalStateException("derivation.json lacks secp256k1 evm template");
+    }
+
+    /** The edwards25519 subgroup order {@code l} of RFC 8032 (for {@code le32(S) < l}). */
+    public static final java.math.BigInteger ED25519_L =
+            new java.math.BigInteger(
+                    "1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3ed", 16);
+
+    /** {@code W(G_W)}, the Wei25519 base point as {@code X ‖ Y} — what {@code wei.any} excludes. */
+    public static byte[] weiBase() {
+        byte[] one = new byte[32];
+        one[31] = 1;
+        return Slip10.wei(one);
     }
 
     /** {@code W(A)} of the derivation.json solana template. */
@@ -283,6 +340,10 @@ public final class Vecs {
             case "accessHash.new" -> accessHashNew();
             case "entropy" -> entropy();
             case "seed" -> seed();
+            case "digest" -> digest();
+            case "message" -> message();
+            case "tweak.bip86" -> left32(tweakBip86());
+            case "tweak.zeroKey" -> left32(tweakZeroKey());
             case "seed.masterPublicKey" -> seedMasterPublicKey();
             case "pk.secp.evm" -> pkSecpEvm();
             case "pk.ed.solana" -> pkEdSolana();
@@ -312,6 +373,14 @@ public final class Vecs {
             }
         }
         return unhex(out.toString());
+    }
+
+    /** The value as exactly 32 bytes, left-padded (a BigInteger export helper). */
+    private static byte[] left32(byte[] v) {
+        byte[] out = new byte[32];
+        int skip = Math.max(0, v.length - 32);
+        System.arraycopy(v, skip, out, Math.max(0, 32 - v.length), Math.min(32, v.length));
+        return out;
     }
 
     public static String shortIdOf(byte[] a) {
