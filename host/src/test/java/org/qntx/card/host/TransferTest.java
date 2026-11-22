@@ -9,6 +9,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.math.BigInteger;
 import java.security.SecureRandom;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -120,6 +122,77 @@ final class TransferTest {
         assertThrows(
                 CardNotGenuineException.class,
                 () -> Transfer.decodeExportHead(concat(e, sig), CERT, CERT, lkT));
+    }
+
+    /**
+     * {@code spec/vectors/transfer.json} (§18): every {@code transfers} row decodes under the
+     * cards' certificates and re-encodes to the §9.13–9.14 inner data bytes, and the check-5
+     * rejection rows whose certificate is the transfer's own target/source fail the signature check
+     * of {@link Transfer#decodeOffer}/{@link Transfer#decodeExportHead}.
+     */
+    @Test
+    void transferVectorRowsDecodeEncodeAndReject() throws Exception {
+        Map<String, Object> doc = Vectors.load("transfer.json");
+        Map<String, byte[]> certs = new HashMap<>();
+        for (Map<String, Object> c : Vectors.list(doc, "cards")) {
+            certs.put((String) c.get("name"), Vectors.hex(c, "cert"));
+        }
+        Map<String, Map<String, Object>> transfers = new HashMap<>();
+        for (Map<String, Object> t : Vectors.list(doc, "transfers")) {
+            String name = (String) t.get("name");
+            transfers.put(name, t);
+            byte[] certS = certs.get(t.get("source"));
+            byte[] certT = certs.get(t.get("target"));
+            byte[] lk = Vectors.hex(t, "LK");
+            byte[] offer = concat(lk, Vectors.hex(t, "offerSignature"));
+            byte[] head = concat(Vectors.hex(t, "E"), Vectors.hex(t, "exportSignature"));
+            byte[] payload = concat(Vectors.hex(t, "ct"), Vectors.hex(t, "tag"));
+
+            Transfer.Offer o = Transfer.decodeOffer(offer, certT);
+            assertArrayEquals(lk, o.lk(), name + ": OFFER link point");
+            Transfer.ExportHead h = Transfer.decodeExportHead(head, certS, certT, lk);
+            assertArrayEquals(Vectors.hex(t, "E"), h.e(), name + ": EXPORT head E");
+            Transfer.ExportPayload p = Transfer.decodeExportPayload(payload);
+            assertArrayEquals(Vectors.hex(t, "ct"), p.ct(), name + ": payload ct");
+            assertArrayEquals(Vectors.hex(t, "tag"), p.tag(), name + ": payload tag");
+
+            assertArrayEquals(concat(certT, offer), Transfer.export0(certT, offer), name);
+            assertArrayEquals(
+                    Vectors.hex(t, "accessHashT"),
+                    Transfer.export1(Vectors.hex(t, "accessHashT")),
+                    name);
+            assertArrayEquals(concat(certS, head), Transfer.import0(certS, head), name);
+            assertArrayEquals(payload, Transfer.import1(payload), name);
+        }
+
+        for (Map<String, Object> r : Vectors.list(doc, "rejectedOffers")) {
+            Map<String, Object> t = transfers.get(r.get("transfer"));
+            byte[] cert = Vectors.hex(r, "cert");
+            if (((Number) r.get("check")).intValue() != 5
+                    || !Arrays.equals(cert, certs.get(t.get("target")))) {
+                continue;
+            }
+            byte[] resp = concat(Vectors.hex(r, "LK"), Vectors.hex(r, "signature"));
+            assertThrows(
+                    CardNotGenuineException.class,
+                    () -> Transfer.decodeOffer(resp, cert),
+                    (String) r.get("name"));
+        }
+        for (Map<String, Object> r : Vectors.list(doc, "rejectedExports")) {
+            Map<String, Object> t = transfers.get(r.get("transfer"));
+            byte[] cert = Vectors.hex(r, "cert");
+            if (((Number) r.get("check")).intValue() != 5
+                    || !Arrays.equals(cert, certs.get(t.get("source")))) {
+                continue;
+            }
+            byte[] resp = concat(Vectors.hex(r, "E"), Vectors.hex(r, "signature"));
+            assertThrows(
+                    CardNotGenuineException.class,
+                    () ->
+                            Transfer.decodeExportHead(
+                                    resp, cert, certs.get(t.get("target")), Vectors.hex(t, "LK")),
+                    (String) r.get("name"));
+        }
     }
 
     @Test
