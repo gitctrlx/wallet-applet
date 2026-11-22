@@ -15,6 +15,7 @@
  */
 package com.licel.jcardsim.crypto;
 
+import java.math.BigInteger;
 import java.security.SecureRandom;
 import javacard.framework.JCSystem;
 import javacard.framework.Util;
@@ -48,6 +49,14 @@ public class AsymmetricCipherImpl extends Cipher {
 
     byte initMode;
 
+    // ALG_RSA_NOPAD computes raw RSA as plain BigInteger.modPow so
+    // prime moduli and short exponents work exactly like card A;
+    // BouncyCastle's RSAEngine rejects those parameter shapes
+    // (architecture spec section 8, patch 1)
+    BigInteger rsaModulus;
+    BigInteger rsaExponent;
+    int rsaModulusBytes;
+
     public AsymmetricCipherImpl(byte algorithm) {
         this.algorithm = algorithm;
         switch (algorithm) {
@@ -79,10 +88,28 @@ public class AsymmetricCipherImpl extends Cipher {
         if (!(theKey instanceof KeyWithParameters)) {
             CryptoException.throwIt(CryptoException.ILLEGAL_VALUE);
         }
-        ParametersWithRandom params = new ParametersWithRandom(((KeyWithParameters) theKey).getParameters(), new SecureRandomNullProvider());
-        engine.init(theMode == MODE_ENCRYPT, params);
-        // internal engine buffer: not charged applet transient memory (architecture section 8, patch 6)
-        buffer = new byte[engine.getInputBlockSize()];
+        if (algorithm == ALG_RSA_NOPAD) {
+            // card A patch 1: prime moduli are valid here. Read the raw
+            // numbers straight off the key because BouncyCastle's
+            // RSAKeyParameters rejects non-composite moduli, which is
+            // what broke upstream's RSAEngine path.
+            if (!(theKey instanceof RSAKeyImpl)) {
+                CryptoException.throwIt(CryptoException.ILLEGAL_VALUE);
+            }
+            RSAKeyImpl rsaKey = (RSAKeyImpl) theKey;
+            rsaModulus = rsaKey.modulus.getBigInteger();
+            rsaExponent = rsaKey.exponent.getBigInteger();
+            // the block width is the key size: a 256-bit prime modulus
+            // zero-extends into the 64-byte block of a 512-bit key
+            rsaModulusBytes = theKey.getSize() / 8;
+            // internal engine buffer: not charged applet transient memory (architecture section 8, patch 6)
+            buffer = new byte[rsaModulusBytes];
+        } else {
+            ParametersWithRandom params = new ParametersWithRandom(((KeyWithParameters) theKey).getParameters(), new SecureRandomNullProvider());
+            engine.init(theMode == MODE_ENCRYPT, params);
+            // internal engine buffer: not charged applet transient memory (architecture section 8, patch 6)
+            buffer = new byte[engine.getInputBlockSize()];
+        }
         initMode = theMode;
         bufferPos = 0;
         isInitialized = true;
@@ -102,22 +129,45 @@ public class AsymmetricCipherImpl extends Cipher {
         }
 
         if( initMode == MODE_ENCRYPT ) {
-            if ((outBuff.length - outOffset) < engine.getOutputBlockSize()) {
+            int outSize = algorithm == ALG_RSA_NOPAD ? rsaModulusBytes : engine.getOutputBlockSize();
+            if ((outBuff.length - outOffset) < outSize) {
                 CryptoException.throwIt(CryptoException.ILLEGAL_USE);
             }
         }
         else{
-            if ((inBuff.length - inOffset) < engine.getInputBlockSize()) {
+            int inSize = algorithm == ALG_RSA_NOPAD ? rsaModulusBytes : engine.getInputBlockSize();
+            if ((inBuff.length - inOffset) < inSize) {
                 CryptoException.throwIt(CryptoException.ILLEGAL_USE);
             }
         }
         update(inBuff, inOffset, inLength, outBuff, outOffset);
         if (algorithm == ALG_RSA_NOPAD) {
-            if ((bufferPos < engine.getInputBlockSize()) && (paddingEngine == null)) {
+            // raw RSA on card A: the input must fill the modulus-width
+            // block, x >= m is ILLEGAL_VALUE, output is x^e mod m
+            // zero-extended to the modulus length (patch 1)
+            if (bufferPos != rsaModulusBytes) {
                 CryptoException.throwIt(CryptoException.ILLEGAL_USE);
-            } else if (bufferPos < engine.getInputBlockSize()) {
-                paddingEngine.addPadding(buffer, bufferPos);
             }
+            BigInteger x = new BigInteger(1, buffer);
+            if (x.compareTo(rsaModulus) >= 0) {
+                CryptoException.throwIt(CryptoException.ILLEGAL_VALUE);
+            }
+            if ((outBuff.length - outOffset) < rsaModulusBytes) {
+                CryptoException.throwIt(CryptoException.ILLEGAL_USE);
+            }
+            BigInteger y = x.modPow(rsaExponent, rsaModulus);
+            byte[] raw = y.toByteArray();
+            int rawLen = raw.length;
+            if (rawLen > 0 && raw[0] == 0) {
+                rawLen--;
+            }
+            byte[] result = new byte[rsaModulusBytes];
+            System.arraycopy(raw, raw.length - rawLen, result,
+                    rsaModulusBytes - rawLen, rawLen);
+            Util.arrayCopyNonAtomic(result, (short) 0, outBuff, outOffset,
+                    (short) rsaModulusBytes);
+            bufferPos = 0;
+            return (short) rsaModulusBytes;
         }
         try {
             byte[] data = engine.processBlock(buffer, (short) 0, bufferPos);
