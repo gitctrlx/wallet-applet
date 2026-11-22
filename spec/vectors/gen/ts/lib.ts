@@ -5,11 +5,12 @@
 // gen/java/org/qntx/card/vectors/{Vec,Cards}.java byte for byte (noble oracle).
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { bytesToNumberBE, numberToBytesBE } from '@noble/curves/utils.js';
-import { sha256 } from '@noble/hashes/sha2.js';
+import { sha256, sha512 } from '@noble/hashes/sha2.js';
+import { hmac } from '@noble/hashes/hmac.js';
 import { bytesToHex, concatBytes, hexToBytes, utf8ToBytes } from '@noble/hashes/utils.js';
 import { cbc, cmac, ecb } from '@noble/ciphers/aes.js';
 
-export { bytesToHex, concatBytes, hexToBytes, sha256, utf8ToBytes };
+export { bytesToHex, concatBytes, hexToBytes, sha256, sha512, utf8ToBytes };
 
 export const N: bigint = secp256k1.Point.CURVE().n;
 
@@ -35,6 +36,9 @@ export const detScalar = (name: string): bigint => {
 };
 
 export const scalarBytes = (v: bigint): Uint8Array => numberToBytesBE(v, 32);
+
+export const hmacSha512 = (key: Uint8Array, ...parts: Uint8Array[]): Uint8Array =>
+  hmac(sha512, key, concatBytes(...parts));
 
 export const u16 = (v: number): Uint8Array => new Uint8Array([v >>> 8, v & 0xff]);
 const u32 = (v: number): Uint8Array =>

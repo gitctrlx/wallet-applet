@@ -6,11 +6,14 @@
 // agreement check and is never committed. Output is canonical: JSON.stringify(value, null, 2) + "\n".
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { accessDoc } from './access.ts';
 import { certDoc } from './cert.ts';
+import { derivationDoc } from './derivation.ts';
 import { kdfDoc } from './kdf.ts';
 import { recordDoc } from './record.ts';
 import { selftest } from './selftest.ts';
 import { sessionDoc } from './session.ts';
+import { wrapDoc } from './wrap.ts';
 
 const FILES: Record<string, () => unknown> = {
   'selftest.json': selftest,
@@ -18,6 +21,9 @@ const FILES: Record<string, () => unknown> = {
   'cert.json': certDoc,
   'session.json': sessionDoc,
   'record.json': recordDoc,
+  'access.json': accessDoc,
+  'wrap.json': wrapDoc,
+  'derivation.json': derivationDoc,
 };
 
 const out = process.argv[2];

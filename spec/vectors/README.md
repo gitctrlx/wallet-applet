@@ -18,15 +18,15 @@ must produce identical bytes: `gen/java` (BouncyCastle) and `gen/ts` (noble). Th
 | `cert.json` | 5 | noble `secp256k1`; BouncyCastle | `core` | yes |
 | `session.json` | 8.1–8.2 | noble; Python `cryptography` | `core` | yes |
 | `record.json` | 1, 8.3–8.4 | Python `cryptography` | `core` | yes |
-| `access.json` | 7.1 | `argon2-cffi` (reference C); noble `argon2id` | `wallet` | not yet |
-| `wrap.json` | 7.2, 10.1 | Python `cryptography`, `hashlib` | `wallet` | not yet |
+| `access.json` | 7.1 | `argon2-cffi` (reference C); noble `argon2id` | `wallet` | yes |
+| `wrap.json` | 7.2, 10.1 | Python `cryptography`, `hashlib` | `wallet` | yes |
 | `transfer.json` | 9.12–9.14, 10.5, 11 | noble; Python `cryptography`; libsecp256k1 (`coincurve`) | `sets` | not yet |
-| `derivation.json` | 10.2–10.4 | Official BIP-32 and SLIP-10 vectors; `@scure/bip32`; OpenSSL and libsodium Ed25519 public keys | `wallet` | not yet |
+| `derivation.json` | 10.2–10.4 | Official BIP-32 and SLIP-10 vectors; `@scure/bip32`; OpenSSL and libsodium Ed25519 public keys | `wallet` | yes |
 | `ecdsa.json` | 12.1 | noble `secp256k1`; BouncyCastle | `sign` | not yet |
 | `bip340.json` | 12.2 | BIP-340 reference CSV; BIP-86 vectors; noble `schnorr` | `sign` | not yet |
 | `ed25519.json` | 10.4, 12.3 | RFC 8032; noble `ed25519`; libsodium | `sign` | not yet |
 | `apdu.json` | 9, 13, 14 | Generated from the protocol tables by `gen/apdu.py` | `core`, extended by every later stage for its commands | yes |
-| `verify-sequence.json` | 7.3, 9.3, 9.5, 9.12, 9.14, 9.15 | Generated from §9 by `gen/sequence.py` | `wallet` | not yet |
+| `verify-sequence.json` | 7.3, 9.3, 9.5, 9.15 | Generated from §9 by `gen/sequence.py`; the OFFER/IMPORT sequences of §18 land with stage `sets` | `wallet` | yes |
 | `ndef.json` | 15 | NFC Forum T4T 2.0 §5 by hand | `release` | not yet |
 
 The stage column is the implementation stage of `qntx/wallet-applet` that adds the file to both
