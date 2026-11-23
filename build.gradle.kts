@@ -19,8 +19,13 @@ spotless {
         googleJavaFormat(gjfVersion).aosp()
         licenseHeader(spdxHeader("MIT OR Apache-2.0"))
     }
+    kotlin {
+        target("buildSrc/src/**/*.kt")
+        ktlint(ktlintVersion)
+        licenseHeader(spdxHeader("AGPL-3.0-or-later"))
+    }
     kotlinGradle {
-        target("*.gradle.kts")
+        target("*.gradle.kts", "buildSrc/*.gradle.kts")
         ktlint(ktlintVersion)
     }
 }
