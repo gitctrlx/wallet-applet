@@ -3,7 +3,7 @@
 package org.qntx.card.sim;
 
 import java.math.BigInteger;
-import java.util.HexFormat;
+import org.qntx.card.host.TestAnchors;
 
 /**
  * The {@code ca1} test CA of {@code spec/vectors/cert.json}, pinned as a constant so {@link Server}
@@ -15,12 +15,8 @@ public final class TestCa {
     public static final BigInteger PRIVATE =
             new BigInteger("a76d852de566723ec4e6414f49b80dd3899ef7661b9afc4e6dac489adcba69a7", 16);
 
-    /** cert.json {@code cas[0].public}, uncompressed. */
-    public static final byte[] PUBLIC =
-            HexFormat.of()
-                    .parseHex(
-                            "04326ee50a70d17883e337bad61f8075e1510904110ca189423cb4fa3c7ae24d69"
-                                    + "bb49ba03e8e46321cadeee736ddc1fd1bcb0bc3dad5fdd598dd1a87c31b63f22");
+    /** cert.json {@code cas[0].public}, uncompressed — the ca1 entry of {@link TestAnchors}. */
+    public static final byte[] PUBLIC = TestAnchors.CA1;
 
     private TestCa() {}
 }

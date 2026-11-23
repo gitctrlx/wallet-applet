@@ -148,7 +148,18 @@ final class ServerTest {
             }
         }
         assertEquals(4, stdout.stream().filter(l -> l.startsWith("card ")).count());
-        assertEquals(4, stdout.stream().filter(l -> l.startsWith("anchor ")).count());
+        assertEquals(1, stdout.stream().filter(l -> l.startsWith("anchor ")).count());
+        int lastCard =
+                stdout.lastIndexOf(
+                        stdout.stream()
+                                .filter(l -> l.startsWith("card "))
+                                .reduce((a, b) -> b)
+                                .get());
+        int anchor =
+                stdout.indexOf(
+                        stdout.stream().filter(l -> l.startsWith("anchor ")).findFirst().get());
+        assertTrue(
+                lastCard < anchor && anchor < stdout.indexOf("ready"), "anchor once before ready");
         out.join(10_000);
         err.join(10_000);
     }

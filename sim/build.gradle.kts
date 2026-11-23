@@ -30,7 +30,12 @@ dependencies {
     implementation(project(":host"))
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
+    // GlobalPlatformPro is the independent oracle of the simulated ISD's SCP03
+    // handshake, C-MAC/C-DEC wrapping and GP command formats (IsdTest).
+    testImplementation(libs.gppro)
+    testImplementation(libs.apdu4j.core)
     testRuntimeOnly(libs.junit.platform.launcher)
+    testRuntimeOnly(libs.slf4j.simple)
 }
 
 tasks.compileJava {
@@ -82,6 +87,20 @@ val collectJcapi =
 sourceSets {
     named("main") {
         output.dir(mapOf("builtBy" to collectJcapi), jcapiDir)
+    }
+}
+
+// The simulated ISD verifies an uploaded load file byte-for-byte against the CAP
+// the jar was built from (architecture.md §8); the resource lands in card-sim.jar.
+val capResource =
+    tasks.register<Copy>("capResource") {
+        from(project(":applet").tasks.named("cap"))
+        into(layout.buildDirectory.dir("capResource"))
+    }
+
+sourceSets {
+    named("main") {
+        resources.srcDir(capResource)
     }
 }
 

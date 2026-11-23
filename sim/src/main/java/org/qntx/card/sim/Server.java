@@ -6,12 +6,15 @@ import java.io.DataInputStream;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.PrintStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -40,24 +43,8 @@ public final class Server {
     private static final byte[] NDEF_AID = {(byte) 0xD2, 0x76, 0x00, 0x00, (byte) 0x85, 0x01, 0x01};
 
     /** The NDEF Text record "qntx card" (protocol.md §15 message). */
-    private static final byte[] NDEF_MESSAGE = {
-        (byte) 0xD1,
-        0x01,
-        0x0C,
-        0x54,
-        0x02,
-        0x65,
-        0x6E,
-        0x71,
-        0x6E,
-        0x74,
-        0x78,
-        0x20,
-        0x63,
-        0x61,
-        0x72,
-        0x64
-    };
+    private static final byte[] NDEF_MESSAGE =
+            HexFormat.of().parseHex("D1010C5402656E716E74782063617264");
 
     private static final byte[] SELECT_WALLET = {
         0x00, (byte) 0xA4, 0x04, 0x00, 0x07, (byte) 0xF0, 0x71, 0x6E, 0x74, 0x78, 0x01, 0x01, 0x00
@@ -73,34 +60,46 @@ public final class Server {
 
     private Server() {}
 
-    private record Options(int cards, int port, boolean factory) {}
+    enum State {
+        EMPTY,
+        FACTORY,
+        BLANK
+    }
 
-    /** One simulated card and its listen socket. */
-    private record SimCard(Card card, ServerSocket socket) {}
+    private record Options(int cards, int port, State state) {}
+
+    /** One simulated card: its card manager, card and listen socket. */
+    private record SimCard(Isd isd, ServerSocket socket) {}
 
     public static void main(String[] args) throws Exception {
         Options options = options(args);
         ExecutorService executor = Executors.newSingleThreadExecutor();
         InetAddress loopback = InetAddress.getByName("127.0.0.1");
         List<SimCard> cards = new ArrayList<>(options.cards());
+        HexFormat hex = HexFormat.of();
         for (int i = 0; i < options.cards(); i++) {
             Card card = new Card();
-            byte[] a = prepare(executor, card, options.factory());
+            Isd isd = new Isd(card, i, options.state() != State.EMPTY);
             ServerSocket socket =
                     new ServerSocket(options.port() == 0 ? 0 : options.port() + i, 16, loopback);
-            System.out.println(
-                    "card "
-                            + i
-                            + " port "
-                            + socket.getLocalPort()
-                            + " id "
-                            + hex(Ids.cardId(a))
-                            + " short "
-                            + Ids.shortId(a));
-            if (!options.factory()) {
-                System.out.println("anchor " + hex(TestCa.PUBLIC));
+            if (options.state() == State.EMPTY) {
+                System.out.println("card " + i + " port " + socket.getLocalPort());
+            } else {
+                byte[] a = prepare(executor, isd, options.state());
+                System.out.println(
+                        "card "
+                                + i
+                                + " port "
+                                + socket.getLocalPort()
+                                + " id "
+                                + hex.formatHex(Ids.cardId(a))
+                                + " short "
+                                + Ids.shortId(a));
             }
-            cards.add(new SimCard(card, socket));
+            cards.add(new SimCard(isd, socket));
+        }
+        if (options.state() == State.BLANK) {
+            System.out.println("anchor " + hex.formatHex(TestCa.PUBLIC));
         }
         System.out.println("ready");
         for (SimCard sim : cards) {
@@ -110,20 +109,24 @@ public final class Server {
     }
 
     /**
-     * Installs both applets and reads {@code A}; in the default {@code blank} state it also runs
-     * the §14 personalisation against the {@link TestCa} anchor. All on the card thread.
+     * Installs both applets and reads {@code A}; in the {@code blank} state it also runs the §14
+     * personalisation against the {@link TestCa} anchor. All on the card thread; the {@link Isd}
+     * registry mirrors each install.
      */
-    private static byte[] prepare(ExecutorService executor, Card card, boolean factory) {
+    private static byte[] prepare(ExecutorService executor, Isd isd, State state) {
+        Card card = isd.card();
         return call(
                 executor,
                 () -> {
                     card.install(WALLET_AID, WalletApplet.class);
+                    isd.registerApp(WALLET_AID);
                     card.install(NDEF_AID, NdefApplet.class, NDEF_MESSAGE);
-                    expectOk(card.transmit(SELECT_WALLET), "SELECT");
-                    byte[] rapdu = card.transmit(GET_IDENTITY);
+                    isd.registerApp(NDEF_AID);
+                    expectOk(isd.transmit(SELECT_WALLET), "SELECT");
+                    byte[] rapdu = isd.transmit(GET_IDENTITY);
                     expectOk(rapdu, "GET_IDENTITY");
                     byte[] a = Arrays.copyOf(rapdu, rapdu.length - 2);
-                    if (factory) {
+                    if (state == State.FACTORY) {
                         return a;
                     }
                     byte[] cert = Certificates.issue(TestCa.PRIVATE, a);
@@ -133,7 +136,7 @@ public final class Server {
                     personalize[4] = (byte) 162;
                     System.arraycopy(cert, 0, personalize, 5, 97);
                     System.arraycopy(TestCa.PUBLIC, 0, personalize, 102, 65);
-                    expectOk(card.transmit(personalize), "PERSONALIZE");
+                    expectOk(isd.transmit(personalize), "PERSONALIZE");
                     return a;
                 });
     }
@@ -156,7 +159,7 @@ public final class Server {
             while (true) {
                 Socket conn = sim.socket().accept();
                 try {
-                    serve(executor, sim.card(), conn);
+                    serve(executor, sim.isd(), conn);
                 } catch (IOException | RuntimeException e) {
                     // a framing error, malformed APDU or client disconnect ends the session
                 } finally {
@@ -168,7 +171,7 @@ public final class Server {
                     call(
                             executor,
                             () -> {
-                                sim.card().powerCycle();
+                                powerCycle(sim.isd());
                                 return null;
                             });
                 }
@@ -184,13 +187,13 @@ public final class Server {
      * 0x10} the tear arm. An APDU on an unpowered card or one that hit the armed tear is answered
      * with the empty frame {@code 00 00}.
      */
-    private static void serve(ExecutorService executor, Card card, Socket conn) throws IOException {
+    private static void serve(ExecutorService executor, Isd isd, Socket conn) throws IOException {
         DataInputStream in = new DataInputStream(conn.getInputStream());
         OutputStream out = conn.getOutputStream();
         call(
                 executor,
                 () -> {
-                    card.powerCycle();
+                    powerCycle(isd);
                     return null;
                 });
         boolean powered = true;
@@ -210,7 +213,7 @@ public final class Server {
                     frame(out, EMPTY);
                 } else {
                     try {
-                        frame(out, call(executor, () -> card.transmit(payload)));
+                        frame(out, call(executor, () -> isd.transmit(payload)));
                     } catch (TornException torn) {
                         // the field was lost mid-command; the card is unpowered until a
                         // power-on or reset control
@@ -221,20 +224,20 @@ public final class Server {
             } else if (len == 1) {
                 switch (payload[0] & 0xFF) {
                     case CTRL_POWER_OFF -> {
-                        powerCycle(executor, card);
+                        call(executor, () -> powerCycle(isd));
                         powered = false;
                     }
                     case CTRL_POWER_ON -> {
                         if (!powered) {
-                            powerCycle(executor, card);
+                            call(executor, () -> powerCycle(isd));
                             powered = true;
                         }
                     }
                     case CTRL_RESET -> {
-                        powerCycle(executor, card);
+                        call(executor, () -> powerCycle(isd));
                         powered = true;
                     }
-                    case CTRL_GET_ATR -> frame(out, call(executor, card::atr));
+                    case CTRL_GET_ATR -> frame(out, call(executor, () -> isd.card().atr()));
                     default -> {
                         return;
                     }
@@ -248,7 +251,7 @@ public final class Server {
                 call(
                         executor,
                         () -> {
-                            card.tearAt(armed);
+                            isd.card().tearAt(armed);
                             return null;
                         });
             } else {
@@ -258,13 +261,10 @@ public final class Server {
         }
     }
 
-    private static void powerCycle(ExecutorService executor, Card card) {
-        call(
-                executor,
-                () -> {
-                    card.powerCycle();
-                    return null;
-                });
+    private static Void powerCycle(Isd isd) {
+        isd.card().powerCycle();
+        isd.reset();
+        return null;
     }
 
     /** {@code u16(len) ‖ payload} on the wire. */
@@ -296,7 +296,7 @@ public final class Server {
     private static Options options(String[] args) {
         int cards = DEFAULT_CARDS;
         int port = DEFAULT_PORT;
-        boolean factory = false;
+        State parsedState = State.BLANK;
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
                 case "--help" -> {
@@ -307,11 +307,9 @@ public final class Server {
                 case "--port" -> port = number(args, ++i, "--port");
                 case "--state" -> {
                     String state = value(args, ++i, "--state");
-                    if (state.equals("factory")) {
-                        factory = true;
-                    } else if (state.equals("blank")) {
-                        factory = false;
-                    } else {
+                    try {
+                        parsedState = State.valueOf(state.toUpperCase(Locale.ROOT));
+                    } catch (IllegalArgumentException e) {
                         badArguments();
                     }
                 }
@@ -321,7 +319,7 @@ public final class Server {
         if (cards < 1 || cards > MAX_CARDS || port < 0 || port > 0xFFFF) {
             badArguments();
         }
-        return new Options(cards, port, factory);
+        return new Options(cards, port, parsedState);
     }
 
     private static String value(String[] args, int i, String option) {
@@ -345,9 +343,9 @@ public final class Server {
         System.exit(2);
     }
 
-    private static void usage(java.io.PrintStream out) {
+    private static void usage(PrintStream out) {
         out.println(
-                "usage: card-sim [--cards N] [--port P] [--state factory|blank]\n"
+                "usage: card-sim [--cards N] [--port P] [--state empty|factory|blank]\n"
                         + "  --cards N           simulated cards, 1.."
                         + MAX_CARDS
                         + " (default "
@@ -357,16 +355,9 @@ public final class Server {
                         + "                      0 gives every card an ephemeral port (default "
                         + DEFAULT_PORT
                         + ")\n"
-                        + "  --state factory     install the applets and stop (life FACTORY)\n"
+                        + "  --state empty       only the issuer security domain; no package,\n"
+                        + "                      no applets\n"
+                        + "  --state factory     applets installed, life FACTORY\n"
                         + "  --state blank       also personalise under the test CA (default)");
-    }
-
-    private static String hex(byte[] data) {
-        StringBuilder out = new StringBuilder(data.length * 2);
-        for (byte b : data) {
-            out.append(Character.forDigit((b >> 4) & 0xF, 16));
-            out.append(Character.forDigit(b & 0xF, 16));
-        }
-        return out.toString();
     }
 }
