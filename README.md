@@ -130,6 +130,38 @@ sequence counters, R-MAC, DAP blocks, receipts, install tokens, delegated manage
 and DELETE — anything not listed answers `6D00`, and management commands outside a secure channel
 answer `6982`.
 
+## Real-card suite
+
+`tests/src/realCard` implements the real-card rows of `docs/architecture.md` §10 — admission 1–9
+(`spec/protocol.md` §3) plus Timing, the `Lc = 248` APDU receive test, Flows, Tearing and the
+sacrificial NVM endurance run. It drives a card through a `Reader` transport: PC/SC
+(`javax.smartcardio`) or the in-process simulator, and talks to a test-only admission CAP
+(`tests/src/admission`, package `F0716E7478FF`, applets `…FF01`/`…FF02`, built by
+`:tests:admissionCap` into `tests/build/cap/admission.cap` — never part of a release artifact) and
+to the product wallet.
+
+```bash
+./gradlew :tests:realCard                          # no reader: every test reports "not run"
+./gradlew :tests:realCard -PrealCard="ACS ACR"     # PC/SC terminal (name or substring)
+./gradlew :tests:realCard -PrealCard=sim           # simulator self-check, not hardware evidence
+```
+
+The suite never runs in CI and is not attached to `check` (`check` still builds the admission CAP
+and the suite classes). Properties: `-PrealCard=<reader>` (required, or `sim`),
+`-PrealCardPeer=<reader>` (second card for EXPORT/IMPORT timing), `-PrealCardContactless=true`
+(WAIT timing when the transport cannot say it is contactless), `-PrealCardTear=<driver>`
+(programmable reader; none is supported yet), `-PrealCardSacrificial=<CPLC IC serial>`
+(destructive NVM row; refuses development card A `D321`/`49917821` unconditionally).
+
+Every row appends a JSON line (`row`, `name`, `verdict`, `reader`, `cplc`, `detail`) to
+`tests/build/reports/realcard/results.jsonl`, which feeds the batch record of §10. Rows on the
+simulator are labelled `"reader":"sim"`: timing values are meaningless, contactless and RNG
+quality are not modelled, and rows the simulator cannot express (`genKeyPair` inside a
+transaction, contactless WAIT timing) are skipped with a stated reason rather than passed.
+
+No hardware has been run in this repository yet: the suite exists, compiles, lists every §10 test
+and has been self-checked on the simulator only.
+
 ## License
 
 The applet, simulator patches, host, tests and tools are licensed under the GNU Affero General
