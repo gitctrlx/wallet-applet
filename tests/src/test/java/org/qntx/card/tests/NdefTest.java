@@ -9,6 +9,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.io.ByteArrayOutputStream;
 import java.util.Arrays;
 import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
 import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
 import org.junit.jupiter.api.BeforeEach;
@@ -265,6 +267,51 @@ final class NdefTest {
         for (byte[] apdu : commands) {
             card.transmit(apdu);
             assertEquals(0, card.writes(), "writes of " + HexFormat.of().formatHex(apdu));
+        }
+    }
+
+    /** ndef.json (§18): every message, every READ BINARY row and every rejected install length. */
+    @Test
+    void replaysNdefJson() {
+        Map<String, Object> doc = Vecs.load("ndef.json");
+        for (Map<String, Object> m : Vecs.list(doc, "messages")) {
+            card = new Card();
+            byte[] msg = Vecs.hex(m, "msg");
+            card.install(Spec.NDEF_AID, NdefApplet.class, msg);
+            assertArrayEquals(Spec.SW_OK, card.transmit(Spec.SELECT_NDEF));
+            assertArrayEquals(Spec.SW_OK, card.transmit(selectFile("E103")));
+            assertArrayEquals(
+                    ok(Vecs.hex(m, "cc")), card.transmit(read(0, 0)), "cc of |msg|=" + msg.length);
+            assertArrayEquals(Spec.SW_OK, card.transmit(selectFile("E104")));
+            assertArrayEquals(
+                    ok(Vecs.hex(m, "ndefFile")),
+                    card.transmit(read(0, 0)),
+                    "ndef of |msg|=" + msg.length);
+        }
+        card = new Card();
+        byte[] msg16 = Vecs.hex(Vecs.list(doc, "messages").get(1), "msg");
+        card.install(Spec.NDEF_AID, NdefApplet.class, msg16);
+        assertArrayEquals(Spec.SW_OK, card.transmit(Spec.SELECT_NDEF));
+        String selected = "";
+        for (Map<String, Object> r : Vecs.list(doc, "reads")) {
+            String file = (String) r.get("file");
+            if (!file.equals(selected)) {
+                assertArrayEquals(
+                        Spec.SW_OK, card.transmit(selectFile(file.equals("cc") ? "E103" : "E104")));
+                selected = file;
+            }
+            int off = ((Number) r.get("off")).intValue();
+            int le = ((Number) r.get("le")).intValue();
+            byte[] expected = Vecs.unhex((String) r.get("data") + r.get("sw"));
+            assertArrayEquals(expected, card.transmit(read(off, le)), r.toString());
+        }
+        for (Object len : (List<Object>) doc.get("rejectedInstall")) {
+            int n = ((Number) len).intValue();
+            Card fresh = new Card();
+            assertThrows(
+                    ISOException.class,
+                    () -> fresh.install(Spec.NDEF_AID, NdefApplet.class, new byte[n]),
+                    "rejected install length " + n);
         }
     }
 
