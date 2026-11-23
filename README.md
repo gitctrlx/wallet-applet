@@ -56,26 +56,29 @@ applet and host classes. The manifest's `Launcher-Agent-Class` starts the byteco
 makes persistent writes tearable; run it directly:
 
 ```bash
-java -jar card-sim.jar [--cards N] [--port P] [--state factory|blank]
+java -jar card-sim.jar [--cards N] [--port P] [--state empty|factory|blank]
 ```
 
 - `--cards N`: simulated cards, 1–16 (default 3). Card `i` listens on `127.0.0.1:P+i`;
   `--port 0` gives every card an ephemeral port.
 - `--port P`: first TCP port (default 35963, vpcd's port).
+- `--state empty`: no package and no applets — only the issuer security domain (below).
 - `--state factory`: install the wallet and NDEF applets and stop (life `FACTORY`).
 - `--state blank` (default): also personalise each card under the `ca1` test CA of
   `spec/vectors/cert.json` (life `BLANK`).
 
-Every card carries the wallet applet (`F0716E74780101`) and the NDEF applet
-(`D2760000850101`, message "qntx card"). Startup prints, for each card,
+In `factory` and `blank` states every card carries the wallet applet (`F0716E74780101`) and the
+NDEF applet (`D2760000850101`, message "qntx card"). Startup prints one `card` line per card —
+`empty` cards have no identity, so their lines end after the port — then, in `blank` state only,
+a single `anchor` line, then `ready`:
 
 ```text
 card <i> port <port> id <ID(A), 32 hex> short <XXXX-XXXX>
-anchor <ca1 public key, 130 hex>        (blank only)
+anchor <ca1 public key, 130 hex>
+ready
 ```
 
-then a final line `ready`. Bad arguments print usage on stderr and exit 2; `--help` prints it
-on stdout and exits 0.
+Bad arguments print usage on stderr and exit 2; `--help` prints it on stdout and exits 0.
 
 ### Framing
 
@@ -99,6 +102,33 @@ An APDU on an unpowered card, or an APDU during which the armed tear fired, is a
 empty frame `00 00` — no response, the field was lost. After a tear the card is unpowered until a
 power-on or reset control. The armed tear is a per-command write count: it stays armed until it
 fires or the card is power-cycled/powered off.
+
+### Issuer security domain
+
+Every card answers as a simulated GlobalPlatform issuer security domain, AID
+`A000000151000000`, selected by default at power-up and answering SELECT-by-empty-AID with the
+FCI `6F108408A000000151000000A5049F6501FF`. One AES-128 key set at KVN `0x30`, ENC = MAC = DEK =
+`404142434445464748494A4B4C4D4E4F` (the GP test key). Emulated:
+
+- SCP03 with `i = 0x00` (random card challenge, no sequence counter, no R-MAC/R-ENC, S8 MACs):
+  INITIALIZE UPDATE (KVN `00` or `30`, else `6A88`), EXTERNAL AUTHENTICATE with security level
+  `01` or `03`, and from then on only `84`-wrapped commands — a bad C-MAC closes the channel.
+- GET DATA `9F 7F` returns the CPLC (fixed bytes except a per-card IC serial); unknown tags and
+  other GET DATA → `6A88`.
+- GET STATUS (`80 F2`) for the ISD, applications, load files and modules, in the card A formats.
+- INSTALL [for load] + LOAD: the `C4` block must be a concatenation of components each
+  byte-identical to the same-tagged component of the CAP embedded in the jar and covering all of
+  them except Descriptor and Debug; an LFDBH, when present, must equal the block's SHA-256.
+- INSTALL [for install and make selectable]: loaded package, class AID `F0716E74780101` or
+  `F0716E74780201`, free instance AID, empty privileges, applet data from the `C9` TLV.
+- PUT KEY `80 D8 kvn 81` replacing all three keys as `GPPro putKeys(keys, true)` encodes them —
+  AES or DES entries encrypted under the static DEK, each KCV verified — after which the old keys
+  no longer open a channel.
+
+Not emulated: SCP02/SCP01 (INITIALIZE UPDATE with `i ≠ 00` gets `6A86`), key diversification,
+sequence counters, R-MAC, DAP blocks, receipts, install tokens, delegated management, extradition
+and DELETE — anything not listed answers `6D00`, and management commands outside a secure channel
+answer `6982`.
 
 ## License
 
